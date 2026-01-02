@@ -1,18 +1,15 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import { UserInfo, AstroInfo, DreamResult } from "../types";
 
-// 1. 读取 Vercel 环境变量
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+// 读取 OpenAI API Key
+const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
 
-// 初始化 Gemini SDK
-const genAI = new GoogleGenerativeAI(API_KEY || "");
+const openai = new OpenAI({
+  apiKey: apiKey,
+  dangerouslyAllowBrowser: true // 允许在浏览器端调用
+});
 
-const DREAM_ORACLE_SYSTEM_INSTRUCTION = `
-你是一名深谙潜意识解析与古典星象象征的“梦境占卜师”。
-你必须严格返回 JSON 格式。
-【重要】image_prompt 字段必须包含梦境的核心视觉意象，用英文书写，以便于绘画。
-JSON 结构：title, image, underneath, echo, mirror, one_small_act, image_prompt, omens, sound_config。
-`;
+const DREAM_ORACLE_SYSTEM_INSTRUCTION = `你是一名深谙潜意识解析与心理学的“梦境占卜师”。请严格返回 JSON 格式，包含字段：title, image, underneath, echo, mirror, one_small_act, image_prompt, omens, sound_config。`;
 
 export const analyzeDream = async (
   userInfo: UserInfo,
@@ -20,43 +17,27 @@ export const analyzeDream = async (
   dreamText: string
 ): Promise<DreamResult> => {
   try {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini", // 使用性价比最高的模型，或者 gpt-4o
+      messages: [
+        { role: "system", content: DREAM_ORACLE_SYSTEM_INSTRUCTION },
+        { role: "user", content: `用户${userInfo.nickname}, 梦境内容: ${dreamText}` }
+      ],
+      response_format: { type: "json_object" }
     });
 
-    const prompt = `
-      用户信息：昵称 ${userInfo.nickname}, 生日 ${userInfo.birthDate}
-      环境月相：${astroInfo.lunarPhase}
-      梦境原文：${dreamText}
-      
-      指令：${DREAM_ORACLE_SYSTEM_INSTRUCTION}
-    `;
-
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.8,
-        responseMimeType: "application/json",
-      },
-    });
-
-    const response = await result.response;
-    let text = response.text();
-    // 清理 Markdown 标签
-    text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-
-    return JSON.parse(text) as DreamResult;
+    const content = response.choices[0].message.content;
+    return JSON.parse(content || "{}") as DreamResult;
   } catch (error) {
-    console.error("解析梦境失败:", error);
+    console.error("OpenAI Error:", error);
     throw error;
   }
 };
 
-/**
- * 方案 A：利用 Pollinations AI 生成精美的艺术图片
- * 这种方式不需要额外的 API Key，且生成速度极快，适合前端直接展示
- */
 export const generateDreamImage = async (prompt: string): Promise<string> => {
-  try {
-    // 强制增加艺术风格修饰词，确保画面符合 Oneiro 的神秘主义美学
-    const styleSuffix
+  // 图片生成建议继续沿用 Pollinations AI，因为它免费且快。
+  // 如果你想用 OpenAI 的 DALL-E 3，会非常贵（每张图约 $0.04 - $0.08）。
+  const styleSuffix = "artistic woodcut print, mystical symbolism, tarot aesthetic";
+  const encodedPrompt = encodeURIComponent(`${prompt}, ${styleSuffix}`);
+  return `https://pollinations.ai/p/${encodedPrompt}?width=600&height=800&nologo=true`;
+};
