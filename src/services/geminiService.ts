@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { UserInfo, AstroInfo, DreamResult } from "../types";
 
 // 严格按照 SDK 指南使用 process.env.API_KEY
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenerativeAI({ apiKey: process.env.API_KEY });
 
 const DREAM_ORACLE_SYSTEM_INSTRUCTION = `
 你是一名深谙潜意识解析、心理动力学与古典星象象征的“梦境占卜师”。你不仅是阐释者，更是灵魂的侧写师。
