@@ -41,7 +41,7 @@ export const analyzeDream = async (
  */
 export const generateDreamImage = async (prompt: string): Promise<string> => {
   try {
-    // 强制增加艺术风格修饰词，确保画面符合美学
+    // 补全之前截断的变量
     const styleSuffix = "artistic woodcut print, elegant minimalist ink outlines, mystical symbolism, surreal tarot aesthetic, sophisticated monochromatic, fine art paper texture";
     const fullPrompt = `${prompt}, ${styleSuffix}`;
     
