@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { UserInfo, AstroInfo, DreamResult } from "../types";
 
 // 严格按照 SDK 指南使用 process.env.API_KEY
