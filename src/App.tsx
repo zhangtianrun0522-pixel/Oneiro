@@ -3,7 +3,7 @@ import { UserInfo, AstroInfo, DreamResult, AppStage } from './types';
 import { InputProfile } from './components/InputProfile';
 import { DreamCard } from './components/DreamCard';
 import { DreamSoundscape } from './components/DreamSoundscape';
-import { analyzeDream, generateDreamImage } from './services/geminiService';
+import { analyzeDream, generateDreamImage } from './services/dreamService';
 
 const MOCK_ASTRO: AstroInfo = {
   todayDate: new Date().toLocaleDateString(),
