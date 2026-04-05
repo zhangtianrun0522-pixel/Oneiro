@@ -3,7 +3,7 @@ import { UserInfo, AstroInfo, DreamResult, AppStage } from './types';
 import { InputProfile } from './components/InputProfile';
 import { DreamCard } from './components/DreamCard';
 import { DreamSoundscape } from './components/DreamSoundscape';
-import { analyzeDream, generateDreamImage } from './services/dreamService';
+import { analyzeDream, generateDreamImage } from './services/geminiService';
 
 const MOCK_ASTRO: AstroInfo = {
   todayDate: new Date().toLocaleDateString(),
@@ -29,7 +29,9 @@ function App() {
   const [displayDate, setDisplayDate] = useState('');
 
   useEffect(() => {
-    setDisplayDate(new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '.'));
+    setDisplayDate(new Date().toLocaleDateString('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }).replace(/\//g, '.'));
   }, []);
 
   const changeStage = (newStage: AppStage) => {
@@ -47,21 +49,17 @@ function App() {
 
   const handleInterpret = async () => {
     if (!userInfo || !dreamText) return;
-    
     setTransitioning(true);
     setTimeout(async () => {
       setStage(AppStage.INTERPRETING);
       setTransitioning(false);
       setLoadingMsg('正在剥离意识的表层...');
-      
       try {
         const analysis = await analyzeDream(userInfo, MOCK_ASTRO, dreamText);
         setResult(analysis);
         setLoadingMsg('星轨交错，正在编织梦境映像...');
-        
         const imageUrl = await generateDreamImage(analysis.image_prompt);
         setResult(prev => prev ? { ...prev, imageUrl } : null);
-        
         setTimeout(() => changeStage(AppStage.RESULT), 1000);
       } catch (error) {
         console.error(error);
@@ -130,7 +128,11 @@ function App() {
                   onChange={(e) => setDreamText(e.target.value)}
                 />
                 <div className="flex flex-col items-center gap-12 mt-12 relative z-20">
-                  <button onClick={handleInterpret} disabled={!dreamText.trim()} className="group relative px-16 py-4 disabled:opacity-0 transition-all duration-1000">
+                  <button
+                    onClick={handleInterpret}
+                    disabled={!dreamText.trim()}
+                    className="group relative px-16 py-4 disabled:opacity-0 transition-all duration-1000"
+                  >
                     <div className="absolute inset-0 border border-white/[0.04] rounded-full group-hover:border-white/10 transition-all duration-1000"></div>
                     <span className="relative z-10 text-white/20 font-bold tracking-[1.2em] text-[7px] uppercase group-hover:text-white/60 transition-colors">唤醒契约</span>
                   </button>
