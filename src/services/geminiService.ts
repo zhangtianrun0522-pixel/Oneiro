@@ -23,7 +23,7 @@ export const analyzeDream = async (
   astroInfo: AstroInfo,
   dreamText: string
 ): Promise<DreamResult> => {
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-preview-04-17" });
 
   const prompt = SYSTEM_PROMPT + `
 
