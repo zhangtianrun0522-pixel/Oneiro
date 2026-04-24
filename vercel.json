@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "api/interpret.ts": { "memory": 512, "maxDuration": 30 },
+    "api/health.ts": { "memory": 128, "maxDuration": 5 }
+  }
+}

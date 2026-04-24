@@ -3,10 +3,10 @@ import { UserInfo, AstroInfo, DreamResult, AppStage } from './types';
 import { InputProfile } from './components/InputProfile';
 import { DreamCard } from './components/DreamCard';
 import { DreamSoundscape } from './components/DreamSoundscape';
-import { analyzeDream, generateDreamImage } from './services/geminiService';
+import { analyzeDream, generateDreamImage } from './services/dreamService';
 
 const MOCK_ASTRO: AstroInfo = {
-  todayDate: new Date().toLocaleDateString(),
+  todayDate: new Date().toLocaleDateString('zh-CN'),
   lunarPhase: "Waxing Gibbous in Scorpio",
   majorTransits: "木星进入双子座，水星与土星呈和谐相，利于深层思考与表达。"
 };
