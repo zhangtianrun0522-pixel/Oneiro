@@ -2,13 +2,12 @@ import type { UserInfo, AstroInfo, DreamResult } from "../types";
 
 export async function analyzeDream(
   userInfo: UserInfo,
-  astroInfo: AstroInfo,
   dreamText: string
 ): Promise<DreamResult> {
   const response = await fetch("/api/interpret", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dreamText, userInfo, astroInfo }),
+    body: JSON.stringify({ dreamText, userInfo }),
   });
 
   if (!response.ok) {

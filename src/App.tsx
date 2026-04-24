@@ -1,15 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { UserInfo, AstroInfo, DreamResult, AppStage } from './types';
+import { UserInfo, DreamResult, AppStage } from './types';
 import { InputProfile } from './components/InputProfile';
 import { DreamCard } from './components/DreamCard';
 import { DreamSoundscape } from './components/DreamSoundscape';
 import { analyzeDream, generateDreamImage } from './services/dreamService';
-
-const MOCK_ASTRO: AstroInfo = {
-  todayDate: new Date().toLocaleDateString('zh-CN'),
-  lunarPhase: "Waxing Gibbous in Scorpio",
-  majorTransits: "木星进入双子座，水星与土星呈和谐相，利于深层思考与表达。"
-};
 
 const LOADING_SOUND_CONFIG: DreamResult['sound_config'] = {
   theme: 'liquid',
@@ -55,7 +49,7 @@ function App() {
       setTransitioning(false);
       setLoadingMsg('正在剥离意识的表层...');
       try {
-        const analysis = await analyzeDream(userInfo, MOCK_ASTRO, dreamText);
+        const analysis = await analyzeDream(userInfo, dreamText);
         setResult(analysis);
         setLoadingMsg('星轨交错，正在编织梦境映像...');
         const imageUrl = await generateDreamImage(analysis.image_prompt);
