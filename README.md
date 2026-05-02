@@ -37,11 +37,18 @@ Required variables:
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | `/api/interpret` | Calls Gemini for dream interpretation. |
+| `OPENAI_API_KEY` | `/api/generate-image` | Calls OpenAI Images for dream image generation. |
+| `OPENAI_IMAGE_BASE_URL` | `/api/generate-image` | OpenAI-compatible image API base URL. Defaults to `https://api.openai.com/v1`. |
+| `OPENAI_IMAGE_ENDPOINT_URL` | `/api/generate-image` | Optional full image endpoint for third-party APIs with nonstandard paths such as `/v1/draw/completions`. |
+| `IMAGE_PROVIDER` | `/api/generate-image` | Image provider selector. Defaults to `openai`; set to `pollinations` only for fallback/dev. |
+| `OPENAI_IMAGE_MODEL` | `/api/generate-image` | OpenAI image model. Defaults to `gpt-image-1.5`. |
+| `OPENAI_IMAGE_SIZE` | `/api/generate-image` | Generated image size. Defaults to `1024x1536`, matching the portrait dream card. |
+| `OPENAI_IMAGE_QUALITY` | `/api/generate-image` | Generated image quality. Defaults to `low` for faster, cheaper MVP calls. |
 | `SUPABASE_URL` | `/api/interpret`, `/api/history` | Supabase project URL. |
 | `SUPABASE_SERVICE_ROLE_KEY` | `/api/interpret`, `/api/history` | Server-side Supabase writes and reads. Never expose this in frontend code. |
 | `DATABASE_URL` | Drizzle config and `api/_lib/db` | Reserved for direct Postgres/Drizzle migrations or future database access. |
 
-`SUPABASE_SERVICE_ROLE_KEY` must stay server-side only. Do not prefix it with `VITE_`, do not import it into React code, and do not expose it to the browser.
+`OPENAI_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` must stay server-side only. Do not prefix them with `VITE_`, do not import them into React code, and do not expose them to the browser.
 
 ## Current MVP Flow
 
@@ -59,14 +66,29 @@ Image generation is now routed through the backend API instead of being hardcode
 
 Current provider:
 
-- `pollinations`
+- `openai`
 - Implemented in `api/generate-image.ts`
-- Returns a generated image URL, not stored image bytes
+- Calls OpenAI Images and returns a browser-loadable `imageUrl`
+- The default OpenAI response is base64 image data, wrapped as a `data:image/png;base64,...` URL
+- OpenAI-compatible third-party gateways can be used by setting `OPENAI_IMAGE_BASE_URL` and `OPENAI_IMAGE_MODEL`
+- Third-party image gateways with custom paths can set `OPENAI_IMAGE_ENDPOINT_URL`, for example `https://example.com/v1/draw/completions`
+- Streaming third-party image responses are supported when the final event includes `url`, `results[0].url`, or `data[0].b64_json`
 
-Planned provider direction:
+Fallback provider:
 
-- Replace Pollinations with OpenAI Images in a later change.
+- Set `IMAGE_PROVIDER=pollinations` to temporarily use the old Pollinations URL provider.
 - Keep the frontend calling `/api/generate-image` so provider changes stay backend-only.
+
+Example third-party image gateway configuration:
+
+```env
+OPENAI_API_KEY=sk-...
+IMAGE_PROVIDER=openai
+OPENAI_IMAGE_ENDPOINT_URL=https://grsaiapi.com/v1/draw/completions
+OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_IMAGE_SIZE=1024x1024
+OPENAI_IMAGE_QUALITY=low
+```
 
 ## API Contracts
 
@@ -130,8 +152,9 @@ Response:
 
 ```json
 {
-  "imageUrl": "https://image.pollinations.ai/...",
-  "provider": "pollinations"
+  "imageUrl": "data:image/png;base64,...",
+  "provider": "openai",
+  "model": "gpt-image-1.5"
 }
 ```
 
@@ -175,7 +198,7 @@ Request:
 - Run `npm install` after cloning.
 - Run `npm run build` before committing.
 - Keep `.env` local and untracked.
-- Keep service role keys server-side only.
+- Keep OpenAI and service role keys server-side only.
 - Missing local environment variables should not block `npm run build`, but real API calls will fail until keys are configured.
 - Current Vercel deployments are protected by Vercel Authentication. A public `401 Authentication Required` from `/api/health` means deployment protection is active, not necessarily that the app is down.
 
