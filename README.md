@@ -37,6 +37,11 @@ Required variables:
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `GEMINI_API_KEY` | `/api/interpret` | Calls Gemini for dream interpretation. |
+| `GEMINI_MODEL` | `/api/interpret` | Gemini model. Defaults to `gemini-2.5-flash`. |
+| `INTERPRET_PROVIDER` | `/api/interpret` | Interpretation provider. Defaults to `gemini`; set to `deepseek` to use DeepSeek. |
+| `DEEPSEEK_API_KEY` | `/api/interpret` | Calls DeepSeek for dream interpretation when `INTERPRET_PROVIDER=deepseek`. |
+| `DEEPSEEK_BASE_URL` | `/api/interpret` | DeepSeek-compatible chat completions base URL. Defaults to `https://api.deepseek.com`. |
+| `DEEPSEEK_MODEL` | `/api/interpret` | DeepSeek model. Defaults to `deepseek-chat`. |
 | `OPENAI_API_KEY` | `/api/generate-image` | Calls OpenAI Images for dream image generation. |
 | `OPENAI_IMAGE_BASE_URL` | `/api/generate-image` | OpenAI-compatible image API base URL. Defaults to `https://api.openai.com/v1`. |
 | `OPENAI_IMAGE_ENDPOINT_URL` | `/api/generate-image` | Optional full image endpoint for third-party APIs with nonstandard paths such as `/v1/draw/completions`. |
@@ -51,6 +56,14 @@ Required variables:
 | `DATABASE_URL` | Drizzle config and `api/_lib/db` | Reserved for direct Postgres/Drizzle migrations or future database access. |
 
 `OPENAI_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` must stay server-side only. Do not prefix them with `VITE_`, do not import them into React code, and do not expose them to the browser.
+
+If the Gemini project is denied model access in production, set:
+
+```env
+INTERPRET_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-chat
+```
 
 ## Current MVP Flow
 
