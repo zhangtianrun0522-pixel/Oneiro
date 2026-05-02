@@ -44,6 +44,8 @@ Required variables:
 | `OPENAI_IMAGE_MODEL` | `/api/generate-image` | OpenAI image model. Defaults to `gpt-image-1.5`. |
 | `OPENAI_IMAGE_SIZE` | `/api/generate-image` | Generated image size. Defaults to `1024x1536`, matching the portrait dream card. |
 | `OPENAI_IMAGE_QUALITY` | `/api/generate-image` | Generated image quality. Defaults to `low` for faster, cheaper MVP calls. |
+| `OPENAI_IMAGE_TIMEOUT_MS` | `/api/generate-image` | Server-side timeout before image fallback. Defaults to `90000`. |
+| `IMAGE_FALLBACK_PROVIDER` | `/api/generate-image` | Fallback provider when OpenAI-compatible image generation fails or times out. Defaults to `pollinations`. |
 | `SUPABASE_URL` | `/api/interpret`, `/api/history` | Supabase project URL. |
 | `SUPABASE_SERVICE_ROLE_KEY` | `/api/interpret`, `/api/history` | Server-side Supabase writes and reads. Never expose this in frontend code. |
 | `DATABASE_URL` | Drizzle config and `api/_lib/db` | Reserved for direct Postgres/Drizzle migrations or future database access. |
@@ -88,6 +90,8 @@ OPENAI_IMAGE_ENDPOINT_URL=https://grsaiapi.com/v1/draw/completions
 OPENAI_IMAGE_MODEL=gpt-image-2
 OPENAI_IMAGE_SIZE=1024x1024
 OPENAI_IMAGE_QUALITY=low
+OPENAI_IMAGE_TIMEOUT_MS=90000
+IMAGE_FALLBACK_PROVIDER=pollinations
 ```
 
 ## API Contracts

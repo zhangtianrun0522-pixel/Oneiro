@@ -52,8 +52,12 @@ function App() {
         const analysis = await analyzeDream(userInfo, dreamText);
         setResult(analysis);
         setLoadingMsg('星轨交错，正在编织梦境映像...');
-        const imageUrl = await generateDreamImage(analysis.image_prompt);
-        setResult(prev => prev ? { ...prev, imageUrl } : null);
+        try {
+          const imageUrl = await generateDreamImage(analysis.image_prompt);
+          setResult(prev => prev ? { ...prev, imageUrl } : null);
+        } catch (imageError) {
+          console.error('Image generation failed:', imageError);
+        }
         setTimeout(() => changeStage(AppStage.RESULT), 1000);
       } catch (error) {
         console.error(error);

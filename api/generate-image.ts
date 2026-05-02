@@ -6,6 +6,7 @@ const DEFAULT_OPENAI_IMAGE_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-1.5';
 const DEFAULT_OPENAI_IMAGE_SIZE = '1024x1536';
 const DEFAULT_OPENAI_IMAGE_QUALITY = 'low';
+const DEFAULT_OPENAI_IMAGE_TIMEOUT_MS = 90000;
 
 type GenerateImageResult = {
   imageUrl: string;
@@ -37,6 +38,13 @@ function buildPollinationsUrl(prompt: string, style: string): string {
   const encodedPrompt = encodeURIComponent(fullPrompt);
   const seed = Math.floor(Math.random() * 1000000);
   return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=600&height=800&seed=${seed}&nologo=true`;
+}
+
+function buildPollinationsResult(prompt: string, style: string): GenerateImageResult {
+  return {
+    imageUrl: buildPollinationsUrl(prompt, style),
+    provider: 'pollinations',
+  };
 }
 
 function buildOpenAIImagesUrl(): string {
@@ -126,21 +134,30 @@ async function generateOpenAIImage(prompt: string, style: string): Promise<Gener
   const model = process.env.OPENAI_IMAGE_MODEL || DEFAULT_OPENAI_IMAGE_MODEL;
   const size = process.env.OPENAI_IMAGE_SIZE || DEFAULT_OPENAI_IMAGE_SIZE;
   const quality = process.env.OPENAI_IMAGE_QUALITY || DEFAULT_OPENAI_IMAGE_QUALITY;
+  const timeoutMs = Number(process.env.OPENAI_IMAGE_TIMEOUT_MS || DEFAULT_OPENAI_IMAGE_TIMEOUT_MS);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const response = await fetch(buildOpenAIImagesUrl(), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      prompt: buildStyledPrompt(prompt, style),
-      size,
-      quality,
-      n: 1,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(buildOpenAIImagesUrl(), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        prompt: buildStyledPrompt(prompt, style),
+        size,
+        quality,
+        n: 1,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -168,17 +185,26 @@ async function generateImage(prompt: string, style: string): Promise<GenerateIma
   const provider = (process.env.IMAGE_PROVIDER || 'openai').trim().toLowerCase();
 
   if (provider === 'pollinations') {
-    return {
-      imageUrl: buildPollinationsUrl(prompt, style),
-      provider: 'pollinations',
-    };
+    return buildPollinationsResult(prompt, style);
   }
 
   if (provider !== 'openai') {
     throw new Error(`Unsupported IMAGE_PROVIDER: ${provider}`);
   }
 
-  return generateOpenAIImage(prompt, style);
+  try {
+    return await generateOpenAIImage(prompt, style);
+  } catch (error) {
+    if ((process.env.IMAGE_FALLBACK_PROVIDER || 'pollinations') === 'pollinations') {
+      console.error('OpenAI image generation failed, falling back to Pollinations:', error);
+      return {
+        ...buildPollinationsResult(prompt, style),
+        provider: 'pollinations-fallback',
+      };
+    }
+
+    throw error;
+  }
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<any> {
