@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { SYSTEM_PROMPT } from '../prompts/dream';
+import { SYSTEM_PROMPT } from '../prompts/dream.js';
 
 function buildUserContext(userInfo: any, astroInfo: any, dreamText: string): string {
   const parts: string[] = [];

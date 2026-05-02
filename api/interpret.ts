@@ -1,7 +1,7 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { createClient } from '@supabase/supabase-js';
-import { interpretDream } from './_lib/services/geminiService';
-import { getAstroInfo } from './_lib/astro';
+import { interpretDream } from './_lib/services/geminiService.js';
+import { getAstroInfo } from './_lib/astro.js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
