@@ -18,9 +18,16 @@ export async function analyzeDream(
 }
 
 export async function generateDreamImage(prompt: string): Promise<string> {
-  const styleSuffix = "artistic woodcut print, elegant minimalist ink outlines, mystical symbolism, surreal tarot aesthetic, sophisticated monochromatic, fine art paper texture";
-  const fullPrompt = `${prompt}, ${styleSuffix}`;
-  const encodedPrompt = encodeURIComponent(fullPrompt);
-  const seed = Math.floor(Math.random() * 1000000);
-  return `https://image.pollinations.ai/prompt/${encodedPrompt}?width=600&height=800&seed=${seed}&nologo=true`;
+  const response = await fetch("/api/generate-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Image generation failed: ${response.statusText}`);
+  }
+
+  const data = await response.json() as { imageUrl: string };
+  return data.imageUrl;
 }
