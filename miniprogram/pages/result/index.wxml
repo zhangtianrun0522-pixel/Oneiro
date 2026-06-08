@@ -1,0 +1,46 @@
+<view class="result-screen">
+  <view class="dream-card">
+    <view class="card-header">
+      <text>ONEIRO</text>
+      <text>NO. IX</text>
+    </view>
+
+    <view class="dream-art">
+      <view class="moon"></view>
+      <view class="shelf shelf-a"></view>
+      <view class="shelf shelf-b"></view>
+      <view class="water"></view>
+      <view class="key"></view>
+      <view class="bird"></view>
+    </view>
+
+    <text class="card-title">{{dream.result.title}}</text>
+    <text class="weather">{{dream.result.emotional_weather}}</text>
+
+    <view class="symbols">
+      <text wx:for="{{dream.result.symbols}}" wx:key="*this" class="symbol">{{item}}</text>
+    </view>
+
+    <view class="ritual">
+      <text class="ritual-label">RITUAL</text>
+      <text class="ritual-text">{{dream.result.one_small_act}}</text>
+    </view>
+
+    <view class="card-footer">
+      <text>Oneiro · {{displayDate}}</text>
+    </view>
+  </view>
+
+  <view class="reading">
+    <text class="section-title">完整解读</text>
+    <text class="reading-copy">{{dream.result.image}}</text>
+    <text class="reading-copy">{{dream.result.underneath}}</text>
+    <text class="reading-copy">{{dream.result.mirror}}</text>
+    <view class="question">
+      <text>{{dream.result.integration_question}}</text>
+    </view>
+  </view>
+
+  <button class="primary-button" bindtap="saveCard">保存梦卡</button>
+  <button class="ghost-button share-button" open-type="share">分享给朋友</button>
+</view>

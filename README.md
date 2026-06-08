@@ -2,6 +2,32 @@
 
 Oneiro is a dream oracle MVP. The app collects a lightweight user profile, accepts a dream description, asks Gemini for a structured interpretation, generates a dream image through the backend image API, and renders an exportable dream card.
 
+## Public Sharing MVP
+
+The current product direction is a public-sharing dream card flow:
+
+- New users only need a nickname and birth date; birth time and place are optional.
+- The dream input includes a sample dream so users can understand the expected level of detail.
+- Dream interpretation appears as soon as the text result is ready; image generation continues in the background and fills the card when complete.
+- The result card prioritizes a 9:16 social sharing cover with title, image, symbols, emotional weather, ritual, date, and Oneiro branding.
+- The full interpretation lives on the back of the card so the first screen stays shareable.
+- The browser stores the last profile and latest 5 dream cards in `localStorage`; no login or cloud history is required for this sharing MVP.
+
+## WeChat Mini Program Direction
+
+Oneiro is now being repositioned toward a WeChat Mini Program-first launch. The Vite web app remains the prototype and local acceptance harness, while `miniprogram/` contains the first native Mini Program spike.
+
+Current Mini Program scope:
+
+- Static acceptance dream flow.
+- Profile entry.
+- Dream input.
+- Result dream card.
+- Recent local archive.
+- Share/save placeholders.
+
+Open `miniprogram/` in WeChat Developer Tools to preview the Mini Program shape. CloudBase, login, content safety, Canvas export, and real AI calls are planned next.
+
 ## Local Development
 
 Install dependencies:
@@ -21,6 +47,26 @@ Build for production:
 ```bash
 npm run build
 ```
+
+Run the local dream result contract checks:
+
+```bash
+npm run check:dream
+```
+
+Run TypeScript checks across the frontend, API handlers, and scripts:
+
+```bash
+npm run typecheck
+```
+
+Open the local acceptance path to exercise the full frontend flow without provider calls:
+
+```text
+http://127.0.0.1:5173/?acceptance=1
+```
+
+For mobile visual QA, use a 402 x 874 viewport to approximate an iPhone Pro CSS viewport.
 
 The static frontend build should pass even without a local `.env` file. Real API calls require the environment variables below.
 
@@ -70,10 +116,11 @@ DEEPSEEK_MODEL=deepseek-chat
 1. The user enters profile fields in the React frontend.
 2. The user describes a dream.
 3. The frontend calls `POST /api/interpret` with `dreamText` and `userInfo`.
-4. The backend calls Gemini and returns a `DreamResult`.
-5. The frontend calls `POST /api/generate-image` with `DreamResult.image_prompt`.
-6. The backend returns an image URL.
-7. The frontend renders the dream card and supports PNG export.
+4. The backend calls the configured interpretation provider and returns a `DreamResult`.
+5. The frontend renders the text result immediately and stores it locally.
+6. The frontend calls `POST /api/generate-image` with `DreamResult.image_prompt` in the background.
+7. The backend returns an image URL, or falls back when configured.
+8. The frontend updates the dream card image and supports 9:16 PNG export.
 
 ## Image Generation
 
@@ -133,9 +180,12 @@ Response:
 {
   "title": "梦标题",
   "image": "梦境画面描述",
+  "emotional_weather": "梦的情绪天气",
+  "symbols": ["核心象征"],
   "underneath": "潜意识解读",
   "echo": "占星共鸣",
   "mirror": "现实映射",
+  "integration_question": "醒后整合问题",
   "one_small_act": "今日小行动",
   "image_prompt": "English visual prompt",
   "omens": {
@@ -211,13 +261,25 @@ Request:
 
 ## Development Checklist
 
-- Work on `feature/image-api-provider` for the current image API/provider cleanup.
+- Work on `codex-optimize-dream-interpretation` for the current dream interpretation upgrade.
 - Run `npm install` after cloning.
+- Run `npm run check:dream` after changing the dream result schema or normalization.
+- Run `npm run typecheck` after touching frontend, API, or scripts.
+- Use `/?acceptance=1` to verify the card flow without spending provider calls.
+- Verify the public-sharing path on a 402 x 874 mobile viewport: profile, sample dream, immediate text result, async image fill, card flip, PNG export, local recent dream list.
+- Test image failure by temporarily using a bad image key or endpoint; the text dream card should still render and export.
 - Run `npm run build` before committing.
 - Keep `.env` local and untracked.
 - Keep OpenAI and service role keys server-side only.
 - Missing local environment variables should not block `npm run build`, but real API calls will fail until keys are configured.
 - Current Vercel deployments are protected by Vercel Authentication. A public `401 Authentication Required` from `/api/health` means deployment protection is active, not necessarily that the app is down.
+
+## Privacy Notes
+
+- The public-sharing MVP stores recent dreams and profile data only in the current browser's `localStorage`.
+- No account, login, or cross-device sync is used in the current frontend history experience.
+- API calls still send the submitted dream and profile fields to the configured interpretation provider.
+- Do not store real secrets in frontend code or commit local `.env` files.
 
 ## Notes
 

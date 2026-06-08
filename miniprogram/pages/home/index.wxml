@@ -1,0 +1,36 @@
+<view class="screen">
+  <view class="brand">
+    <text>ONEIRO</text>
+    <text>MINI</text>
+  </view>
+
+  <view class="hero">
+    <text class="eyebrow">Morning Dream Ritual</text>
+    <text class="title">醒来后，把梦变成一张可以收藏的卡</text>
+    <view class="copy">
+      <text>先记录一个画面、一句话或一个人。Oneiro 会为你生成梦境解读、象征标签和今日小仪式。</text>
+    </view>
+  </view>
+
+  <view class="profile">
+    <text class="field-label">称呼 / REQUIRED</text>
+    <input class="field" value="{{profile.nickname}}" data-key="nickname" bindinput="onProfileInput" placeholder="NAME" placeholder-class="muted" />
+
+    <text class="field-label">出生日期 / REQUIRED</text>
+    <input class="field" value="{{profile.birthDate}}" data-key="birthDate" bindinput="onProfileInput" placeholder="YYYY-MM-DD" placeholder-class="muted" />
+
+    <view class="profile-row">
+      <view class="profile-col">
+        <text class="field-label">时间 / OPTIONAL</text>
+        <input class="field" value="{{profile.birthTime}}" data-key="birthTime" bindinput="onProfileInput" placeholder="08:30" placeholder-class="muted" />
+      </view>
+      <view class="profile-col">
+        <text class="field-label">地点 / OPTIONAL</text>
+        <input class="field" value="{{profile.birthPlace}}" data-key="birthPlace" bindinput="onProfileInput" placeholder="Shanghai" placeholder-class="muted" />
+      </view>
+    </view>
+  </view>
+
+  <button class="primary-button" bindtap="startDream">记录一个梦</button>
+  <button class="ghost-button archive-button" bindtap="openArchive">最近梦卡</button>
+</view>

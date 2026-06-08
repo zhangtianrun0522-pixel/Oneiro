@@ -1,10 +1,16 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-);
+function getSupabaseClient() {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return null;
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey);
+}
 
 export default async (req: IncomingMessage, res: ServerResponse) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,6 +21,14 @@ export default async (req: IncomingMessage, res: ServerResponse) => {
 
   if (req.method === 'GET') {
     try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify([]));
+        return;
+      }
+
       const { data, error } = await supabase
         .from('dreams')
         .select('*')
@@ -35,6 +49,14 @@ export default async (req: IncomingMessage, res: ServerResponse) => {
 
   if (req.method === 'POST') {
     try {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        res.statusCode = 503;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Supabase is not configured' }));
+        return;
+      }
+
       let body: any;
       if ((req as any).body !== undefined) {
         body = (req as any).body;

@@ -1,0 +1,25 @@
+<view class="screen">
+  <view class="brand">
+    <text>ONEIRO</text>
+    <text>ARCHIVE</text>
+  </view>
+
+  <text class="eyebrow">Recent Dreams</text>
+  <text class="title">你的最近梦卡</text>
+
+  <view wx:if="{{!hasArchive}}" class="empty">
+    <text>还没有梦卡。先记录一个梦，让档案开始生长。</text>
+  </view>
+
+  <view wx:else class="archive-list">
+    <button wx:for="{{archive}}" wx:key="id" class="archive-item" data-index="{{index}}" bindtap="openDream">
+      <view>
+        <text class="archive-title">{{item.result.title}}</text>
+        <text class="archive-copy">{{item.dreamText}}</text>
+      </view>
+      <text class="archive-date">{{item.dateLabel}}</text>
+    </button>
+  </view>
+
+  <button class="primary-button" bindtap="newDream">记录新梦</button>
+</view>

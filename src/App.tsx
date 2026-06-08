@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { UserInfo, DreamResult, AppStage } from './types';
+import { UserInfo, DreamResult, AppStage, DreamArchiveItem } from './types';
 import { InputProfile } from './components/InputProfile';
 import { DreamCard } from './components/DreamCard';
 import { DreamSoundscape } from './components/DreamSoundscape';
 import { analyzeDream, generateDreamImage } from './services/dreamService';
+import { getDreamArchive, getLastUser, saveDreamArchiveItem, saveLastUser } from './services/localArchive';
+import { ACCEPTANCE_DREAM_RESULT, ACCEPTANCE_DREAM_TEXT, ACCEPTANCE_USER } from './fixtures/acceptanceDream';
 
 const LOADING_SOUND_CONFIG: DreamResult['sound_config'] = {
   theme: 'liquid',
@@ -12,13 +14,24 @@ const LOADING_SOUND_CONFIG: DreamResult['sound_config'] = {
   texture_intensity: 0.3
 };
 
+const isAcceptanceMode = new URLSearchParams(window.location.search).get('acceptance') === '1';
+const SAMPLE_DREAM_TEXT = '我走进一座被月光照亮的图书馆，书架之间慢慢涨起清水。一把银色钥匙漂在水面上，我伸手去拿时，远处有一只白鸟撞向窗户，但没有声音。';
+
+type ImageStatus = 'idle' | 'generating' | 'ready' | 'failed';
+
 function App() {
+  const savedUser = isAcceptanceMode ? ACCEPTANCE_USER : getLastUser();
   const [stage, setStage] = useState<AppStage>(AppStage.INPUT_PROFILE);
   const [transitioning, setTransitioning] = useState(false);
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
-  const [dreamText, setDreamText] = useState('');
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(savedUser);
+  const [dreamText, setDreamText] = useState(isAcceptanceMode ? ACCEPTANCE_DREAM_TEXT : '');
   const [result, setResult] = useState<DreamResult | null>(null);
   const [loadingMsg, setLoadingMsg] = useState('');
+  const [loadingStep, setLoadingStep] = useState<'analysis' | 'image'>('analysis');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [imageStatus, setImageStatus] = useState<ImageStatus>('idle');
+  const [imageMessage, setImageMessage] = useState('');
+  const [archiveItems, setArchiveItems] = useState<DreamArchiveItem[]>(() => isAcceptanceMode ? [] : getDreamArchive());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [displayDate, setDisplayDate] = useState('');
 
@@ -38,45 +51,111 @@ function App() {
 
   const handleProfileComplete = (info: UserInfo) => {
     setUserInfo(info);
+    if (!isAcceptanceMode) saveLastUser(info);
     changeStage(AppStage.INPUT_DREAM);
   };
 
+  const refreshArchive = () => {
+    if (!isAcceptanceMode) setArchiveItems(getDreamArchive());
+  };
+
+  const openArchiveItem = (item: DreamArchiveItem) => {
+    setUserInfo(item.userInfo);
+    setDreamText(item.dreamText);
+    setResult({ ...item.result, imageUrl: item.imageUrl || item.result.imageUrl });
+    setImageStatus(item.imageUrl || item.result.imageUrl ? 'ready' : 'failed');
+    setImageMessage('');
+    setErrorMessage('');
+    changeStage(AppStage.RESULT);
+  };
+
+  const saveResultToArchive = (
+    analysis: DreamResult,
+    archiveUserInfo: UserInfo,
+    archiveDreamText: string,
+    imageUrl?: string,
+    id?: string
+  ) => {
+    if (isAcceptanceMode) return undefined;
+    const item = saveDreamArchiveItem({
+      dreamText: archiveDreamText,
+      id,
+      imageUrl,
+      result: { ...analysis, imageUrl: imageUrl || analysis.imageUrl },
+      userInfo: archiveUserInfo,
+    });
+    refreshArchive();
+    return item;
+  };
+
   const handleInterpret = async () => {
-    if (!userInfo || !dreamText) return;
+    const trimmedDreamText = dreamText.trim();
+    if (!userInfo || !trimmedDreamText) return;
+    setErrorMessage('');
+    setImageMessage('');
+    setImageStatus('idle');
     setTransitioning(true);
     setTimeout(async () => {
       setStage(AppStage.INTERPRETING);
       setTransitioning(false);
-      setLoadingMsg('正在剥离意识的表层...');
+      setLoadingStep('analysis');
+      setLoadingMsg('正在解读梦境的暗流...');
       try {
-        const analysis = await analyzeDream(userInfo, dreamText);
-        setResult(analysis);
-        setLoadingMsg('星轨交错，正在编织梦境映像...');
-        try {
-          const imageUrl = await generateDreamImage(analysis.image_prompt);
-          setResult(prev => prev ? { ...prev, imageUrl } : null);
-        } catch (imageError) {
-          console.error('Image generation failed:', imageError);
+        if (isAcceptanceMode) {
+          await new Promise(resolve => setTimeout(resolve, 400));
+          setResult(ACCEPTANCE_DREAM_RESULT);
+          setImageStatus('ready');
+          setTimeout(() => changeStage(AppStage.RESULT), 500);
+          return;
         }
-        setTimeout(() => changeStage(AppStage.RESULT), 1000);
+
+        const analysis = await analyzeDream(userInfo, trimmedDreamText);
+        setResult(analysis);
+        setImageStatus('generating');
+        setImageMessage('梦卡画面正在显影，你可以先阅读解读。');
+        const archiveItem = saveResultToArchive(analysis, userInfo, trimmedDreamText);
+        changeStage(AppStage.RESULT);
+
+        generateDreamImage(analysis.image_prompt)
+          .then((imageUrl) => {
+            setImageStatus('ready');
+            setImageMessage('');
+            setResult(prev => prev ? { ...prev, imageUrl } : null);
+            saveResultToArchive(analysis, userInfo, trimmedDreamText, imageUrl, archiveItem?.id);
+          })
+          .catch((imageError) => {
+            console.error('Image generation failed:', imageError);
+            setImageStatus('failed');
+            setImageMessage('图像生成暂时没有完成，这张梦卡仍然可以保存为文字版。');
+          });
       } catch (error) {
         console.error(error);
-        alert('星讯中断，请稍后再次尝试连接。');
-        changeStage(AppStage.INPUT_DREAM);
+        setLoadingMsg('星讯中断，梦境回声尚未抵达...');
+        const details = error instanceof Error ? error.message : '请检查本地 API 配置后重试。';
+        setErrorMessage(`本地 API 调用未完成：${details}`);
+        setTimeout(() => changeStage(AppStage.INPUT_DREAM), 1200);
       }
     }, 800);
   };
 
   const goHome = () => {
-    setUserInfo(null);
-    setDreamText('');
+    const latestUser = isAcceptanceMode ? ACCEPTANCE_USER : getLastUser();
+    setUserInfo(latestUser);
+    setDreamText(isAcceptanceMode ? ACCEPTANCE_DREAM_TEXT : '');
     setResult(null);
+    setErrorMessage('');
+    setImageStatus('idle');
+    setImageMessage('');
+    refreshArchive();
     changeStage(AppStage.INPUT_PROFILE);
   };
 
   const goInput = () => {
     setResult(null);
     setDreamText('');
+    setErrorMessage('');
+    setImageStatus('idle');
+    setImageMessage('');
     changeStage(AppStage.INPUT_DREAM);
   };
 
@@ -110,29 +189,53 @@ function App() {
 
       <main className={`flex-1 w-full flex flex-col items-center justify-start overflow-y-auto custom-scrollbar ${stage === AppStage.RESULT ? 'pt-16 pb-6' : 'pt-24 pb-12'} px-6 z-10 relative`}>
         <div className={`w-full flex flex-col items-center justify-start min-h-full transition-all ${transitioning ? 'stage-transition-exit' : 'stage-transition-active'}`}>
-          {stage === AppStage.INPUT_PROFILE && <InputProfile onComplete={handleProfileComplete} />}
+          {stage === AppStage.INPUT_PROFILE && (
+            <InputProfile
+              archiveItems={archiveItems}
+              onComplete={handleProfileComplete}
+              onOpenArchive={openArchiveItem}
+              initialInfo={userInfo || undefined}
+            />
+          )}
           {stage === AppStage.INPUT_DREAM && (
-            <div className="max-w-xl mx-auto w-full flex flex-col items-center space-y-16">
-              <div className="text-center space-y-2">
-                <h2 className="text-xl sm:text-2xl font-mystic text-white/40 tracking-[0.4em]">描述你昨夜的所见</h2>
+            <div className="max-w-xl mx-auto w-full flex flex-col items-center space-y-10">
+              <div className="text-center space-y-3">
+                <h2 className="text-xl sm:text-2xl font-mystic text-white/45 tracking-[0.32em]">描述你昨夜的所见</h2>
+                <p className="mx-auto max-w-[19rem] text-[11px] leading-6 tracking-[0.18em] text-white/18">
+                  写下一个画面、一个人、一个声音也足够。梦会自己补全剩下的暗线。
+                </p>
                 <p className="text-[5px] tracking-[1em] text-white/5 uppercase font-black">Archive the Unconscious</p>
               </div>
               <div className="relative w-full group">
+                {errorMessage && (
+                  <div className="mb-6 rounded-3xl border border-amber-200/10 bg-amber-100/[0.03] px-5 py-4 text-center text-xs leading-6 tracking-[0.18em] text-amber-100/60 sm:text-sm">
+                    {errorMessage}
+                  </div>
+                )}
                 <textarea
-                  className="relative z-10 w-full h-60 bg-transparent border-none outline-none resize-none text-white/60 placeholder:text-white/[0.02] leading-relaxed text-sm sm:text-lg text-center font-light tracking-[0.2em] p-4 focus:text-white transition-all duration-1000"
-                  placeholder="在迷雾中，我看见了..."
+                  className="relative z-10 w-full h-56 bg-transparent border border-white/[0.03] rounded-[28px] outline-none resize-none text-white/65 placeholder:text-white/[0.08] leading-relaxed text-sm sm:text-lg text-center font-light tracking-[0.16em] p-6 focus:text-white focus:border-white/10 transition-all duration-1000"
+                  placeholder="例如：我在月光下的图书馆里，捡到一把银色钥匙..."
                   autoFocus
                   value={dreamText}
                   onChange={(e) => setDreamText(e.target.value)}
                 />
-                <div className="flex flex-col items-center gap-12 mt-12 relative z-20">
+                <div className="mt-5 flex flex-col items-center gap-5 relative z-20">
+                  <button
+                    type="button"
+                    onClick={() => setDreamText(SAMPLE_DREAM_TEXT)}
+                    className="text-[8px] font-black uppercase tracking-[0.55em] text-white/15 transition-colors duration-700 hover:text-white/45"
+                  >
+                    试一个示例梦
+                  </button>
                   <button
                     onClick={handleInterpret}
                     disabled={!dreamText.trim()}
-                    className="group relative px-16 py-4 disabled:opacity-0 transition-all duration-1000"
+                    className="group relative px-16 py-4 transition-all duration-1000 disabled:opacity-35"
                   >
                     <div className="absolute inset-0 border border-white/[0.04] rounded-full group-hover:border-white/10 transition-all duration-1000"></div>
-                    <span className="relative z-10 text-white/20 font-bold tracking-[1.2em] text-[7px] uppercase group-hover:text-white/60 transition-colors">唤醒契约</span>
+                    <span className="relative z-10 text-white/30 font-bold tracking-[0.8em] text-[8px] uppercase group-hover:text-white/65 transition-colors">
+                      {dreamText.trim() ? '生成梦卡' : '先写下一点梦'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -144,10 +247,24 @@ function App() {
                 <div className="absolute inset-0 border-[0.5px] border-white/[0.05] rounded-full animate-[ping_3s_infinite]"></div>
                 <div className="relative w-[1px] h-[1px] bg-white/40 shadow-[0_0_40px_rgba(255,255,255,0.2)] animate-pulse"></div>
               </div>
-              <p className="text-white/30 text-lg font-mystic tracking-[0.6em] animate-pulse">{loadingMsg}</p>
+              <div className="space-y-5 text-center">
+                <div className="flex items-center justify-center gap-3 text-[7px] font-black uppercase tracking-[0.5em] text-white/12">
+                  <span className={loadingStep === 'analysis' ? 'text-white/45' : ''}>解读梦境</span>
+                  <span>·</span>
+                  <span className={loadingStep === 'image' ? 'text-white/45' : ''}>生成梦卡</span>
+                </div>
+                <p className="text-white/30 text-lg font-mystic tracking-[0.45em] animate-pulse">{loadingMsg}</p>
+              </div>
             </div>
           )}
-          {stage === AppStage.RESULT && result && <DreamCard result={result} onReset={goInput} />}
+          {stage === AppStage.RESULT && result && (
+            <DreamCard
+              imageMessage={imageMessage}
+              imageStatus={imageStatus}
+              result={result}
+              onReset={goInput}
+            />
+          )}
         </div>
       </main>
 

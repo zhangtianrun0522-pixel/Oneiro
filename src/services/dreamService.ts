@@ -1,5 +1,14 @@
 import type { UserInfo, AstroInfo, DreamResult } from "../types";
 
+async function getErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const data = await response.json() as { error?: string };
+    return data.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function analyzeDream(
   userInfo: UserInfo,
   dreamText: string
@@ -11,7 +20,7 @@ export async function analyzeDream(
   });
 
   if (!response.ok) {
-    throw new Error(`Interpretation failed: ${response.statusText}`);
+    throw new Error(await getErrorMessage(response, `Interpretation failed: ${response.statusText}`));
   }
 
   return response.json() as Promise<DreamResult>;
@@ -25,7 +34,7 @@ export async function generateDreamImage(prompt: string): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error(`Image generation failed: ${response.statusText}`);
+    throw new Error(await getErrorMessage(response, `Image generation failed: ${response.statusText}`));
   }
 
   const data = await response.json() as { imageUrl: string };

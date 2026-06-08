@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { SYSTEM_PROMPT } from '../prompts/dream.js';
+import { normalizeDreamResult } from '../dreamResult.js';
 
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat';
@@ -24,7 +25,7 @@ function parseResponse(text: string): any {
     .replace(/^```\n?/, '')
     .replace(/```$/, '')
     .trim();
-  return JSON.parse(cleaned);
+  return normalizeDreamResult(JSON.parse(cleaned));
 }
 
 async function interpretWithGemini(userInfo: any, astroInfo: any, dreamText: string): Promise<any> {

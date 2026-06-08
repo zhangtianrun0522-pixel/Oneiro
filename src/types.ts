@@ -14,9 +14,12 @@ export interface AstroInfo {
 export interface DreamResult {
   title: string;
   image: string;
+  emotional_weather: string;
+  symbols: string[];
   underneath: string;
   echo: string;
   mirror: string;
+  integration_question: string;
   one_small_act: string;
   image_prompt: string;
   omens: {
@@ -31,6 +34,15 @@ export interface DreamResult {
     pulse_rate: number;
     texture_intensity: number;
   };
+  imageUrl?: string;
+}
+
+export interface DreamArchiveItem {
+  id: string;
+  createdAt: string;
+  dreamText: string;
+  userInfo: UserInfo;
+  result: DreamResult;
   imageUrl?: string;
 }
 

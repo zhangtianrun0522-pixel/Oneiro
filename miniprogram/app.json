@@ -1,0 +1,16 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/new-dream/index",
+    "pages/result/index",
+    "pages/archive/index"
+  ],
+  "window": {
+    "backgroundColor": "#050609",
+    "backgroundTextStyle": "dark",
+    "navigationBarBackgroundColor": "#050609",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "ONEIRO"
+  },
+  "style": "v2"
+}

@@ -1,0 +1,25 @@
+<view class="screen">
+  <view class="brand">
+    <text>ONEIRO</text>
+    <text>DREAM</text>
+  </view>
+
+  <text class="eyebrow">Archive The Unconscious</text>
+  <text class="title">描述你昨夜的所见</text>
+  <view class="copy">
+    <text>写下一个画面、一个声音或一种情绪也足够。第一版小程序先用稳定样例跑通梦卡体验。</text>
+  </view>
+
+  <textarea
+    class="dream-input"
+    value="{{dreamText}}"
+    maxlength="1200"
+    auto-height="{{false}}"
+    bindinput="onDreamInput"
+    placeholder="例如：我在月光下的图书馆里，捡到一把银色钥匙..."
+    placeholder-class="muted"
+  />
+
+  <button class="ghost-button" bindtap="useSample">试一个示例梦</button>
+  <button class="primary-button" bindtap="generateDreamCard">生成梦卡</button>
+</view>

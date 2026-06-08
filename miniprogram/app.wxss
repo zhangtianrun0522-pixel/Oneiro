@@ -1,0 +1,122 @@
+page {
+  min-height: 100%;
+  background: #050609;
+  color: rgba(255, 255, 255, 0.86);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+}
+
+view,
+text,
+button,
+textarea,
+input {
+  box-sizing: border-box;
+}
+
+button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  line-height: 1;
+}
+
+button::after {
+  border: 0;
+}
+
+.screen {
+  min-height: 100vh;
+  padding: 64rpx 44rpx 56rpx;
+  background:
+    radial-gradient(circle at 50% -8%, rgba(159, 183, 201, 0.18), transparent 36%),
+    linear-gradient(180deg, #050609 0%, #0d1118 52%, #050609 100%);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 72rpx;
+  color: rgba(255, 255, 255, 0.28);
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 14rpx;
+}
+
+.eyebrow {
+  color: rgba(255, 255, 255, 0.14);
+  font-size: 18rpx;
+  font-weight: 800;
+  letter-spacing: 10rpx;
+  text-transform: uppercase;
+}
+
+.title {
+  display: block;
+  margin-top: 24rpx;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 44rpx;
+  font-weight: 500;
+  letter-spacing: 8rpx;
+  line-height: 1.35;
+}
+
+.copy {
+  margin-top: 24rpx;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 24rpx;
+  letter-spacing: 4rpx;
+  line-height: 1.9;
+}
+
+.primary-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 96rpx;
+  margin-top: 40rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 22rpx;
+  font-weight: 800;
+  letter-spacing: 10rpx;
+}
+
+.ghost-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 76rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  border-radius: 999rpx;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 6rpx;
+}
+
+.field-label {
+  display: block;
+  margin: 34rpx 0 16rpx;
+  color: rgba(255, 255, 255, 0.18);
+  font-size: 18rpx;
+  font-weight: 800;
+  letter-spacing: 8rpx;
+}
+
+.field {
+  width: 100%;
+  min-height: 86rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 28rpx;
+  letter-spacing: 4rpx;
+}
+
+.muted {
+  color: rgba(255, 255, 255, 0.22);
+}

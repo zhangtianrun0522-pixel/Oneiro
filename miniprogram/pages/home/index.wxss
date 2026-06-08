@@ -1,0 +1,21 @@
+.hero {
+  margin-bottom: 46rpx;
+}
+
+.profile {
+  margin-top: 40rpx;
+}
+
+.profile-row {
+  display: flex;
+  gap: 36rpx;
+}
+
+.profile-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.archive-button {
+  margin-top: 22rpx;
+}
