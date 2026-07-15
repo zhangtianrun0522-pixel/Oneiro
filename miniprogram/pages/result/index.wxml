@@ -1,46 +1,97 @@
 <view class="result-screen">
-  <view class="dream-card">
-    <view class="card-header">
-      <text>ONEIRO</text>
-      <text>NO. IX</text>
+  <block wx:if="{{!interpretationUnavailable}}">
+    <view class="dream-card">
+      <view class="card-header">
+        <text>ONEIRO</text>
+        <text>{{dream.result.card_no}}</text>
+      </view>
+
+      <view class="dream-art theme-{{dream.result.card_theme}} {{dream.result.imageUrl ? 'has-ai-image' : ''}}">
+        <image
+          wx:if="{{aiImageLocalPath || dream.result.imageUrl}}"
+          class="dream-ai-image"
+          src="{{aiImageLocalPath || dream.result.imageUrl}}"
+          mode="aspectFill"
+        ></image>
+        <view class="moon"></view>
+        <view class="shelf shelf-a"></view>
+        <view class="shelf shelf-b"></view>
+        <view class="water"></view>
+        <view class="key"></view>
+        <view class="bird"></view>
+        <view wx:if="{{imageStatus === 'generating'}}" class="image-status">画面生成中 · 可先往下读解读</view>
+        <view wx:if="{{imageStatus === 'failed'}}" class="image-status">使用梦象卡面 · {{imageErrorMessage}}</view>
+        <button wx:if="{{imageStatus === 'failed'}}" class="image-retry" bindtap="retryDreamImage">重新生成画面</button>
+      </view>
+
+      <text class="card-title">{{dream.result.title}}</text>
+      <text class="weather">{{dream.result.emotional_weather}}</text>
+      <view class="symbols">
+        <text wx:for="{{dream.result.symbols}}" wx:key="*this" class="symbol">{{item}}</text>
+      </view>
+      <view class="card-footer">
+        <text>Oneiro · {{displayDate}}</text>
+      </view>
+    </view>
+  </block>
+
+  <view class="reading grounded-reading">
+    <text class="section-title">这个梦的观察</text>
+
+    <view class="original-dream">
+      <text class="reading-label">你记下的原梦</text>
+      <text class="original-copy">{{dream.dreamText}}</text>
     </view>
 
-    <view class="dream-art">
-      <view class="moon"></view>
-      <view class="shelf shelf-a"></view>
-      <view class="shelf shelf-b"></view>
-      <view class="water"></view>
-      <view class="key"></view>
-      <view class="bird"></view>
+    <view class="reading-block">
+      <text class="reading-label">梦里发生了什么</text>
+      <text class="reading-copy">{{dream.result.dream_translation}}</text>
     </view>
 
-    <text class="card-title">{{dream.result.title}}</text>
-    <text class="weather">{{dream.result.emotional_weather}}</text>
-
-    <view class="symbols">
-      <text wx:for="{{dream.result.symbols}}" wx:key="*this" class="symbol">{{item}}</text>
+    <view class="reading-block">
+      <text class="reading-label">这个梦的张力</text>
+      <text class="reading-copy reading-hook">{{dream.result.reading_hook}}</text>
     </view>
 
-    <view class="ritual">
-      <text class="ritual-label">RITUAL</text>
-      <text class="ritual-text">{{dream.result.one_small_act}}</text>
+    <view wx:if="{{dream.result.metaphysical_resonance}}" class="reading-block metaphysical-reading">
+      <text class="reading-label">命理镜头</text>
+      <text class="reading-copy">{{dream.result.metaphysical_resonance}}</text>
+      <text class="reading-boundary">{{dream.result.metaphysical_basis}}</text>
     </view>
 
-    <view class="card-footer">
-      <text>Oneiro · {{displayDate}}</text>
+    <view class="reading-block">
+      <text class="reading-label">可能触及的现实</text>
+      <view class="connection-list">
+        <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{index + 1}}. {{item}}</text>
+      </view>
+      <text wx:if="{{interpretationUnavailable}}" class="reading-copy">本次未生成解读，原梦仍已保存。你可以保留记录，或直接删除。</text>
+      <text wx:if="{{!interpretationUnavailable}}" class="reading-boundary">这些只是可能的理解，也可能只是偶然的梦中组合。</text>
+    </view>
+
+    <view wx:if="{{!interpretationUnavailable}}" class="reading-block alternative-reading">
+      <text class="reading-label">另一种可能</text>
+      <text class="reading-copy">{{dream.result.alternative_reading}}</text>
+    </view>
+
+    <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry" bindtap="openDreamChat">
+      <view class="chat-entry-copy">
+        <text class="reading-label">聊聊这个梦</text>
+        <text class="chat-entry-question">{{dream.result.integration_question}}</text>
+      </view>
+      <text class="chat-entry-arrow">→</text>
     </view>
   </view>
 
-  <view class="reading">
-    <text class="section-title">完整解读</text>
-    <text class="reading-copy">{{dream.result.image}}</text>
-    <text class="reading-copy">{{dream.result.underneath}}</text>
-    <text class="reading-copy">{{dream.result.mirror}}</text>
-    <view class="question">
-      <text>{{dream.result.integration_question}}</text>
-    </view>
-  </view>
-
-  <button class="primary-button" bindtap="saveCard">保存梦卡</button>
+  <block wx:if="{{!interpretationUnavailable}}">
+  <button class="primary-button" bindtap="saveCard">保存收藏梦卡</button>
+  <button class="ghost-button" bindtap="saveFullReading">保存完整解读</button>
   <button class="ghost-button share-button" open-type="share">分享给朋友</button>
+  </block>
+  <view class="result-actions">
+    <button class="text-button" bindtap="newDream">再记一个梦</button>
+    <button class="text-button" bindtap="openArchive">梦境档案</button>
+  </view>
+  <button class="delete-button" bindtap="deleteDream">删除这个梦</button>
+  <text wx:if="{{shareImagePath}}" class="share-ready">梦卡图已准备，可保存或分享</text>
+  <canvas type="2d" id="shareCanvas" class="share-canvas"></canvas>
 </view>

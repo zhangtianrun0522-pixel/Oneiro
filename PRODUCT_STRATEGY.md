@@ -1,23 +1,32 @@
 # Oneiro Product Strategy
 
-Last updated: 2026-06-08
+Last updated: 2026-07-10
+
+> 2026 市场、命理路线、自然传播与 90 天验证决策见 `docs/MARKET_AND_PRODUCT_DECISION_2026.md`。
 
 ## Product Bet
 
-Oneiro should start as a WeChat Mini Program, not as a standalone web app.
+Oneiro should validate in China as a WeChat Mini Program, not as a standalone web app. It must be positioned as a private dream-reflection product with Eastern cultural texture, not as an AI fortune-telling service. North America is the second market after retention is proven.
 
-The strongest product shape is not "AI dream interpretation" alone. That is easy to copy and easy to forget. The stronger shape is:
+The strongest product shape is not generic "AI dream interpretation" alone. Oneiro's first value must still be dream interpretation, but the interpretation should be personal, emotionally useful, and connected to the user's metaphysical profile. The stronger shape is:
 
-> A morning dream journal that turns a private dream into a beautiful, shareable, and increasingly personal dream card.
+> A personal dream oracle that interprets a private dream through symbolism, emotion, and metaphysical context, then turns it into a beautiful card the user wants to save, revisit, and share.
+
+The product stack should stay ordered this way:
+
+1. Personalized dream interpretation: explain the dream's images, emotions, symbols, and current-life signal.
+2. Beautiful dream card: turn the interpretation into a collectible, shareable object.
+3. Dream journal and card archive: create a record users want to keep building.
+4. Long-term personal memory: combine recurring dream patterns, user feedback, and an explicitly bounded birth-rhythm lens. Full bazi or astrology should only be added later as optional, correctly calculated systems.
 
 The first version should feel like a tiny morning ritual inside WeChat:
 
 1. Wake up.
 2. Open Oneiro from WeChat.
 3. Speak or type a dream in under two minutes.
-4. Receive a poetic interpretation quickly.
+4. Receive a poetic, personal interpretation quickly.
 5. Save or share a 9:16 dream card.
-6. Come back over time for recurring symbols and emotional patterns.
+6. Come back over time for recurring symbols, emotional patterns, and metaphysical self-understanding.
 
 ## Why WeChat First
 
@@ -45,7 +54,22 @@ Secondary user:
 
 ## User Attraction Points
 
-### 1. Beautiful Dream Cards
+### 1. Personalized Dream Interpretation
+
+The first value is still dream interpretation. Users come because they want to know what the dream means and what it says about them right now.
+
+The interpretation should combine:
+
+- Dream images and narrative.
+- Emotional weather.
+- Core symbols and archetypes.
+- Current-life mirror.
+- One gentle daily action.
+- A lightweight metaphysical resonance based on birth data.
+
+The tone should avoid clinical diagnosis and fatalistic prediction. Oneiro should feel like a poetic oracle that helps users understand themselves, not a tool that scares them.
+
+### 2. Beautiful Dream Cards
 
 The most viral surface is the card, not the interpretation page.
 
@@ -61,7 +85,7 @@ The card should be immediately recognizable:
 
 The card should be safe to share without exposing the full dream text by default.
 
-### 2. The App Gets More Personal Over Time
+### 3. The App Gets More Personal Over Time
 
 Oneiro should remember recurring symbols, emotional weather, people, places, and themes. The product becomes more useful after 7, 14, and 30 dreams.
 
@@ -71,7 +95,9 @@ Examples:
 - "Your dreams this week moved from pursuit to threshold imagery."
 - "You often dream of libraries when you are about to make a creative decision."
 
-### 3. Private But Shareable
+This is where Oneiro's metaphysical layer becomes a retention engine. Birth date, birth time, and birth place are not just registration fields; they create the user's private metaphysical baseline. Over time, Oneiro should connect dream patterns with zodiac, bazi, zi wei, moon phase, and personal memory in a way that feels emotionally accurate and personally meaningful.
+
+### 4. Private But Shareable
 
 Dreams are intimate. The product should default to privacy, then allow selective sharing:
 
@@ -81,7 +107,7 @@ Dreams are intimate. The product should default to privacy, then allow selective
 - Delete and unshare controls.
 - Clear warning before sharing full interpretation.
 
-### 4. Morning Ritual
+### 5. Morning Ritual
 
 The product should not feel like a productivity app. It should feel like a soft daily ritual:
 
@@ -101,6 +127,7 @@ The first WeChat version should be narrow and complete.
 - First-run profile: nickname and birth date required; birth time and place optional.
 - Dream input with text and optional voice-to-text later.
 - `POST interpretDream` cloud function.
+- Personalized interpretation that combines dream symbolism, emotional weather, current-life mirror, and a lightweight birth-profile resonance.
 - Text interpretation returns before image generation completes.
 - Image generation continues asynchronously.
 - Dream card result page.
@@ -344,10 +371,11 @@ Potential Pro features:
 - Implement static pages using the current acceptance fixture.
 - Rebuild the dream card UI with Mini Program-compatible layout.
 - Prove Canvas export for one 9:16 card.
+- Validate that the first result screen still feels like a strong interpretation, not only a visual card.
 
 Exit criteria:
 
-- A user can open the Mini Program preview, submit the fixture dream, see the dream card, and save/share a generated card image.
+- A user can open the Mini Program preview, submit the fixture dream, read a meaningful interpretation, see the dream card, and save/share a generated card image.
 
 ### Phase 2: Cloud Backend MVP
 
@@ -355,13 +383,14 @@ Exit criteria:
 - Implement login/openid binding.
 - Implement `interpretDream` cloud function.
 - Implement result normalization in shared backend code.
+- Add a minimal birth-profile layer: zodiac/sign basics and simple five-element or metaphysical keywords derived from user profile fields.
 - Store dreams in cloud database.
 - Store generated images in cloud storage.
 - Add basic content safety.
 
 Exit criteria:
 
-- A real user can submit a dream from WeChat and receive a persisted result.
+- A real user can submit a dream from WeChat and receive a persisted, personalized interpretation result.
 
 ### Phase 3: Sharing MVP
 
@@ -387,11 +416,12 @@ Exit criteria:
 
 ## Immediate Next Steps
 
-1. Commit the current web MVP polish as the baseline.
-2. Create `miniprogram/` as a separate app, not a destructive rewrite of `src/`.
-3. Extract shared types and normalization logic so both Vite web and Mini Program backend can use the same contract.
-4. Build the Mini Program static acceptance flow first.
-5. Replace `localStorage` archive with cloud database only after the Mini Program UI is proven.
+1. Finish visual verification of the current Mini Program static flow in WeChat Developer Tools.
+2. Tune the result page so the first screen clearly delivers personalized dream interpretation before the card/export actions.
+3. Commit the Mini Program static flow and Canvas card export baseline.
+4. Define the first lightweight metaphysical profile contract from nickname, birth date, optional birth time, and optional birth place.
+5. Add CloudBase login/openid and move static interpretation to an `interpretDream` cloud function.
+6. Replace local archive storage with cloud database only after the Mini Program UI and interpretation contract are proven.
 
 ## Technical Risks
 

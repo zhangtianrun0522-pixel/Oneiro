@@ -1,0 +1,38 @@
+<view class="chat-screen">
+  <view class="chat-context" wx:if="{{dream}}">
+    <text class="context-label">正在聊</text>
+    <text class="context-title">{{dream.result.title}}</text>
+    <text class="context-dream">{{dream.dreamText}}</text>
+  </view>
+
+  <scroll-view class="message-list" scroll-y scroll-into-view="{{scrollTarget}}">
+    <view
+      wx:for="{{messages}}"
+      wx:key="index"
+      id="message-{{index}}"
+      class="message-row {{item.role === 'user' ? 'is-user' : 'is-assistant'}}"
+    >
+      <text class="message-role">{{item.role === 'user' ? '你' : 'ONEIRO'}}</text>
+      <text class="message-copy">{{item.content}}</text>
+    </view>
+    <view wx:if="{{sending}}" class="message-row is-assistant is-loading">
+      <text class="message-role">ONEIRO</text>
+      <text class="message-copy">正在沿着这个梦继续想…</text>
+    </view>
+  </scroll-view>
+
+  <view class="chat-composer">
+    <text class="turn-limit">{{turnCount}} / {{maxTurns}}</text>
+    <textarea
+      class="chat-input"
+      value="{{inputValue}}"
+      maxlength="500"
+      auto-height
+      disabled="{{sending || turnCount >= maxTurns}}"
+      bindinput="onInput"
+      placeholder="说说你想到的现实片段…"
+      placeholder-class="muted"
+    />
+    <button class="send-button" disabled="{{sending || turnCount >= maxTurns}}" bindtap="sendMessage">发送</button>
+  </view>
+</view>

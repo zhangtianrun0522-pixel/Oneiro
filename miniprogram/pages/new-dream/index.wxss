@@ -11,3 +11,12 @@
   letter-spacing: 4rpx;
   line-height: 1.8;
 }
+
+.privacy-note {
+  display: block;
+  margin-top: 22rpx;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 20rpx;
+  line-height: 1.6;
+  text-align: center;
+}

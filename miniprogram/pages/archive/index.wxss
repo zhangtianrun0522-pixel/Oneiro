@@ -12,10 +12,19 @@
   margin-top: 52rpx;
 }
 
+.deck-count {
+  display: block;
+  margin-top: 28rpx;
+  color: rgba(159, 183, 201, 0.62);
+  font-size: 24rpx;
+  font-weight: 800;
+  letter-spacing: 5rpx;
+}
+
 .archive-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 22rpx;
   width: 100%;
   margin-bottom: 20rpx;
   padding: 28rpx;
@@ -25,6 +34,22 @@
   text-align: left;
 }
 
+.mini-card-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 90rpx;
+  height: 104rpx;
+  flex: 0 0 90rpx;
+  border-radius: 12rpx;
+  background: #fdfaf5;
+  color: rgba(23, 32, 51, 0.34);
+  font-size: 16rpx;
+  font-weight: 900;
+  letter-spacing: 1rpx;
+  text-align: center;
+}
+
 .archive-title {
   display: block;
   color: rgba(255, 255, 255, 0.66);
@@ -32,19 +57,33 @@
   letter-spacing: 6rpx;
 }
 
+.archive-weather {
+  display: block;
+  width: 360rpx;
+  margin-top: 10rpx;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 22rpx;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .archive-copy {
   display: block;
-  width: 430rpx;
-  margin-top: 12rpx;
+  width: 360rpx;
+  margin-top: 10rpx;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.26);
-  font-size: 22rpx;
+  color: rgba(159, 183, 201, 0.46);
+  font-size: 20rpx;
+  font-weight: 700;
   letter-spacing: 3rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .archive-date {
+  margin-left: auto;
   color: rgba(255, 255, 255, 0.18);
   font-size: 20rpx;
   letter-spacing: 4rpx;

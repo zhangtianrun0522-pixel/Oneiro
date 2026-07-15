@@ -1,0 +1,31 @@
+<view class="share-screen">
+  <view class="shared-card">
+    <view class="card-header">
+      <text>ONEIRO</text>
+      <text>{{payload.cardNo}}</text>
+    </view>
+
+    <view class="dream-art theme-{{payload.cardTheme}}">
+      <view class="moon"></view>
+      <view class="water"></view>
+      <view class="key"></view>
+      <view class="bird"></view>
+    </view>
+
+    <text class="card-title">{{payload.title}}</text>
+    <text class="profile-summary">{{payload.profileSummary}}</text>
+    <text class="weather">{{payload.emotionalWeather}}</text>
+
+    <view class="symbols">
+      <text wx:for="{{payload.symbols}}" wx:key="*this" class="symbol">{{item}}</text>
+    </view>
+
+    <view class="ritual">
+      <text class="ritual-label">TODAY'S OMEN</text>
+      <text class="ritual-text">{{payload.cardInsight}}</text>
+    </view>
+
+  </view>
+
+  <button class="primary-button" bindtap="startDream">记下我的梦</button>
+</view>

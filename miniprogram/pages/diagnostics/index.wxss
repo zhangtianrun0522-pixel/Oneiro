@@ -1,0 +1,84 @@
+.diagnostics-screen {
+  min-height: 100vh;
+  padding: 64rpx 44rpx 56rpx;
+  background: #050609;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+  margin-top: 44rpx;
+}
+
+.status-row,
+.panel {
+  border: 1rpx solid rgba(255, 255, 255, 0.07);
+  border-radius: 14rpx;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.status-row {
+  min-height: 132rpx;
+  padding: 26rpx 24rpx;
+}
+
+.label,
+.panel-label {
+  display: block;
+  color: rgba(255, 255, 255, 0.22);
+  font-size: 18rpx;
+  font-weight: 800;
+  letter-spacing: 4rpx;
+}
+
+.value {
+  display: block;
+  margin-top: 18rpx;
+  font-size: 28rpx;
+  font-weight: 800;
+  letter-spacing: 2rpx;
+  word-break: break-all;
+}
+
+.value.ok {
+  color: #b9d9c5;
+}
+
+.value.warn {
+  color: #e3c98f;
+}
+
+.panel {
+  margin-top: 26rpx;
+  padding: 10rpx 24rpx;
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 76rpx;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.055);
+}
+
+.panel-row:last-child {
+  border-bottom: 0;
+}
+
+.panel-label {
+  flex: 0 0 260rpx;
+}
+
+.panel-value {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 22rpx;
+  font-weight: 700;
+  text-align: right;
+  word-break: break-all;
+}
+
+.smoke-button {
+  margin-top: 22rpx;
+}

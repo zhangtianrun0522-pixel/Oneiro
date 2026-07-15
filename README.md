@@ -1,32 +1,31 @@
 # Oneiro
 
-Oneiro is a dream oracle MVP. The app collects a lightweight user profile, accepts a dream description, asks Gemini for a structured interpretation, generates a dream image through the backend image API, and renders an exportable dream card.
+Oneiro is a private dream-memory product for WeChat Mini Program. It saves the raw dream first, extracts verifiable dream facts, offers bounded interpretations the user can reject, and gradually builds user-controlled cross-dream memory. The current source of truth is [`V0_2_DEVELOPMENT_PLAN.md`](V0_2_DEVELOPMENT_PLAN.md).
 
-## Public Sharing MVP
+## V0.2 Direction
 
-The current product direction is a public-sharing dream card flow:
+The current product promise is: "It does not predict your fate, but it will increasingly understand your dreams."
 
-- New users only need a nickname and birth date; birth time and place are optional.
-- The dream input includes a sample dream so users can understand the expected level of detail.
-- Dream interpretation appears as soon as the text result is ready; image generation continues in the background and fills the card when complete.
-- The result card prioritizes a 9:16 social sharing cover with title, image, symbols, emotional weather, ritual, date, and Oneiro branding.
-- The full interpretation lives on the back of the card so the first screen stays shareable.
-- The browser stores the last profile and latest 5 dream cards in `localStorage`; no login or cloud history is required for this sharing MVP.
+- A dream can be written before opening the profile page, but interpretation requires birth date and birth time because the metaphysical lens is enabled by default.
+- Raw dreams are saved before AI runs, so provider failure does not lose the record.
+- Results lead with the dream image/card, then grounded facts and possible real-life connections, followed by a bounded `聊聊这个梦` conversation.
+- Dream cards and generated art remain as private collectibles and privacy-safe sharing artifacts; exports use image-led 3:4 composition.
+- Birth details live under `我的资料`; missing date/time/city pauses interpretation and preserves the draft until the profile is completed. The city is converted to coordinates for true-solar-time correction.
+- A deterministic bazi chart is shown as a bounded cultural lens. Astrology, daily fortune, fate prediction, public community, subscriptions, and coins are outside V0.2.
 
 ## WeChat Mini Program Direction
 
-Oneiro is now being repositioned toward a WeChat Mini Program-first launch. The Vite web app remains the prototype and local acceptance harness, while `miniprogram/` contains the first native Mini Program spike.
+Oneiro is WeChat Mini Program-first. The Vite web app remains a legacy prototype and local acceptance harness, while `miniprogram/` contains the active product implementation.
 
 Current Mini Program scope:
 
-- Static acceptance dream flow.
-- Profile entry.
-- Dream input.
-- Result dream card.
-- Recent local archive.
-- Share/save placeholders.
+- Dream writing before profile completion, followed by profile-gated interpretation and raw-first persistence.
+- CloudBase interpretation, storage, analytics, deletion, image generation, and card-only sharing.
+- Grounded single-dream result with structured facts and bounded dream chat.
+- Private profile with required birth date/time/city for interpretation and true-solar-time correction.
+- Private local/cloud archive with collectible card and full-reading exports.
 
-Open `miniprogram/` in WeChat Developer Tools to preview the Mini Program shape. CloudBase, login, content safety, Canvas export, and real AI calls are planned next.
+Open `miniprogram/` in WeChat Developer Tools to preview the Mini Program. Deployment and release details are under `docs/`.
 
 ## Local Development
 
@@ -146,9 +145,10 @@ Example third-party image gateway configuration:
 ```env
 OPENAI_API_KEY=sk-...
 IMAGE_PROVIDER=openai
-OPENAI_IMAGE_ENDPOINT_URL=https://grsaiapi.com/v1/draw/completions
-OPENAI_IMAGE_MODEL=gpt-image-2
-OPENAI_IMAGE_SIZE=1024x1024
+OPENAI_IMAGE_ENDPOINT_URL=https://grsaiapi.com/v1/api/generate
+OPENAI_IMAGE_MODEL=nano-banana-fast
+OPENAI_IMAGE_SIZE=768x1024
+OPENAI_IMAGE_ASPECT_RATIO=768x1024
 OPENAI_IMAGE_QUALITY=low
 OPENAI_IMAGE_TIMEOUT_MS=90000
 IMAGE_FALLBACK_PROVIDER=pollinations

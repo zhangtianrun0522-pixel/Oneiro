@@ -1,0 +1,9 @@
+{
+  "name": "oneiro-interpret-dream",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "lunar-javascript": "1.7.7",
+    "wx-server-sdk": "latest"
+  }
+}

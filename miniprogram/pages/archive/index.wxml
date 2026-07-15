@@ -4,22 +4,27 @@
     <text>ARCHIVE</text>
   </view>
 
-  <text class="eyebrow">Recent Dreams</text>
-  <text class="title">你的最近梦卡</text>
+  <text class="eyebrow">Private Dream Archive</text>
+  <text class="title">你的梦境档案</text>
+  <text wx:if="{{hasArchive}}" class="deck-count">已记下 {{archiveCount}} 个梦</text>
 
   <view wx:if="{{!hasArchive}}" class="empty">
-    <text>还没有梦卡。先记录一个梦，让档案开始生长。</text>
+    <text>还没有记录。从刚醒来时记得的一个画面开始。</text>
   </view>
 
   <view wx:else class="archive-list">
     <button wx:for="{{archive}}" wx:key="id" class="archive-item" data-index="{{index}}" bindtap="openDream">
+      <view class="mini-card-mark">
+        <text>{{item.result ? item.result.card_no : '原梦'}}</text>
+      </view>
       <view>
-        <text class="archive-title">{{item.result.title}}</text>
-        <text class="archive-copy">{{item.dreamText}}</text>
+        <text class="archive-title">{{item.result ? item.result.title : '已保存，尚未解读'}}</text>
+        <text class="archive-weather">{{item.result ? item.result.emotional_weather : item.dreamText}}</text>
+        <text wx:if="{{item.result && item.result.symbols}}" class="archive-copy">{{item.result.symbols[0]}} / {{item.result.symbols[1]}} / {{item.result.symbols[2]}}</text>
       </view>
       <text class="archive-date">{{item.dateLabel}}</text>
     </button>
   </view>
 
-  <button class="primary-button" bindtap="newDream">记录新梦</button>
+  <button class="primary-button" bindtap="newDream">记下新的梦</button>
 </view>

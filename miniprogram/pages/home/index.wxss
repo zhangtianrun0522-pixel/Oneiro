@@ -6,6 +6,24 @@
   margin-top: 40rpx;
 }
 
+.share-note {
+  display: block;
+  margin-top: 24rpx;
+  padding: 22rpx 24rpx;
+  border-left: 3rpx solid rgba(159, 183, 201, 0.36);
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 24rpx;
+  line-height: 1.7;
+}
+
+.field-help {
+  display: block;
+  margin-top: 14rpx;
+  color: rgba(159, 183, 201, 0.44);
+  font-size: 22rpx;
+  line-height: 1.6;
+}
+
 .profile-row {
   display: flex;
   gap: 36rpx;
@@ -18,4 +36,15 @@
 
 .archive-button {
   margin-top: 22rpx;
+}
+
+.profile-link {
+  height: 56rpx;
+  padding: 0 4rpx;
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 4rpx;
+  line-height: 56rpx;
 }

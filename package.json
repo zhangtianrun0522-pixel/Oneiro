@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check:ai-readiness": "node scripts/check-ai-readiness.ts",
+    "check:cloudbase": "node scripts/check-cloudbase-ready.ts",
     "check:dream": "node scripts/check-dream-contract.ts",
+    "check:mini-release": "npm run check:ai-readiness && npm run check:cloudbase && npm run check:miniprogram && npm run check:dream && npm run typecheck",
+    "check:miniprogram": "node scripts/check-miniprogram-mvp.ts",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },

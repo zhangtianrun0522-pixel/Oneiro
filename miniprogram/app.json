@@ -3,7 +3,11 @@
     "pages/home/index",
     "pages/new-dream/index",
     "pages/result/index",
-    "pages/archive/index"
+    "pages/dream-chat/index",
+    "pages/archive/index",
+    "pages/profile/index",
+    "pages/share/index",
+    "pages/diagnostics/index"
   ],
   "window": {
     "backgroundColor": "#050609",

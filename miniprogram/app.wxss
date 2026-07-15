@@ -1,5 +1,5 @@
 page {
-  min-height: 100%;
+  min-height: 100vh;
   background: #050609;
   color: rgba(255, 255, 255, 0.86);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
@@ -28,9 +28,7 @@ button::after {
 .screen {
   min-height: 100vh;
   padding: 64rpx 44rpx 56rpx;
-  background:
-    radial-gradient(circle at 50% -8%, rgba(159, 183, 201, 0.18), transparent 36%),
-    linear-gradient(180deg, #050609 0%, #0d1118 52%, #050609 100%);
+  background: #050609;
 }
 
 .brand {

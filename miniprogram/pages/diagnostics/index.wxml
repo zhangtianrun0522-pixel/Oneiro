@@ -1,0 +1,180 @@
+<view class="diagnostics-screen">
+  <view class="brand">
+    <text>ONEIRO</text>
+    <text>STATUS</text>
+  </view>
+
+  <text class="eyebrow">CLOUDBASE</text>
+  <text class="title">运行诊断</text>
+  <text class="copy">Env {{cloudHealth.env || 'cloud1-d9gb0sjvg6a8d9864'}} · {{updatedAt}}</text>
+
+  <view class="status-grid">
+    <view class="status-row">
+      <text class="label">云环境</text>
+      <text class="value {{cloudStatus.cloudReady ? 'ok' : 'warn'}}">{{cloudStatus.mode}}</text>
+    </view>
+    <view class="status-row">
+      <text class="label">函数健康</text>
+      <text class="value {{cloudHealth.ok ? 'ok' : 'warn'}}">{{cloudHealth.ok ? 'ok' : 'pending'}}</text>
+    </view>
+    <view class="status-row">
+      <text class="label">AI Provider</text>
+      <text class="value {{aiHealth.providerConfigured ? 'ok' : 'warn'}}">{{aiHealth.provider}}</text>
+    </view>
+    <view class="status-row">
+      <text class="label">Provider Ready</text>
+      <text class="value {{aiHealth.providerConfigured ? 'ok' : 'warn'}}">{{aiHealth.providerConfigured ? 'true' : 'false'}}</text>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-row">
+      <text class="panel-label">hasApiKey</text>
+      <text class="panel-value">{{aiHealth.hasApiKey ? 'true' : 'false'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">model</text>
+      <text class="panel-value">{{aiHealth.model || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">baseUrlHost</text>
+      <text class="panel-value">{{aiHealth.baseUrlHost || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">requestTimeoutMs</text>
+      <text class="panel-value">{{aiHealth.requestTimeoutMs}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">strictAi</text>
+      <text class="panel-value">{{aiHealth.strictAi ? 'true' : 'false'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">fallback</text>
+      <text class="panel-value">{{aiHealth.fallbackProvider || '-'}}</text>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-row">
+      <text class="panel-label">image provider</text>
+      <text class="panel-value">{{imageHealth.provider || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image ready</text>
+      <text class="panel-value">{{imageHealth.providerConfigured ? 'true' : 'false'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image reason</text>
+      <text class="panel-value">{{imageHealth.reason || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image message</text>
+      <text class="panel-value">{{imageHealth.message || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image function</text>
+      <text class="panel-value">{{imageHealth.functionName || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image key</text>
+      <text class="panel-value">{{imageHealth.hasApiKey ? 'true' : 'false'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">requested model</text>
+      <text class="panel-value">{{imageHealth.requestedModel || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image model</text>
+      <text class="panel-value">{{imageHealth.model || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image host</text>
+      <text class="panel-value">{{imageHealth.endpointHost || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">requested size</text>
+      <text class="panel-value">{{imageHealth.requestedSize || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">requested aspect</text>
+      <text class="panel-value">{{imageHealth.requestedAspectRatio || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image size</text>
+      <text class="panel-value">{{imageHealth.size || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image aspect</text>
+      <text class="panel-value">{{imageHealth.aspectRatio || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image quality</text>
+      <text class="panel-value">{{imageHealth.quality || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image timeout</text>
+      <text class="panel-value">{{imageHealth.requestTimeoutMs}}</text>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-row">
+      <text class="panel-label">appid</text>
+      <text class="panel-value">{{cloudHealth.appid || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">collections</text>
+      <text class="panel-value">{{cloudHealth.collections.length}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">storage</text>
+      <text class="panel-value">{{cloudHealth.storage ? 'ok' : '-'}}</text>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-row">
+      <text class="panel-label">smoke ok</text>
+      <text class="panel-value">{{smokeTest.ok ? 'true' : 'false'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">smoke provider</text>
+      <text class="panel-value">{{smokeTest.provider || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">reason</text>
+      <text class="panel-value">{{smokeTest.reason || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">title</text>
+      <text class="panel-value">{{smokeTest.title || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">symbols</text>
+      <text class="panel-value">{{smokeTest.symbolCount}}</text>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-row">
+      <text class="panel-label">image ok</text>
+      <text class="panel-value">{{imageTest.ok ? 'true' : 'false'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image reason</text>
+      <text class="panel-value">{{imageTest.reason || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image message</text>
+      <text class="panel-value">{{imageTest.message || '-'}}</text>
+    </view>
+    <view class="panel-row">
+      <text class="panel-label">image url</text>
+      <text class="panel-value">{{imageTest.imageUrl ? 'ready' : '-'}}</text>
+    </view>
+  </view>
+
+  <button class="primary-button" loading="{{loading}}" bindtap="refresh">刷新状态</button>
+  <button class="ghost-button smoke-button" loading="{{smokeLoading}}" bindtap="runSmokeTest">AI SMOKE TEST</button>
+  <button class="ghost-button smoke-button" loading="{{imageLoading}}" bindtap="runImageTest">IMAGE TEST</button>
+</view>
