@@ -20,6 +20,15 @@
     placeholder-class="muted"
   />
 
+  <button
+    class="{{recording ? 'voice-button recording' : 'voice-button'}}"
+    bindtap="toggleRecording"
+    disabled="{{recognizing}}"
+  >
+    {{recording ? '停止 · ' + recordingSeconds + 's' : '🎙 语音记梦'}}
+  </button>
+  <text wx:if="{{recognizing}}" class="recognizing-note">正在识别…</text>
+
   <button class="ghost-button" bindtap="useSample">试一个示例梦</button>
   <button class="primary-button" bindtap="generateDreamCard">保存并解读</button>
   <text class="privacy-note">出生信息完全自愿填写；填写后解读会增加一个“出生节律”视角，也可随时清空。原梦和解读默认仅自己可见，分享时只包含去隐私的梦卡。</text>

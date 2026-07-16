@@ -1,0 +1,9 @@
+{
+  "name": "oneiro-speech-recognize",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "tencentcloud-sdk-nodejs-asr": "latest",
+    "wx-server-sdk": "latest"
+  }
+}

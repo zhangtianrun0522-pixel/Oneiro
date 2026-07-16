@@ -179,6 +179,9 @@ type WxMock = {
   getImageInfo: (options: Record<string, any>) => void;
   saveImageToPhotosAlbum: (options: Record<string, any>) => void;
   openSetting: () => void;
+  getRecorderManager: () => Record<string, any>;
+  authorize: (options: Record<string, any>) => void;
+  getFileSystemManager: () => Record<string, any>;
 };
 
 function createCanvasContext(): Record<string, any> {
@@ -226,6 +229,28 @@ function createWxMock(): WxMock {
     blockNextInterpret: false,
     getStorageSync(key) {
       return this.storage[key];
+    },
+    getRecorderManager() {
+      return {
+        onStop() {},
+        onError() {},
+        start() {},
+        stop() {},
+      };
+    },
+    authorize(options) {
+      if (options && typeof options.success === 'function') {
+        options.success();
+      }
+    },
+    getFileSystemManager() {
+      return {
+        readFile(options: Record<string, any>) {
+          if (options && typeof options.fail === 'function') {
+            options.fail({ errMsg: 'readFile:fail mock' });
+          }
+        },
+      };
     },
     setStorageSync(key, value) {
       this.storage[key] = value;

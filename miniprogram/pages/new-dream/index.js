@@ -5,6 +5,7 @@ var contentSafety = require('../../utils/contentSafety');
 var localDreamOracle = require('../../utils/localDreamOracle');
 var acceptanceDreamText = acceptance.acceptanceDreamText;
 var acceptanceDreamResult = acceptance.acceptanceDreamResult;
+var recorderManager = wx.getRecorderManager();
 
 function createLocalResult(dreamText, profile, cardIndex) {
   var localResult = localDreamOracle.buildLocalDreamResult(acceptanceDreamResult, dreamText);
@@ -110,14 +111,197 @@ function readProfile() {
 
 Page({
   data: {
-    dreamText: ''
+    dreamText: '',
+    recording: false,
+    recordingSeconds: 0,
+    recognizing: false
   },
 
   onLoad: function () {
+    var self = this;
     var pendingDreamText = wx.getStorageSync('oneiro:pendingDreamText') || '';
+
+    recorderManager.onStop(function (result) {
+      self.onRecorderStop(result);
+    });
+
+    recorderManager.onError(function () {
+      self.stopRecordingTimer();
+      self.setData({
+        recording: false,
+        recordingSeconds: 0
+      });
+      wx.showToast({
+        title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
+        icon: 'none',
+        duration: 2500
+      });
+    });
+
     if (pendingDreamText) {
       this.setData({ dreamText: pendingDreamText });
     }
+  },
+
+  onUnload: function () {
+    this.stopRecordingTimer();
+  },
+
+  startRecordingTimer: function () {
+    var self = this;
+    this.stopRecordingTimer();
+    this.recordingTimer = setInterval(function () {
+      var seconds = Math.floor((Date.now() - self.recordingStartedAt) / 1000);
+      self.setData({
+        recordingSeconds: Math.min(seconds, 60)
+      });
+    }, 500);
+  },
+
+  stopRecordingTimer: function () {
+    if (this.recordingTimer) {
+      clearInterval(this.recordingTimer);
+      this.recordingTimer = null;
+    }
+  },
+
+  beginRecording: function () {
+    if (this.data.recording || this.data.recognizing) {
+      return;
+    }
+
+    var self = this;
+    wx.authorize({
+      scope: 'scope.record',
+      success: function () {
+        self.startRecorder();
+      },
+      fail: function () {
+        wx.openSetting({
+          success: function (setting) {
+            if (setting.authSetting && setting.authSetting['scope.record']) {
+              self.startRecorder();
+            }
+          }
+        });
+      }
+    });
+  },
+
+  startRecorder: function () {
+    this.recordingStartedAt = Date.now();
+    this.setData({
+      recording: true,
+      recordingSeconds: 0
+    });
+    this.startRecordingTimer();
+
+    try {
+      recorderManager.start({
+        format: 'mp3',
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        encodeBitRate: 48000,
+        duration: 60000
+      });
+    } catch (error) {
+      this.stopRecordingTimer();
+      this.setData({
+        recording: false,
+        recordingSeconds: 0
+      });
+      wx.showToast({
+        title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
+        icon: 'none',
+        duration: 2500
+      });
+    }
+  },
+
+  stopRecorder: function () {
+    if (!this.data.recording) {
+      return;
+    }
+
+    this.stopRecordingTimer();
+    try {
+      recorderManager.stop();
+    } catch (error) {
+      this.setData({
+        recording: false,
+        recordingSeconds: 0
+      });
+    }
+  },
+
+  toggleRecording: function () {
+    if (this.data.recording) {
+      this.stopRecorder();
+    } else {
+      this.beginRecording();
+    }
+  },
+
+  onRecorderStop: function (result) {
+    var self = this;
+    var filePath = result && (result.tempFilePath || result.filePath);
+    var duration = result && result.duration
+      ? Math.min(Number(result.duration) / 1000, 60)
+      : Math.min((Date.now() - this.recordingStartedAt) / 1000, 60);
+    var fileSystemManager;
+
+    this.stopRecordingTimer();
+    this.setData({
+      recording: false,
+      recordingSeconds: 0
+    });
+
+    if (!filePath) {
+      wx.showToast({
+        title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
+        icon: 'none',
+        duration: 2500
+      });
+      return;
+    }
+
+    fileSystemManager = wx.getFileSystemManager();
+    fileSystemManager.readFile({
+      filePath: filePath,
+      encoding: 'base64',
+      success: function (readResult) {
+        self.setData({ recognizing: true });
+        cloudBase.speechRecognize(readResult.data, duration, function (recognizeResult) {
+          var text;
+          var nextText;
+
+          self.setData({ recognizing: false });
+
+          if (!recognizeResult || !recognizeResult.ok || !recognizeResult.text) {
+            wx.showToast({
+              title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
+              icon: 'none',
+              duration: 2500
+            });
+            return;
+          }
+
+          text = String(recognizeResult.text).trim();
+          nextText = self.data.dreamText
+            ? self.data.dreamText + '\n' + text
+            : text;
+          self.setData({ dreamText: nextText });
+        });
+      },
+      fail: function () {
+        self.setData({ recognizing: false });
+        wx.showToast({
+          title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
+          icon: 'none',
+          duration: 2500
+        });
+      }
+    });
   },
 
   onShow: function () {

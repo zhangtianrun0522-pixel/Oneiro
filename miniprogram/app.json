@@ -16,5 +16,10 @@
     "navigationBarTextStyle": "white",
     "navigationBarTitleText": "ONEIRO"
   },
-  "style": "v2"
+  "style": "v2",
+  "permission": {
+    "scope.record": {
+      "desc": "用于语音记梦"
+    }
+  }
 }

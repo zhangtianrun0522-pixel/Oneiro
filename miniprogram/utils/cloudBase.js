@@ -181,6 +181,14 @@ function interpretDream(dreamText, profile, cardIndex, callback) {
   }, callback);
 }
 
+function speechRecognize(audioBase64, duration, callback) {
+  return callCloudFunction('speechRecognize', {
+    audioBase64: audioBase64 || '',
+    format: 'mp3',
+    duration: Number(duration) || 0
+  }, callback);
+}
+
 function chatAboutDream(dreamText, dreamResult, messages, userMessage, callback) {
   return callCloudFunction('interpretDream', {
     chatAboutDream: true,
@@ -297,6 +305,7 @@ module.exports = {
   imageHealth: imageHealth,
   imageSmokeTest: imageSmokeTest,
   interpretDream: interpretDream,
+  speechRecognize: speechRecognize,
   chatAboutDream: chatAboutDream,
   aiHealth: aiHealth,
   aiSmokeTest: aiSmokeTest,
