@@ -10,7 +10,7 @@ const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat';
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 const DEFAULT_TIMEOUT_MS = 18000;
-const PROMPT_VERSION = 'oneiro-grounded-reading-v0.2.2';
+const PROMPT_VERSION = 'oneiro-grounded-reading-v0.3.0';
 const SCHEMA_VERSION = 'dream-entry-v0.2';
 
 const DREAM_CHAT_SYSTEM_PROMPT = [
@@ -27,7 +27,8 @@ const SYSTEM_PROMPT = [
   '先从原文提取可核对的梦中事实，不得把象征解释写成事实，也不得改写用户的原梦。',
   '解读必须具体引用当次梦里的人物、场景、物件、行动或情绪，提出 2-3 个可被用户否定的现实关联假设。',
   '证据弱时要明确说“可能”、“也可能只是偶然”或“目前还不足以下结论”。',
-  '命理镜头只解释下方确定性排盘结果与当次梦的呼应，不预测命运，不输出运势，不做医疗、创伤、关系、职业或人格诊断。不得自行修改四柱、地点、校正时间或排盘依据。',
+  '不得虚构用户未提供的个人经历、历史记忆或背景信息，不预测命运，不做医疗、创伤、关系、职业或人格诊断。',
+  '禁止在任何输出字段中出现以下词语：四柱、八字、日主、五行、排盘、命盘、命理、命格、运势、吉凶、注定、必然。',
   '只问一个与当次梦直接相关、容易回答的问题。',
   '只返回合法 JSON 对象，不要 markdown，不要代码块。',
   'JSON 字段必须包含：',
@@ -39,8 +40,8 @@ const SYSTEM_PROMPT = [
   '  "card_insight": "一句收藏卡摘要，必须引用一个梦中细节",',
   '  "dream_translation": "2-3句话复述梦中发生的事和情绪，不加推测",',
   '  "reading_hook": "一条有张力的观察：同时引用两个具体梦中细节，指出它们之间的矛盾或转折，禁止只写“压力很大”这类泛化句子",',
-  '  "metaphysical_resonance": "基于给定命理计算结果，与当次梦两个具体细节的文化性呼应；保留不确定性，不写预测",',
-  '  "metaphysical_basis": "说明本次使用的排盘依据、精度和限制",',
+  '  "metaphysical_resonance": "按当前模板规则输出",',
+  '  "metaphysical_basis": "按当前模板规则输出",',
   '  "underneath": "2-3句话解释可能的心理线索，至少引用两个梦中意象并保留不确定性",',
   '  "possible_connections": ["2-3个带不确定性、有梦中根据的现实关联假设"],',
   '  "mirror": "对 possible_connections 的简短总结",',
@@ -56,6 +57,23 @@ const SYSTEM_PROMPT = [
   '  }',
   '}'
 ].join('\n');
+
+function buildInterpretationSystemPrompt(baziChart) {
+  if (baziChart && baziChart.available) {
+    return SYSTEM_PROMPT + '\n' + [
+      '当前采用含出生节律的解读模板。',
+      '整体篇幅分配约为：梦境叙事与现实关联 70%、文化梦象 20%、出生节律 10%。',
+      '出生节律段落只能依据用户上下文中提供的确定性参考，以“出生节律”“内在气质底色”“象征元素”“东方文化视角”等文化表达书写，并与当次梦的两个具体细节建立谨慎呼应。',
+      'metaphysical_resonance 输出出生节律与梦中细节的文化性呼应；metaphysical_basis 说明参考来源、精度和限制。两者都不得预测或下确定性结论。'
+    ].join('\n');
+  }
+
+  return SYSTEM_PROMPT + '\n' + [
+    '当前采用基础梦境解读模板，不得引入任何未提供的个人资料或背景推断。',
+    'metaphysical_resonance 必须输出空字符串。',
+    'metaphysical_basis 必须输出空字符串。'
+  ].join('\n');
+}
 
 const symbolRules = [
   { label: '清水', titleWord: '潮', theme: 'tide', keywords: ['水', '海', '河', '湖', '雨'], meaning: '水代表正在浮上来的情绪、直觉和记忆。' },
@@ -210,6 +228,17 @@ function asString(value, fallback, maxLength) {
   return (text || fallback).slice(0, limit);
 }
 
+function sanitizeMetaphysicalText(value, fallback, maxLength) {
+  const limit = maxLength || 700;
+  const text = typeof value === 'string' ? value.trim() : '';
+
+  if (/四柱|八字|日主|五行|排盘|命盘|命理|命格|运势|吉凶|注定|必然/.test(text)) {
+    return '';
+  }
+
+  return (text || fallback || '').slice(0, limit);
+}
+
 function asStringArray(value, fallback, maxItems, maxLength) {
   const limit = maxLength || 80;
   const items = Array.isArray(value)
@@ -267,11 +296,11 @@ function buildBaziChart(profile) {
       available: false,
       precision: !dateMatch || !timeMatch ? 'insufficient_input' : 'location_unresolved',
       summary: !dateMatch || !timeMatch
-        ? '出生日期或时间不完整，本次不生成四柱盘面。'
-        : '出生城市无法标准化，本次不生成四柱盘面。',
+        ? '出生日期或时间不完整，本次不生成出生节律参考。'
+        : '出生城市无法识别，本次不生成出生节律参考。',
       basis: !dateMatch || !timeMatch
-        ? '需要公历出生年月日、时间和出生城市；命理镜头默认使用真太阳时校正。'
-        : '请填写可识别的出生城市，例如“青岛”或“山东青岛”；不使用模型猜测坐标。'
+        ? '可填写公历出生年月日、时间和出生城市，用于生成出生节律参考。'
+        : '可填写可识别的出生城市，例如“青岛”或“山东青岛”；不使用模型猜测坐标。'
     };
   }
 
@@ -287,8 +316,8 @@ function buildBaziChart(profile) {
       return {
         available: false,
         precision: 'correction_error',
-        summary: '真太阳时校正失败，本次不生成四柱盘面。',
-        basis: '出生时间或地点校正失败，不使用语言模型猜测盘面。'
+        summary: '背景计算暂时失败，本次不生成出生节律参考。',
+        basis: '出生时间或地点计算失败，不使用语言模型猜测结果。'
       };
     }
 
@@ -349,20 +378,16 @@ function buildBaziChart(profile) {
         day: eightChar.getDayShiShenGan(),
         time: eightChar.getTimeShiShenGan()
       },
-      summary: pillars.year + '年 · ' + pillars.month + '月 · ' + pillars.day + '日 · ' + pillars.time + '时 · ' +
-        eightChar.getDayGan() + '日主',
-      basis: '公历 ' + safeProfile.birthDate + ' ' + safeProfile.birthTime +
-        ' · ' + location.name + ' · 真太阳时校正后 ' + corrected.date + ' ' + corrected.time +
-        ' · 经度修正 ' + corrected.longitudeCorrectionMinutes + ' 分钟 · 日期方程 ' + corrected.equationOfTimeMinutes +
-        ' 分钟 · 子初换日流派2 · 未建模历史夏令时',
+      summary: '出生节律参考已生成',
+      basis: '依据公历出生日期、时间和出生城市完成背景计算 · 仅作东方文化参考',
       birthPlace: String(safeProfile.birthPlace || '')
     };
   } catch (error) {
     return {
       available: false,
       precision: 'calculation_error',
-      summary: '四柱排盘暂时不可用。',
-      basis: '历法引擎计算失败，不使用语言模型猜测盘面。'
+      summary: '出生节律参考暂时不可用。',
+      basis: '背景计算暂时失败，不使用语言模型猜测结果。'
     };
   }
 }
@@ -449,14 +474,14 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     ? Object.keys(baziChart.fiveElements).map(function (key) {
       return baziChart.fiveElements[key];
     }).filter(Boolean).join('、')
-    : '未生成';
+    : '';
   const mirrorFallback = '这个梦可能与近期的压力、选择或安全感有关，也可能只是偶然的梦中组合；目前还不足以下结论。';
   const metaphysicalBasisFallback = chartAvailable
-    ? '命理镜头 · ' + baziChart.summary + ' · ' + baziChart.basis + ' · 仅作文化观察，不作命运预测。'
-    : '命理镜头暂未生成排盘结果。';
+    ? '出生节律 · ' + baziChart.summary + ' · ' + baziChart.basis + ' · 仅作东方文化观察，不作预测。'
+    : '';
   const metaphysicalResonanceFallback = chartAvailable
-    ? '从' + baziChart.dayMaster + '日主与' + chartElements + '五行的文化镜头看，梦里的“' + labels.slice(0, 2).join('”与“') + '”像是在提醒你留意当下的感受变化；这只是一个观察角度，也可能只是梦中细节的偶然组合。'
-    : '这次暂时没有可用的命理排盘结果，先以梦中细节为准。';
+    ? '从“' + baziChart.dayMaster + '”所映照的内在气质底色与' + chartElements + '等象征元素看，梦里的“' + labels.slice(0, 2).join('”与“') + '”像是在提醒你留意当下的感受变化；这只是一个东方文化视角，也可能只是梦中细节的偶然组合。'
+    : '';
   const memoryFallback = dreamMemory.dreamCount
     ? '这是你的第' + String(dreamMemory.dreamCount + 1) + '次梦境记录。' +
       (dreamMemory.recurringSymbols.length
@@ -498,16 +523,20 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
       '这个梦最有张力的地方，是“' + labels.slice(0, 2).join('”和“') + '”同时出现：你似乎一边在靠近什么，一边又在保留退路。这个矛盾值得继续观察。',
       560
     ),
-    metaphysical_resonance: asString(
-      raw && raw.metaphysical_resonance,
-      metaphysicalResonanceFallback,
-      700
-    ),
-    metaphysical_basis: asString(
-      metaphysicalBasisFallback,
-      metaphysicalBasisFallback,
-      360
-    ),
+    metaphysical_resonance: chartAvailable
+      ? sanitizeMetaphysicalText(
+          raw && raw.metaphysical_resonance,
+          metaphysicalResonanceFallback,
+          700
+        )
+      : '',
+    metaphysical_basis: chartAvailable
+      ? sanitizeMetaphysicalText(
+          raw && raw.metaphysical_basis,
+          metaphysicalBasisFallback,
+          360
+        )
+      : '',
     underneath: asString(
       raw && raw.underneath,
       dreamSymbols.map(function (symbol) {
@@ -585,7 +614,9 @@ function buildUserContext(profile, dreamText, memory, baziChart) {
   if (profile.nickname) parts.push('用户称呼：' + profile.nickname);
   parts.push('今日日期：' + new Date().toISOString().slice(0, 10));
   parts.push('最多 3 条历史观察（只有具体重复时才可谨慎参考）：' + JSON.stringify(boundedMemory));
-  parts.push('确定性命理计算结果（只能解释，不得自行补算或预测）：' + JSON.stringify(baziChart || {}));
+  if (baziChart && baziChart.available) {
+    parts.push('出生节律参考（只能解释，不得自行补算或预测）：' + JSON.stringify(baziChart));
+  }
   parts.push('梦境原文：' + dreamText);
 
   return parts.join('\n');
@@ -715,7 +746,7 @@ async function callOpenAiCompatible(config, profile, dreamText, memory, baziChar
     model: config.model,
     response_format: { type: 'json_object' },
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: buildInterpretationSystemPrompt(baziChart) },
       { role: 'user', content: buildUserContext(profile, dreamText, memory, baziChart) }
     ],
     temperature: 0.78
@@ -960,15 +991,6 @@ exports.main = async function (event) {
       blocked: true,
       reason: safety.reason,
       message: safety.message
-    };
-  }
-
-  if (!baziChart.available) {
-    return {
-      ok: false,
-      blocked: true,
-      reason: 'profile_required',
-      message: '命理解读默认开启，请先在“我的资料”填写出生日期和出生时间。'
     };
   }
 

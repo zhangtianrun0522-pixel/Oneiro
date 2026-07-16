@@ -156,7 +156,7 @@ function personalizeDreamResult(baseResult, profile, cardIndex) {
     symbolText +
     '，可作为你当下需要倾听直觉、重新命名愿望的一种观察角度。';
   result.metaphysical_basis = birthProfile.precision + '解读 · 依据生日季节、生肖' +
-    (profile && profile.birthTime ? '与出生时段' : '') + ' · 非完整八字或命运预测';
+    (profile && profile.birthTime ? '与出生时段' : '') + ' · 非完整出生背景计算或阶段变化预测';
   result.card_insight =
     baseInsight + ' 今天先做一件小事：' + (result.one_small_act || '写下梦里最亮的一个细节') + '。';
   result.oracle =

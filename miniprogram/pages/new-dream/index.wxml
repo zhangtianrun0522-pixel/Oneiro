@@ -22,5 +22,5 @@
 
   <button class="ghost-button" bindtap="useSample">试一个示例梦</button>
   <button class="primary-button" bindtap="generateDreamCard">保存并解读</button>
-  <text class="privacy-note">命理解读默认开启；首次解读前需要出生日期、时间和城市。原梦和解读默认仅自己可见，分享时只包含去隐私的梦卡。</text>
+  <text class="privacy-note">出生信息完全自愿填写；填写后解读会增加一个“出生节律”视角，也可随时清空。原梦和解读默认仅自己可见，分享时只包含去隐私的梦卡。</text>
 </view>

@@ -53,8 +53,8 @@
       <text class="reading-copy reading-hook">{{dream.result.reading_hook}}</text>
     </view>
 
-    <view wx:if="{{dream.result.metaphysical_resonance}}" class="reading-block metaphysical-reading">
-      <text class="reading-label">命理镜头</text>
+    <view wx:if="{{dream.result.metaphysical_resonance && dream.result.metaphysical_basis}}" class="reading-block metaphysical-reading">
+      <text class="reading-label">出生节律</text>
       <text class="reading-copy">{{dream.result.metaphysical_resonance}}</text>
       <text class="reading-boundary">{{dream.result.metaphysical_basis}}</text>
     </view>

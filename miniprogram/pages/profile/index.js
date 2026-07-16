@@ -48,7 +48,7 @@ Page({
   },
 
   clearBirthDate: function () {
-    var profile = Object.assign({}, this.data.profile, { birthDate: '', birthTime: '' });
+    var profile = Object.assign({}, this.data.profile, { birthDate: '' });
     this.setData({ profile: profile });
   },
 
@@ -61,11 +61,6 @@ Page({
       birthTime: String(this.data.profile.birthTime || '').trim(),
       birthPlace: String(this.data.profile.birthPlace || '').trim().slice(0, 60)
     };
-
-    if (!profile.birthDate || !profile.birthTime || !profile.birthPlace) {
-      wx.showToast({ title: '请填写出生日期、时间和城市', icon: 'none' });
-      return;
-    }
 
     if (!isValidDate(profile.birthDate)) {
       wx.showToast({ title: '出生日期无效', icon: 'none' });
@@ -83,7 +78,12 @@ Page({
         hasBirthTime: !!profile.birthTime,
         cloudSaved: !!(result && result.ok)
       });
-      wx.showToast({ title: '资料已保存', icon: 'success' });
+      wx.showToast({
+        title: profile.nickname || profile.birthDate || profile.birthTime || profile.birthPlace
+          ? '资料已保存'
+          : '资料已清空',
+        icon: 'success'
+      });
       if (wx.getStorageSync('oneiro:pendingDreamText')) {
         if (wx.navigateBack) {
           wx.navigateBack({ delta: 1 });

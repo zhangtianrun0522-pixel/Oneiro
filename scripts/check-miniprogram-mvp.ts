@@ -601,7 +601,7 @@ for (const [path, expected] of [
   ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="sendMessage"'],
   ['miniprogram/pages/dream-chat/index.wxml', '{{turnCount}} / {{maxTurns}}'],
   ['miniprogram/pages/profile/index.wxml', 'bindtap="saveProfile"'],
-  ['miniprogram/pages/profile/index.wxml', '资料默认私密'],
+  ['miniprogram/pages/profile/index.wxml', '可随时清空'],
   ['miniprogram/pages/share/index.wxml', '记下我的梦'],
   ['miniprogram/pages/share/index.wxml', 'theme-{{payload.cardTheme}}'],
   ['miniprogram/pages/diagnostics/index.wxml', '运行诊断'],
@@ -796,7 +796,7 @@ assert.ok(personalized.profile_summary.includes('虎生肖'));
 assert.ok(personalized.metaphysical_resonance.includes('追逐'));
 assert.ok(personalized.metaphysical_resonance.includes('学校'));
 assert.ok(personalized.metaphysical_resonance.includes('辰时'));
-assert.ok(personalized.metaphysical_basis.includes('非完整八字'));
+assert.ok(personalized.metaphysical_basis.includes('非完整出生背景计算'));
 assert.ok(personalized.metaphysical_resonance.length > 20);
 assert.ok(personalized.card_insight.length > 10);
 assert.ok(personalized.card_insight.includes('门'));

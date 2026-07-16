@@ -9,15 +9,15 @@ var acceptanceDreamResult = acceptance.acceptanceDreamResult;
 function createLocalResult(dreamText, profile, cardIndex) {
   var localResult = localDreamOracle.buildLocalDreamResult(acceptanceDreamResult, dreamText);
   localResult.card_no = 'NO. ' + String(cardIndex).padStart(3, '0');
-  localResult.profile_summary = '本地解读 · 四柱暂不可用';
+  localResult.profile_summary = '本地解读';
   localResult.bazi_chart = {
     available: false,
     precision: 'cloud_unavailable',
-    summary: '本次未生成四柱排盘。',
-    basis: '历法引擎不可用，不使用语言模型猜测盘面。'
+    summary: '本次未生成出生节律参考。',
+    basis: '背景计算暂时不可用，不使用语言模型猜测结果。'
   };
-  localResult.metaphysical_resonance = '本次未生成确定性四柱，命理镜头暂不作判断；先以梦里的具体细节为准。';
-  localResult.metaphysical_basis = '命理镜头暂不可用 · 未生成四柱 · 不使用模型猜盘。';
+  localResult.metaphysical_resonance = '';
+  localResult.metaphysical_basis = '';
   localResult.mirror = '一种可能是：' + localResult.mirror + '这也可能只是偶然的梦中组合，目前还不足以下结论。';
   localResult.possible_connections = [localResult.mirror].filter(Boolean);
   return localResult;
@@ -108,10 +108,6 @@ function readProfile() {
   };
 }
 
-function hasRequiredBirthProfile(profile) {
-  return !!(profile && profile.birthDate && profile.birthTime && profile.birthPlace);
-}
-
 Page({
   data: {
     dreamText: ''
@@ -162,26 +158,6 @@ Page({
       } else {
         wx.showToast({ title: safety.message, icon: 'none' });
       }
-      return;
-    }
-
-    if (!hasRequiredBirthProfile(profile)) {
-      wx.setStorageSync('oneiro:pendingDreamText', dreamText);
-      analytics.trackEvent('dream_profile_required', {
-        hasBirthDate: !!profile.birthDate,
-        hasBirthTime: !!profile.birthTime
-      });
-      wx.showModal({
-        title: '先完善出生资料',
-        content: '命理解读默认开启，请先填写出生日期、出生时间和出生城市，以便进行真太阳时校正。',
-        confirmText: '去填写',
-        cancelText: '暂不解读',
-        success: function (response) {
-          if (response && response.confirm) {
-            wx.navigateTo({ url: '/pages/profile/index' });
-          }
-        }
-      });
       return;
     }
 

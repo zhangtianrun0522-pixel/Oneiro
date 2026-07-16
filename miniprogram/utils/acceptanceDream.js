@@ -13,7 +13,7 @@ const acceptanceDreamResult = {
   card_insight: '你知道钥匙在哪里，只是还没决定要打开哪扇门。',
   metaphysical_resonance:
     '你的出生底图带着水象式的敏感与观察力。梦里的清水和月光，像是在把尚未成句的直觉推到你面前。',
-  metaphysical_basis: '基础解读 · 依据生日季节与生肖 · 非完整八字或命运预测',
+  metaphysical_basis: '基础解读 · 依据生日季节与生肖 · 非完整出生背景计算或阶段变化预测',
   dream_translation:
     '月光、图书馆和清水共同构成了一个“记忆被情绪浸泡”的场景：理性仍在整理答案，但真正的线索已经从情绪里浮出来。',
   underneath:

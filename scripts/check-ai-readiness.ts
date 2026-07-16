@@ -306,16 +306,21 @@ assert.equal((staticInterpretation.result as Record<string, unknown>).card_no, '
 assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.available, true);
 assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.precision, 'true_solar_time');
 assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.location.name, '青岛');
-assert.match(String((staticInterpretation.result as Record<string, unknown>).metaphysical_resonance || ''), /日主/);
+assert.match(String((staticInterpretation.result as Record<string, unknown>).metaphysical_resonance || ''), /内在气质底色/);
+assert.doesNotMatch(
+  String((staticInterpretation.result as Record<string, unknown>).metaphysical_resonance || ''),
+  /四柱|八字|日主|五行|排盘|命盘|命理|命格|运势|吉凶/
+);
 
 const missingProfileInterpretation = await loadInterpretDream({}).main({
   dreamText: '我梦见在月光下的图书馆找到一把银色钥匙',
   profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30' },
   cardIndex: 3,
 });
-assert.equal(missingProfileInterpretation.ok, false);
-assert.equal(missingProfileInterpretation.blocked, true);
-assert.equal(missingProfileInterpretation.reason, 'profile_required');
+assert.equal(missingProfileInterpretation.ok, true);
+assert.equal((missingProfileInterpretation.result as Record<string, any>).bazi_chart.available, false);
+assert.equal(String((missingProfileInterpretation.result as Record<string, unknown>).metaphysical_resonance || ''), '');
+assert.equal(String((missingProfileInterpretation.result as Record<string, unknown>).metaphysical_basis || ''), '');
 
 const staticDreamChat = await loadInterpretDream({}).main({
   chatAboutDream: true,

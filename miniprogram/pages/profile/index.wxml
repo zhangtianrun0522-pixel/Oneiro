@@ -6,27 +6,27 @@
 
   <text class="eyebrow">Private Profile</text>
   <text class="title">我的资料</text>
-  <text class="profile-intro">命理解读默认开启。出生日期、时间和城市用于真太阳时校正与四柱计算。资料默认私密，不会出现在分享梦卡中。</text>
+  <text class="profile-intro">填写出生信息后，之后的解读会多一个“出生节律”视角。全部可跳过、可随时清空，资料仅用于解读参考，不会出现在分享梦卡中。</text>
 
   <text class="field-label">称呼 / 可选</text>
   <input class="field" value="{{profile.nickname}}" data-key="nickname" bindinput="onInput" maxlength="30" placeholder="怎么称呼你" placeholder-class="muted" />
 
   <view class="field-heading">
-    <text class="field-label">出生日期 / 必填</text>
+    <text class="field-label">出生日期 / 可选</text>
     <button wx:if="{{profile.birthDate}}" class="clear-field" bindtap="clearBirthDate">清除</button>
   </view>
   <picker mode="date" value="{{profile.birthDate}}" bindchange="onBirthDateChange">
     <view class="field picker-field {{profile.birthDate ? '' : 'muted'}}">{{profile.birthDate || '选择出生日期'}}</view>
   </picker>
 
-  <text class="field-label">出生时间 / 必填</text>
+  <text class="field-label">出生时间 / 可选</text>
   <picker mode="time" value="{{profile.birthTime}}" bindchange="onBirthTimeChange">
     <view class="field picker-field {{profile.birthTime ? '' : 'muted'}}">{{profile.birthTime || '选择时间'}}</view>
   </picker>
 
-  <text class="field-label">出生城市 / 必填</text>
+  <text class="field-label">出生城市 / 可选</text>
   <input class="field" value="{{profile.birthPlace}}" data-key="birthPlace" bindinput="onInput" maxlength="60" placeholder="例如：上海" placeholder-class="muted" />
 
   <button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveProfile">保存资料</button>
-  <text class="privacy-copy">本次解读会使用已保存的出生资料。</text>
+  <text class="privacy-copy">出生资料完全自愿，可随时修改或清空，仅用于解读参考。</text>
 </view>
