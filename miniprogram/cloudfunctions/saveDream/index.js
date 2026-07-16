@@ -63,6 +63,192 @@ exports.main = async function (event) {
   const action = String((event && event.action) || 'upsert');
   const requestedId = String((event && event.dreamId) || '');
 
+  if (action === 'getRevisit') {
+    try {
+      var revisitResponse = await db.collection('dream_entries')
+        .where({ openid: wxContext.OPENID })
+        .orderBy('createdAt', 'desc')
+        .limit(10)
+        .get();
+      var revisitRecords = revisitResponse && revisitResponse.data ? revisitResponse.data : [];
+      var nowTimestamp = Date.now();
+      var timezoneOffset = 8 * 3600 * 1000;
+      var dayMilliseconds = 24 * 3600 * 1000;
+      var beijingToday = new Date(nowTimestamp + timezoneOffset).toISOString().slice(0, 10);
+      var beijingYesterday = new Date(nowTimestamp - dayMilliseconds + timezoneOffset).toISOString().slice(0, 10);
+      var revisitDream = null;
+      var revisitIndex;
+
+      for (revisitIndex = 0; revisitIndex < revisitRecords.length; revisitIndex += 1) {
+        var revisitRecord = revisitRecords[revisitIndex];
+        var revisitResult = revisitRecord && revisitRecord.result ? revisitRecord.result : {};
+        var createdTimestamp = revisitRecord && revisitRecord.createdAt
+          ? new Date(revisitRecord.createdAt).getTime()
+          : 0;
+        var createdBeijingDate = createdTimestamp
+          ? new Date(createdTimestamp + timezoneOffset).toISOString().slice(0, 10)
+          : '';
+
+        if (
+          revisitRecord.status === 'ready' &&
+          revisitResult.integration_question &&
+          revisitRecord.revisitSkipped !== true &&
+          !revisitRecord.revisitedAt &&
+          createdBeijingDate === beijingYesterday
+        ) {
+          revisitDream = {
+            localId: revisitRecord.localId,
+            title: revisitResult.title || '',
+            question: revisitResult.integration_question,
+            createdAt: revisitRecord.createdAt
+          };
+          break;
+        }
+      }
+
+      return { ok: true, dream: revisitDream };
+    } catch (revisitError) {
+      return { ok: true, dream: null };
+    }
+  }
+
+  if (action === 'answerRevisit') {
+    var answerDreamId = String((event && event.dreamId) || '').trim();
+    var revisitAnswer = String((event && event.answer) || '').trim().slice(0, 300);
+
+    if (!answerDreamId || !revisitAnswer) {
+      return { ok: false, reason: 'invalid_answer' };
+    }
+
+    var answerQuery = await db.collection('dream_entries')
+      .where({ openid: wxContext.OPENID, localId: answerDreamId })
+      .limit(1)
+      .get();
+
+    if (!answerQuery.data || !answerQuery.data.length) {
+      return { ok: false, reason: 'dream_not_found' };
+    }
+
+    await db.collection('dream_entries').doc(answerQuery.data[0]._id).update({
+      data: {
+        revisitedAt: new Date(),
+        revisitAnswer: revisitAnswer
+      }
+    });
+
+    try {
+      await db.collection('life_notes').add({
+        data: {
+          openid: wxContext.OPENID,
+          text: revisitAnswer,
+          sourceDreamId: answerDreamId,
+          createdAt: new Date()
+        }
+      });
+    } catch (lifeNoteError) {
+      // 忽略，不影响主流程
+    }
+
+    return { ok: true };
+  }
+
+  if (action === 'skipRevisit') {
+    var skipDreamId = String((event && event.dreamId) || '').trim();
+
+    if (!skipDreamId) {
+      return { ok: true };
+    }
+
+    var skipQuery = await db.collection('dream_entries')
+      .where({ openid: wxContext.OPENID, localId: skipDreamId })
+      .limit(1)
+      .get();
+
+    if (skipQuery.data && skipQuery.data.length) {
+      await db.collection('dream_entries').doc(skipQuery.data[0]._id).update({
+        data: {
+          revisitSkipped: true
+        }
+      });
+    }
+
+    return { ok: true };
+  }
+
+  if (action === 'addLifeNote') {
+    var noteDreamId = String((event && event.dreamId) || '').trim();
+    var noteText = String((event && event.text) || '').trim().slice(0, 300);
+
+    if (!noteDreamId || !noteText) {
+      return { ok: false, reason: 'invalid_note' };
+    }
+
+    var addedNote = await db.collection('life_notes').add({
+      data: {
+        openid: wxContext.OPENID,
+        text: noteText,
+        sourceDreamId: noteDreamId,
+        createdAt: new Date()
+      }
+    });
+
+    return { ok: true, id: addedNote._id };
+  }
+
+  if (action === 'deleteLifeNote') {
+    var noteId = String((event && event.noteId) || '').trim();
+
+    if (!noteId) {
+      return { ok: false, reason: 'invalid_note_id' };
+    }
+
+    await db.collection('life_notes')
+      .where({ openid: wxContext.OPENID, _id: noteId })
+      .remove();
+
+    return { ok: true };
+  }
+
+  if (action === 'editSymbol') {
+    var symbolDreamId = String((event && event.dreamId) || '').trim();
+    var oldSymbol = String((event && event.oldSymbol) || '').trim();
+    var newSymbol = String((event && event.newSymbol) || '').trim().slice(0, 32);
+
+    if (!symbolDreamId || !oldSymbol || !newSymbol) {
+      return { ok: false, reason: 'invalid_symbol' };
+    }
+
+    var symbolQuery = await db.collection('dream_entries')
+      .where({ openid: wxContext.OPENID, localId: symbolDreamId })
+      .limit(1)
+      .get();
+
+    if (!symbolQuery.data || !symbolQuery.data.length) {
+      return { ok: false, reason: 'dream_not_found' };
+    }
+
+    var symbolRecord = symbolQuery.data[0];
+    var entrySymbols = Array.isArray(symbolRecord.symbols) ? symbolRecord.symbols : [];
+    var resultSymbols = symbolRecord.result && Array.isArray(symbolRecord.result.symbols)
+      ? symbolRecord.result.symbols
+      : [];
+    var updatedEntrySymbols = entrySymbols.map(function (symbol) {
+      return String(symbol || '').trim() === oldSymbol ? newSymbol : symbol;
+    });
+    var updatedResultSymbols = resultSymbols.map(function (symbol) {
+      return String(symbol || '').trim() === oldSymbol ? newSymbol : symbol;
+    });
+
+    await db.collection('dream_entries').doc(symbolRecord._id).update({
+      data: {
+        symbols: updatedEntrySymbols,
+        'result.symbols': updatedResultSymbols
+      }
+    });
+
+    return { ok: true };
+  }
+
   if (action === 'delete') {
     if (!requestedId) {
       return { ok: false, reason: 'missing_dream_id' };
@@ -71,6 +257,15 @@ exports.main = async function (event) {
     const deleted = await db.collection('dream_entries')
       .where({ openid: wxContext.OPENID, localId: requestedId })
       .remove();
+
+    try {
+      await db.collection('life_notes')
+        .where({ openid: wxContext.OPENID, sourceDreamId: requestedId })
+        .remove();
+    } catch (cascadeError) {
+      // 忽略，不影响主删除结果
+    }
+
     return { ok: true, deleted: deleted && deleted.stats ? deleted.stats.removed : 0 };
   }
 

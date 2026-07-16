@@ -407,9 +407,13 @@ function buildDreamMemory(records) {
     const symbols = Array.isArray(entry.symbols) && entry.symbols.length ? entry.symbols : result.symbols || [];
     const theme = String(entry.cardTheme || result.card_theme || '');
 
+    var uniqueSymbols = new Set();
     symbols.slice(0, 8).forEach(function (symbol) {
-      const key = String(symbol || '').trim();
-      if (key) symbolCounts[key] = (symbolCounts[key] || 0) + 1;
+      var key = String(symbol || '').trim();
+      if (key) uniqueSymbols.add(key);
+    });
+    uniqueSymbols.forEach(function (symbol) {
+      symbolCounts[symbol] = (symbolCounts[symbol] || 0) + 1;
     });
     if (theme) themeCounts[theme] = (themeCounts[theme] || 0) + 1;
   });
@@ -437,6 +441,7 @@ function buildDreamMemory(records) {
 
   return {
     dreamCount: entries.length,
+    symbolCounts: symbolCounts,
     recurringSymbols: recurringSymbols,
     recurringThemes: recurringThemes,
     recent: recent,
@@ -455,7 +460,52 @@ async function loadDreamMemory(openid) {
   }
 }
 
-function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memory, baziChart) {
+async function loadLifeNote(openid) {
+  if (!db || !openid) return null;
+
+  try {
+    var response = await db.collection('life_notes')
+      .where({ openid: openid })
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .get();
+    var note = response && response.data && response.data.length ? response.data[0] : null;
+
+    if (!note) return null;
+
+    return {
+      text: String(note.text || '').trim(),
+      sourceDreamId: note.sourceDreamId,
+      createdAt: note.createdAt
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function isLifeNoteRelevant(lifeNote, dreamText, symbols) {
+  if (!lifeNote) return false;
+
+  var noteText = String(lifeNote.text || '').trim();
+  var currentDreamText = String(dreamText || '').trim();
+  var phrases = noteText.split(/[，。！？、；：\s]+/).map(function (item) {
+    return String(item || '').trim();
+  }).filter(function (item) {
+    return item.length >= 2;
+  });
+  var symbolList = Array.isArray(symbols) ? symbols : [];
+  var phraseMatched = phrases.some(function (phrase) {
+    return currentDreamText.indexOf(phrase) !== -1;
+  });
+  var symbolMatched = symbolList.some(function (symbol) {
+    var key = String(symbol || '').trim();
+    return !!key && noteText.indexOf(key) !== -1;
+  });
+
+  return phraseMatched || symbolMatched;
+}
+
+function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memory, baziChart, lifeNote) {
   const dreamSymbols = pickSymbols(dreamText);
   const labels = dreamSymbols.map(function (symbol) {
     return symbol.label;
@@ -469,6 +519,29 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
   const dreamFacts = normalizeDreamFacts(raw && raw.dream_facts, dreamText, symbols);
   const dreamPreview = compactDream(dreamText);
   const dreamMemory = memory || buildDreamMemory([]);
+  var symbolMilestones = [];
+  var milestoneSymbols = new Set();
+  var relevantLifeNote;
+
+  symbols.forEach(function (symbol) {
+    var key = String(symbol || '').trim();
+    if (key) milestoneSymbols.add(key);
+  });
+  milestoneSymbols.forEach(function (symbol) {
+    var historicalCount = dreamMemory.symbolCounts && dreamMemory.symbolCounts[symbol]
+      ? Number(dreamMemory.symbolCounts[symbol])
+      : 0;
+    var totalCount = historicalCount + 1;
+
+    if (totalCount >= 2) {
+      symbolMilestones.push({ symbol: symbol, count: totalCount });
+    }
+  });
+  symbolMilestones.sort(function (a, b) {
+    return b.count - a.count;
+  });
+  symbolMilestones = symbolMilestones.slice(0, 1);
+  relevantLifeNote = isLifeNoteRelevant(lifeNote, dreamText, symbols) ? lifeNote : null;
   const chartAvailable = !!(baziChart && baziChart.available);
   const chartElements = chartAvailable && baziChart.fiveElements
     ? Object.keys(baziChart.fiveElements).map(function (key) {
@@ -498,6 +571,12 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     bazi_chart: baziChart || { available: false, precision: 'missing' },
     profile_summary: nickname + ' · ' + (sourceLabel || '梦境记忆'),
     symbols: symbols,
+    symbol_milestones: symbolMilestones,
+    referenced_life_note: relevantLifeNote ? {
+      text: relevantLifeNote.text,
+      sourceDreamId: String(relevantLifeNote.sourceDreamId || ''),
+      sourceDate: relevantLifeNote.createdAt ? new Date(relevantLifeNote.createdAt).toISOString().slice(0, 10) : ''
+    } : null,
     emotional_weather: asString(
       raw && raw.emotional_weather,
       '这组梦象像一层刚亮起的晨雾，正在把你的压力、直觉和选择感慢慢显影。',
@@ -598,11 +677,11 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
   };
 }
 
-function buildStaticResult(dreamText, profile, cardIndex, memory, baziChart) {
-  return normalizeAiResult({}, dreamText, profile, cardIndex, '云端梦卡', memory, baziChart);
+function buildStaticResult(dreamText, profile, cardIndex, memory, baziChart, lifeNote) {
+  return normalizeAiResult({}, dreamText, profile, cardIndex, '云端梦卡', memory, baziChart, lifeNote);
 }
 
-function buildUserContext(profile, dreamText, memory, baziChart) {
+function buildUserContext(profile, dreamText, memory, baziChart, lifeNote) {
   const parts = [];
   const dreamMemory = memory || buildDreamMemory([]);
   const boundedMemory = {
@@ -616,6 +695,9 @@ function buildUserContext(profile, dreamText, memory, baziChart) {
   parts.push('最多 3 条历史观察（只有具体重复时才可谨慎参考）：' + JSON.stringify(boundedMemory));
   if (baziChart && baziChart.available) {
     parts.push('出生节律参考（只能解释，不得自行补算或预测）：' + JSON.stringify(baziChart));
+  }
+  if (lifeNote) {
+    parts.push('用户曾经明确确认过的真实情况（只能在明显相关时自然提及，不得判断对错，不得预测）：' + lifeNote.text);
   }
   parts.push('梦境原文：' + dreamText);
 
@@ -738,7 +820,7 @@ function postJson(urlString, headers, body, timeoutMs) {
   });
 }
 
-async function callOpenAiCompatible(config, profile, dreamText, memory, baziChart) {
+async function callOpenAiCompatible(config, profile, dreamText, memory, baziChart, lifeNote) {
   const timeoutMs = Number(process.env.INTERPRET_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
   const response = await postJson(config.baseUrl + '/chat/completions', {
     Authorization: 'Bearer ' + config.apiKey
@@ -747,7 +829,7 @@ async function callOpenAiCompatible(config, profile, dreamText, memory, baziChar
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: buildInterpretationSystemPrompt(baziChart) },
-      { role: 'user', content: buildUserContext(profile, dreamText, memory, baziChart) }
+      { role: 'user', content: buildUserContext(profile, dreamText, memory, baziChart, lifeNote) }
     ],
     temperature: 0.78
   }, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
@@ -768,14 +850,14 @@ async function callOpenAiCompatible(config, profile, dreamText, memory, baziChar
   return parseJsonResponse(content);
 }
 
-async function interpretWithAi(profile, dreamText, cardIndex, memory, baziChart) {
+async function interpretWithAi(profile, dreamText, cardIndex, memory, baziChart, lifeNote) {
   const config = providerConfig();
 
   if (config.provider === 'static') {
     return {
       provider: 'cloudbase-static',
       model: 'deterministic-local',
-      result: buildStaticResult(dreamText, profile, cardIndex, memory, baziChart)
+      result: buildStaticResult(dreamText, profile, cardIndex, memory, baziChart, lifeNote)
     };
   }
 
@@ -787,12 +869,12 @@ async function interpretWithAi(profile, dreamText, cardIndex, memory, baziChart)
     throw new Error('Missing API key for INTERPRET_PROVIDER=' + config.provider);
   }
 
-  const raw = await callOpenAiCompatible(config, profile, dreamText, memory, baziChart);
+  const raw = await callOpenAiCompatible(config, profile, dreamText, memory, baziChart, lifeNote);
 
   return {
     provider: config.provider,
     model: config.model || '',
-    result: normalizeAiResult(raw, dreamText, profile, cardIndex, 'AI 梦卡', memory, baziChart)
+    result: normalizeAiResult(raw, dreamText, profile, cardIndex, 'AI 梦卡', memory, baziChart, lifeNote)
   };
 }
 
@@ -995,9 +1077,10 @@ exports.main = async function (event) {
   }
 
   memory = await loadDreamMemory(wxContext && wxContext.OPENID ? wxContext.OPENID : '');
+  var lifeNote = await loadLifeNote(wxContext && wxContext.OPENID ? wxContext.OPENID : '');
 
   try {
-    const interpreted = await interpretWithAi(profile, dreamText, cardIndex, memory, baziChart);
+    const interpreted = await interpretWithAi(profile, dreamText, cardIndex, memory, baziChart, lifeNote);
 
     return {
       ok: true,
@@ -1024,7 +1107,7 @@ exports.main = async function (event) {
       promptVersion: PROMPT_VERSION,
       schemaVersion: SCHEMA_VERSION,
       provider_error: error && error.message ? error.message.slice(0, 180) : 'unknown_error',
-      result: buildStaticResult(dreamText, profile, cardIndex, memory, baziChart)
+      result: buildStaticResult(dreamText, profile, cardIndex, memory, baziChart, lifeNote)
     };
   }
 };
