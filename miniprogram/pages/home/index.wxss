@@ -2,6 +2,101 @@
   margin-bottom: 46rpx;
 }
 
+.revisit-card {
+  margin-bottom: 34rpx;
+  padding: 26rpx 26rpx 24rpx;
+  border-left: 4rpx solid rgba(159, 183, 201, 0.36);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.revisit-title {
+  display: block;
+  color: rgba(159, 183, 201, 0.68);
+  font-size: 21rpx;
+  font-weight: 800;
+  letter-spacing: 2rpx;
+}
+
+.revisit-question {
+  display: block;
+  margin-top: 14rpx;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 27rpx;
+  line-height: 1.75;
+}
+
+.revisit-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 22rpx;
+}
+
+.revisit-answer-button,
+.revisit-skip-button,
+.revisit-send-button {
+  height: 68rpx;
+  margin: 0;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  font-weight: 800;
+  line-height: 68rpx;
+}
+
+.revisit-answer-button,
+.revisit-send-button {
+  background: rgba(202, 177, 117, 0.16);
+  color: rgba(239, 228, 200, 0.86);
+}
+
+.revisit-answer-button {
+  flex: 1;
+}
+
+.revisit-skip-button {
+  flex: 1;
+  border: 1rpx solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.revisit-answer-button::after,
+.revisit-skip-button::after,
+.revisit-send-button::after {
+  border: 0;
+}
+
+.revisit-disable-link {
+  display: block;
+  margin-top: 18rpx;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 19rpx;
+  text-align: center;
+}
+
+.revisit-composer {
+  margin-top: 22rpx;
+}
+
+.revisit-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120rpx;
+  max-height: 260rpx;
+  padding: 20rpx;
+  border: 1rpx solid rgba(159, 183, 201, 0.16);
+  border-radius: 8rpx;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 25rpx;
+  line-height: 1.6;
+}
+
+.revisit-send-button {
+  width: 150rpx;
+  margin-top: 16rpx;
+  margin-left: auto;
+}
+
 .profile {
   margin-top: 40rpx;
 }

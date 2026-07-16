@@ -138,6 +138,51 @@ function deleteDream(dreamId, callback) {
   }, callback);
 }
 
+function getRevisit(callback) {
+  return callCloudFunction('saveDream', {
+    action: 'getRevisit'
+  }, callback);
+}
+
+function answerRevisit(dreamId, answer, callback) {
+  return callCloudFunction('saveDream', {
+    action: 'answerRevisit',
+    dreamId: dreamId || '',
+    answer: answer || ''
+  }, callback);
+}
+
+function skipRevisit(dreamId, callback) {
+  return callCloudFunction('saveDream', {
+    action: 'skipRevisit',
+    dreamId: dreamId || ''
+  }, callback);
+}
+
+function addLifeNote(dreamId, text, callback) {
+  return callCloudFunction('saveDream', {
+    action: 'addLifeNote',
+    dreamId: dreamId || '',
+    text: text || ''
+  }, callback);
+}
+
+function deleteLifeNote(noteId, callback) {
+  return callCloudFunction('saveDream', {
+    action: 'deleteLifeNote',
+    noteId: noteId || ''
+  }, callback);
+}
+
+function editSymbol(dreamId, oldSymbol, newSymbol, callback) {
+  return callCloudFunction('saveDream', {
+    action: 'editSymbol',
+    dreamId: dreamId || '',
+    oldSymbol: oldSymbol || '',
+    newSymbol: newSymbol || ''
+  }, callback);
+}
+
 function createShareCard(dream, imageFileId, callback) {
   return callCloudFunction('createShareCard', {
     dream: dream,
@@ -299,6 +344,12 @@ module.exports = {
   saveProfile: saveProfile,
   saveDream: saveDream,
   deleteDream: deleteDream,
+  getRevisit: getRevisit,
+  answerRevisit: answerRevisit,
+  skipRevisit: skipRevisit,
+  addLifeNote: addLifeNote,
+  deleteLifeNote: deleteLifeNote,
+  editSymbol: editSymbol,
   createShareCard: createShareCard,
   getShareCard: getShareCard,
   generateDreamImage: generateDreamImage,

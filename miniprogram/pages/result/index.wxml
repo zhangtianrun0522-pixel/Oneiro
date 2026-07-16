@@ -33,6 +33,11 @@
         <text>Oneiro · {{displayDate}}</text>
       </view>
     </view>
+
+    <view wx:if="{{dream.result.symbol_milestones && dream.result.symbol_milestones[0]}}" class="milestone-pill" bindtap="openMilestoneArchive">
+      <text class="milestone-copy">{{dream.result.symbol_milestones[0].symbol}} · 第 {{dream.result.symbol_milestones[0].count}} 次出现在你的梦里</text>
+      <text class="milestone-edit" catchtap="correctMilestoneSymbol">纠正</text>
+    </view>
   </block>
 
   <view class="reading grounded-reading">
@@ -57,6 +62,15 @@
       <text class="reading-label">出生节律</text>
       <text class="reading-copy">{{dream.result.metaphysical_resonance}}</text>
       <text class="reading-boundary">{{dream.result.metaphysical_basis}}</text>
+    </view>
+
+    <view wx:if="{{dream.result.referenced_life_note}}" class="reading-block life-note-reading">
+      <text class="reading-label">你之前提到过</text>
+      <text class="reading-copy">"{{dream.result.referenced_life_note.text}}"</text>
+      <view class="life-note-footer" bindtap="openLifeNoteSource">
+        <text class="life-note-date">{{dream.result.referenced_life_note.sourceDate}}</text>
+        <text class="life-note-link">为什么这样理解？</text>
+      </view>
     </view>
 
     <view class="reading-block">

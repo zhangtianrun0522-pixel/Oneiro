@@ -21,7 +21,8 @@ function safeDream(dream) {
       return {
         role: item && item.role === 'assistant' ? 'assistant' : 'user',
         content: String((item && item.content) || '').trim().slice(0, 800),
-        createdAt: item && item.createdAt ? new Date(item.createdAt) : new Date()
+        createdAt: item && item.createdAt ? new Date(item.createdAt) : new Date(),
+        confirmed: !!(item && item.confirmed)
       };
     }).filter(function (item) { return item.content; }) : [];
   }

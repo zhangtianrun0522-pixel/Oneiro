@@ -664,6 +664,56 @@ Page({
     wx.navigateTo({ url: '/pages/dream-chat/index?id=' + encodeURIComponent(dreamId) });
   },
 
+  openLifeNoteSource: function () {
+    var note = this.data.dream.result.referenced_life_note;
+    var source;
+    if (!note || !note.sourceDreamId) return;
+    source = findDreamById(note.sourceDreamId);
+    if (!source) {
+      wx.showToast({ title: '这条记录已被删除', icon: 'none' });
+      return;
+    }
+    wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(note.sourceDreamId) });
+  },
+
+  openMilestoneArchive: function () {
+    var milestone = this.data.dream.result.symbol_milestones && this.data.dream.result.symbol_milestones[0];
+    if (!milestone) return;
+    wx.navigateTo({ url: '/pages/archive/index?symbolFilter=' + encodeURIComponent(milestone.symbol) });
+  },
+
+  correctMilestoneSymbol: function () {
+    var that = this;
+    var dream = this.data.dream;
+    var milestone = dream.result.symbol_milestones && dream.result.symbol_milestones[0];
+    if (!milestone || !dream.id) return;
+    wx.showModal({
+      title: '更正这个梦象标签',
+      editable: true,
+      placeholderText: milestone.symbol,
+      success: function (res) {
+        var newSymbol = String(res.content || '').trim();
+        if (!res.confirm || !newSymbol || newSymbol === milestone.symbol) return;
+        cloudBase.editSymbol(dream.id, milestone.symbol, newSymbol, function (result) {
+          if (!result || !result.ok) {
+            wx.showToast({ title: '更正失败，请稍后再试', icon: 'none' });
+            return;
+          }
+          dream.result.symbols = (dream.result.symbols || []).map(function (symbol) {
+            return symbol === milestone.symbol ? newSymbol : symbol;
+          });
+          dream.result.symbol_milestones = [{ symbol: newSymbol, count: milestone.count }];
+          that.setData({ dream: dream });
+          var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
+          wx.setStorageSync('oneiro:dreamArchive', archive.map(function (item) {
+            return item.id === dream.id ? dream : item;
+          }));
+          wx.showToast({ title: '已更正', icon: 'success' });
+        });
+      }
+    });
+  },
+
   deleteDream: function () {
     var that = this;
     var dream = this.data.dream;

@@ -64,6 +64,28 @@ Page({
     this.setData({ inputValue: event.detail.value });
   },
 
+  confirmLifeNote: function (event) {
+    var that = this;
+    var index = event.currentTarget.dataset.index;
+    var messages = this.data.messages.slice();
+    var message = messages[index];
+    var dream = this.data.dream;
+    if (!message || message.confirmed || !dream || !dream.id) return;
+    cloudBase.addLifeNote(dream.id, message.content, function (result) {
+      if (!result || !result.ok) {
+        wx.showToast({ title: '暂时无法确认，请稍后再试', icon: 'none' });
+        return;
+      }
+      message.confirmed = true;
+      messages[index] = message;
+      dream.chatMessages = messages.slice(-12);
+      dream.updatedAt = new Date().toISOString();
+      persistDream(dream);
+      that.setData({ dream: dream, messages: messages });
+      wx.showToast({ title: '已记住，会在合适的时候引用', icon: 'none' });
+    });
+  },
+
   sendMessage: function () {
     var that = this;
     var dream = this.data.dream;

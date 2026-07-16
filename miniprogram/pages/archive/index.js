@@ -24,6 +24,10 @@ Page({
     hasArchive: false
   },
 
+  onLoad: function (options) {
+    this.options = options || {};
+  },
+
   onShow: function () {
     var savedArchive = wx.getStorageSync('oneiro:dreamArchive') || [];
     var archive = savedArchive.map(function (item, index) {
@@ -37,10 +41,27 @@ Page({
       return item;
     });
     wx.setStorageSync('oneiro:dreamArchive', archive);
-    this.setData({ archive: archive, archiveCount: archive.length, hasArchive: archive.length > 0 });
-    analytics.trackEvent('archive_view', {
-      archiveCount: archive.length
+    var symbolFilter = this.options && this.options.symbolFilter ? decodeURIComponent(this.options.symbolFilter) : '';
+    var filteredArchive = symbolFilter
+      ? archive.filter(function (item) {
+        var symbols = item.result && Array.isArray(item.result.symbols) ? item.result.symbols : [];
+        return symbols.indexOf(symbolFilter) >= 0;
+      })
+      : archive;
+    this.setData({
+      archive: filteredArchive,
+      archiveCount: filteredArchive.length,
+      hasArchive: filteredArchive.length > 0,
+      symbolFilter: symbolFilter
     });
+    analytics.trackEvent('archive_view', {
+      archiveCount: filteredArchive.length
+    });
+  },
+
+  clearFilter: function () {
+    this.options = Object.assign({}, this.options, { symbolFilter: '' });
+    this.onShow();
   },
 
   openDream: function (event) {

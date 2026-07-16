@@ -72,6 +72,20 @@
   line-height: 1.75;
 }
 
+.message-confirm {
+  margin-top: 12rpx;
+}
+
+.confirmed-label {
+  color: rgba(159, 183, 201, 0.48);
+  font-size: 19rpx;
+}
+
+.confirm-link {
+  color: rgba(202, 177, 117, 0.78);
+  font-size: 20rpx;
+}
+
 .is-loading {
   opacity: 0.62;
 }

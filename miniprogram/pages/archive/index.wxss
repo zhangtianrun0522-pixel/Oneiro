@@ -21,6 +21,25 @@
   letter-spacing: 5rpx;
 }
 
+.filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  margin-top: 24rpx;
+  padding: 18rpx 20rpx;
+  border-left: 3rpx solid rgba(159, 183, 201, 0.36);
+  background: rgba(159, 183, 201, 0.06);
+  color: rgba(159, 183, 201, 0.62);
+  font-size: 22rpx;
+}
+
+.filter-clear {
+  flex: 0 0 auto;
+  color: rgba(202, 177, 117, 0.8);
+  font-size: 20rpx;
+}
+
 .archive-item {
   display: flex;
   align-items: center;

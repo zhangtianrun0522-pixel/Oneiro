@@ -6,6 +6,10 @@
 
   <text class="eyebrow">Private Dream Archive</text>
   <text class="title">你的梦境档案</text>
+  <view wx:if="{{symbolFilter}}" class="filter-banner">
+    <text>只看含有「{{symbolFilter}}」的梦</text>
+    <text class="filter-clear" bindtap="clearFilter">清除筛选</text>
+  </view>
   <text wx:if="{{hasArchive}}" class="deck-count">已记下 {{archiveCount}} 个梦</text>
 
   <view wx:if="{{!hasArchive}}" class="empty">

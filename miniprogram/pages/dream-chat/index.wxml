@@ -14,6 +14,10 @@
     >
       <text class="message-role">{{item.role === 'user' ? '你' : 'ONEIRO'}}</text>
       <text class="message-copy">{{item.content}}</text>
+      <view wx:if="{{item.role === 'user'}}" class="message-confirm">
+        <text wx:if="{{item.confirmed}}" class="confirmed-label">✓ 已确认为真实情况</text>
+        <text wx:else class="confirm-link" data-index="{{index}}" bindtap="confirmLifeNote">确认这是真实情况 →</text>
+      </view>
     </view>
     <view wx:if="{{sending}}" class="message-row is-assistant is-loading">
       <text class="message-role">ONEIRO</text>

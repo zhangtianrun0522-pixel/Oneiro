@@ -408,6 +408,33 @@
   padding: 40rpx 34rpx;
 }
 
+.milestone-pill {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin-top: 24rpx;
+  padding: 18rpx 22rpx;
+  border: 1rpx solid rgba(202, 177, 117, 0.22);
+  border-radius: 999rpx;
+  background: rgba(202, 177, 117, 0.1);
+}
+
+.milestone-copy {
+  flex: 1;
+  min-width: 0;
+  color: rgba(202, 177, 117, 0.84);
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.milestone-edit {
+  flex: 0 0 auto;
+  padding: 8rpx 4rpx;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 18rpx;
+}
+
 .original-dream {
   padding: 26rpx;
   border-left: 4rpx solid rgba(159, 183, 201, 0.34);
@@ -500,6 +527,36 @@
   padding: 26rpx;
   border-left: 4rpx solid rgba(159, 183, 201, 0.72);
   background: rgba(159, 183, 201, 0.1);
+}
+
+.life-note-reading {
+  padding: 26rpx;
+  border-left: 4rpx solid rgba(159, 183, 201, 0.56);
+  background: rgba(159, 183, 201, 0.08);
+}
+
+.life-note-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-top: 20rpx;
+}
+
+.life-note-date {
+  color: rgba(159, 183, 201, 0.42);
+  font-size: 19rpx;
+  letter-spacing: 2rpx;
+}
+
+.life-note-link {
+  margin-left: auto;
+  color: rgba(202, 177, 117, 0.76);
+  font-size: 20rpx;
+}
+
+.life-note-link::after {
+  content: " →";
 }
 
 .alternative-reading {

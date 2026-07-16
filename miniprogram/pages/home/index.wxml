@@ -4,6 +4,26 @@
     <button class="profile-link" bindtap="openProfile">我的资料</button>
   </view>
 
+  <view wx:if="{{revisit}}" class="revisit-card">
+    <text class="revisit-title">昨天的梦「{{revisit.title}}」</text>
+    <text class="revisit-question">{{revisit.question}}</text>
+    <view wx:if="{{!revisitAnswering}}" class="revisit-actions">
+      <button class="revisit-answer-button" bindtap="startAnswerRevisit">回答</button>
+      <button class="revisit-skip-button" bindtap="skipRevisitPrompt">跳过</button>
+    </view>
+    <text wx:if="{{!revisitAnswering}}" class="revisit-disable-link" bindtap="disableRevisitPrompts">不再提醒</text>
+    <view wx:else class="revisit-composer">
+      <textarea
+        class="revisit-textarea"
+        bindinput="onRevisitAnswerInput"
+        value="{{revisitAnswerText}}"
+        maxlength="300"
+        auto-height
+      />
+      <button class="revisit-send-button" bindtap="submitRevisitAnswer">发送</button>
+    </view>
+  </view>
+
   <view class="hero">
     <text class="eyebrow">Private Dream Memory</text>
     <text class="title">它不替你预测命运，但会越来越理解你的梦</text>
