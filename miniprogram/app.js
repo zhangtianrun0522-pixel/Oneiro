@@ -21,6 +21,7 @@ App({
     cloudStatus: null,
     identity: null,
     currentDream: null,
+    currentArtifact: null,
     lastProfile: {
       nickname: '',
       birthDate: '',

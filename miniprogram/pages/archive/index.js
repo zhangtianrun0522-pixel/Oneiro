@@ -1,4 +1,5 @@
 var analytics = require('../../utils/analytics');
+var dreamArtifacts = require('../../utils/dreamArtifacts');
 
 function dateLabel(value) {
   var date = new Date(value);
@@ -21,7 +22,9 @@ Page({
   data: {
     archive: [],
     archiveCount: 0,
-    hasArchive: false
+    hasArchive: false,
+    archetypeEligible: false,
+    archetype: null
   },
 
   onLoad: function (options) {
@@ -41,6 +44,7 @@ Page({
       return item;
     });
     wx.setStorageSync('oneiro:dreamArchive', archive);
+    var archetypeResult = dreamArtifacts.computeArchetype(archive);
     var symbolFilter = this.options && this.options.symbolFilter ? decodeURIComponent(this.options.symbolFilter) : '';
     var filteredArchive = symbolFilter
       ? archive.filter(function (item) {
@@ -52,7 +56,9 @@ Page({
       archive: filteredArchive,
       archiveCount: filteredArchive.length,
       hasArchive: filteredArchive.length > 0,
-      symbolFilter: symbolFilter
+      symbolFilter: symbolFilter,
+      archetypeEligible: archetypeResult.eligible,
+      archetype: archetypeResult.archetype || null
     });
     analytics.trackEvent('archive_view', {
       archiveCount: filteredArchive.length
@@ -74,6 +80,16 @@ Page({
       cardTheme: dream.result && dream.result.card_theme ? dream.result.card_theme : 'mist'
     });
     wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dream.id) });
+  },
+
+  openArchetypeCard: function () {
+    var app = getApp();
+    if (!this.data.archetypeEligible) return;
+    app.globalData.currentArtifact = {
+      type: 'archetype',
+      archetype: this.data.archetype
+    };
+    wx.navigateTo({ url: '/pages/artifact/index?type=archetype' });
   },
 
   newDream: function () {

@@ -38,6 +38,7 @@
       <text class="milestone-copy">{{dream.result.symbol_milestones[0].symbol}} · 第 {{dream.result.symbol_milestones[0].count}} 次出现在你的梦里</text>
       <text class="milestone-edit" catchtap="correctMilestoneSymbol">纠正</text>
     </view>
+    <button wx:if="{{dream.result.symbol_milestones && dream.result.symbol_milestones[0]}}" class="topic-card-button" bindtap="openTopicCard">生成分享话题卡</button>
   </block>
 
   <view class="reading grounded-reading">

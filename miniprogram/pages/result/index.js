@@ -2,6 +2,7 @@ const { acceptanceDreamResult, acceptanceDreamText } = require('../../utils/acce
 const analytics = require('../../utils/analytics');
 const cloudBase = require('../../utils/cloudBase');
 const { buildLocalDreamResult } = require('../../utils/localDreamOracle');
+const dreamArtifacts = require('../../utils/dreamArtifacts');
 
 var CARD_WIDTH = 900;
 var CARD_HEIGHT = 1200;
@@ -712,6 +713,17 @@ Page({
         });
       }
     });
+  },
+
+  openTopicCard: function () {
+    var app = getApp();
+    var milestone = this.data.dream.result.symbol_milestones && this.data.dream.result.symbol_milestones[0];
+    if (!milestone) return;
+    app.globalData.currentArtifact = {
+      type: 'topic',
+      topicCard: dreamArtifacts.buildTopicCard(milestone.symbol)
+    };
+    wx.navigateTo({ url: '/pages/artifact/index?type=topic' });
   },
 
   deleteDream: function () {

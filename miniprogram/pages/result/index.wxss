@@ -435,6 +435,22 @@
   font-size: 18rpx;
 }
 
+.topic-card-button {
+  width: auto;
+  margin: 18rpx 0 0;
+  padding: 14rpx 24rpx;
+  border: 1rpx solid rgba(202, 177, 117, 0.28);
+  border-radius: 999rpx;
+  background: rgba(202, 177, 117, 0.05);
+  color: rgba(239, 228, 200, 0.68);
+  font-size: 20rpx;
+  line-height: 1.4;
+}
+
+.topic-card-button::after {
+  border: 0;
+}
+
 .original-dream {
   padding: 26rpx;
   border-left: 4rpx solid rgba(159, 183, 201, 0.34);

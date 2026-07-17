@@ -11,6 +11,11 @@
     <text class="filter-clear" bindtap="clearFilter">清除筛选</text>
   </view>
   <text wx:if="{{hasArchive}}" class="deck-count">已记下 {{archiveCount}} 个梦</text>
+  <view wx:if="{{archetypeEligible}}" class="archetype-banner" bindtap="openArchetypeCard">
+    <text class="archetype-banner-label">你的梦境原型</text>
+    <text class="archetype-banner-title">{{archetype.label}}</text>
+    <text class="archetype-banner-arrow">解锁分享卡 →</text>
+  </view>
 
   <view wx:if="{{!hasArchive}}" class="empty">
     <text>还没有记录。从刚醒来时记得的一个画面开始。</text>

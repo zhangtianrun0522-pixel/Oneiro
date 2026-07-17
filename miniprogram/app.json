@@ -7,6 +7,7 @@
     "pages/archive/index",
     "pages/profile/index",
     "pages/share/index",
+    "pages/artifact/index",
     "pages/diagnostics/index"
   ],
   "window": {

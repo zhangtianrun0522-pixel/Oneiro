@@ -73,6 +73,24 @@ type LocalOracleModule = {
   };
 };
 
+type DreamArtifactsModule = {
+  computeArchetype: (archive: unknown[]) => {
+    eligible: boolean;
+    archetype?: {
+      label: string;
+      description: string;
+      evidenceKeyword: string;
+      evidenceCount: number;
+      disclaimer: string;
+    };
+  };
+  buildTopicCard: (symbol: string) => {
+    symbol: string;
+    headline: string;
+    prompt: string;
+  };
+};
+
 type ProfileOracleModule = {
   personalizeDreamResult: (
     result: ReturnType<LocalOracleModule['buildLocalDreamResult']>,
@@ -564,6 +582,7 @@ const acceptance = loadCommonJS<AcceptanceModule>('miniprogram/utils/acceptanceD
 const contentSafety = loadCommonJS<ContentSafetyModule>('miniprogram/utils/contentSafety.js');
 const localOracle = loadCommonJS<LocalOracleModule>('miniprogram/utils/localDreamOracle.js');
 const profileOracle = loadCommonJS<ProfileOracleModule>('miniprogram/utils/profileOracle.js');
+const dreamArtifacts = loadCommonJS<DreamArtifactsModule>('miniprogram/utils/dreamArtifacts.js');
 
 for (const path of [
   'miniprogram/app.json',
@@ -859,6 +878,7 @@ assert.ok(wx.cloudCalls.some((call) => call.name === 'trackEvent'));
 const app = {
   globalData: {
     currentDream: null,
+    currentArtifact: null,
     lastProfile: {
       nickname: '',
       birthDate: '',
@@ -874,6 +894,7 @@ const pageModules = {
   '../../utils/contentSafety': contentSafety,
   '../../utils/localDreamOracle': localOracle,
   '../../utils/profileOracle': profileOracle,
+  '../../utils/dreamArtifacts': dreamArtifacts,
 };
 
 const homePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);
