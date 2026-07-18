@@ -1,3 +1,5 @@
+var canvasFrame = require('../../utils/canvasFrame');
+
 function drawCenteredWrappedText(ctx, text, centerX, y, maxWidth, lineHeight, maxLines) {
   var content = String(text || '');
   var line = '';
@@ -39,14 +41,6 @@ function drawBackground(ctx, width, height) {
   gradient.addColorStop(1, '#090b11');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
-}
-
-function drawFineFrame(ctx, x, y, width, height) {
-  ctx.save();
-  ctx.strokeStyle = 'rgba(202, 177, 117, 0.6)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, width, height);
-  ctx.restore();
 }
 
 Page({
@@ -189,7 +183,7 @@ Page({
     var titleBottom;
 
     drawBackground(ctx, width, height);
-    drawFineFrame(ctx, 54, 54, width - 108, height - 108);
+    canvasFrame.drawOrnamentalFrame(ctx, width, height, { margin: 54 });
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -274,7 +268,7 @@ Page({
     var titleBottom;
 
     drawBackground(ctx, width, height);
-    drawFineFrame(ctx, 76, 76, width - 152, height - 152);
+    canvasFrame.drawOrnamentalFrame(ctx, width, height, { margin: 76 });
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';

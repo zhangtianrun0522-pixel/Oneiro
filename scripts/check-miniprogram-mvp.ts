@@ -91,6 +91,15 @@ type DreamArtifactsModule = {
   };
 };
 
+type CanvasFrameModule = {
+  drawOrnamentalFrame: (
+    ctx: unknown,
+    width: number,
+    height: number,
+    options?: Record<string, unknown>
+  ) => void;
+};
+
 type ProfileOracleModule = {
   personalizeDreamResult: (
     result: ReturnType<LocalOracleModule['buildLocalDreamResult']>,
@@ -227,6 +236,7 @@ function createCanvasContext(): Record<string, any> {
     save() {},
     scale() {},
     stroke() {},
+    strokeRect() {},
     translate() {},
   };
 
@@ -583,6 +593,7 @@ const contentSafety = loadCommonJS<ContentSafetyModule>('miniprogram/utils/conte
 const localOracle = loadCommonJS<LocalOracleModule>('miniprogram/utils/localDreamOracle.js');
 const profileOracle = loadCommonJS<ProfileOracleModule>('miniprogram/utils/profileOracle.js');
 const dreamArtifacts = loadCommonJS<DreamArtifactsModule>('miniprogram/utils/dreamArtifacts.js');
+const canvasFrame = loadCommonJS<CanvasFrameModule>('miniprogram/utils/canvasFrame.js');
 
 for (const path of [
   'miniprogram/app.json',
@@ -895,6 +906,7 @@ const pageModules = {
   '../../utils/localDreamOracle': localOracle,
   '../../utils/profileOracle': profileOracle,
   '../../utils/dreamArtifacts': dreamArtifacts,
+  '../../utils/canvasFrame': canvasFrame,
 };
 
 const homePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);

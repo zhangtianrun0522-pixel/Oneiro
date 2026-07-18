@@ -3,6 +3,7 @@ const analytics = require('../../utils/analytics');
 const cloudBase = require('../../utils/cloudBase');
 const { buildLocalDreamResult } = require('../../utils/localDreamOracle');
 const dreamArtifacts = require('../../utils/dreamArtifacts');
+const canvasFrame = require('../../utils/canvasFrame');
 
 var CARD_WIDTH = 900;
 var CARD_HEIGHT = 1200;
@@ -388,6 +389,7 @@ function drawCard(ctx, dream, displayDate, imagePath) {
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
   drawDreamArt(ctx, result.card_theme || 'mist', imagePath, artRect);
+  canvasFrame.drawOrnamentalFrame(ctx, CARD_WIDTH, CARD_HEIGHT, { margin: 20 });
 
   ctx.save();
   drawRoundRect(ctx, artRect.x, artRect.y, artRect.width, artRect.height, artRect.radius);

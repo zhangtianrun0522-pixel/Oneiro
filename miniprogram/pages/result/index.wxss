@@ -32,6 +32,7 @@
   overflow: hidden;
   border-radius: 20rpx;
   background: linear-gradient(145deg, #172438 0%, #425d72 62%, #d8e7ef 100%);
+  box-shadow: 0 0 0 2rpx rgba(202, 177, 117, 0.42), 0 0 0 10rpx rgba(202, 177, 117, 0.2);
 }
 
 .dream-ai-image {
