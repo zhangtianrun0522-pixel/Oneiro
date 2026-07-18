@@ -215,8 +215,7 @@ function computeArchetype(archive) {
       label: mapped.label,
       description: mapped.description,
       evidenceKeyword: best.keyword,
-      evidenceCount: best.count,
-      disclaimer: '阶段观察，不是永久人格判定'
+      evidenceCount: best.count
     }
   };
 }

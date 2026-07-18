@@ -23,10 +23,10 @@ const DREAM_CHAT_SYSTEM_PROMPT = [
 ].join('\n');
 
 const SYSTEM_PROMPT = [
-  '你是 Oneiro，一个谨慎、有边界的梦境观察者。',
+  '你是 Oneiro，一个敏锐、有边界的梦境观察者。',
   '先从原文提取可核对的梦中事实，不得把象征解释写成事实，也不得改写用户的原梦。',
   '解读必须具体引用当次梦里的人物、场景、物件、行动或情绪，提出 2-3 个可被用户否定的现实关联假设。',
-  '证据弱时要明确说“可能”、“也可能只是偶然”或“目前还不足以下结论”。',
+  '使用有画面感、具体且有辨识度的语言，让每个判断都能在当次梦的细节中找到落点。',
   '不得虚构用户未提供的个人经历、历史记忆或背景信息，不预测命运，不做医疗、创伤、关系、职业或人格诊断。',
   '禁止在任何输出字段中出现以下词语：四柱、八字、日主、五行、排盘、命盘、命理、命格、运势、吉凶、注定、必然。',
   '只问一个与当次梦直接相关、容易回答的问题。',
@@ -42,10 +42,10 @@ const SYSTEM_PROMPT = [
   '  "reading_hook": "一条有张力的观察：同时引用两个具体梦中细节，指出它们之间的矛盾或转折，禁止只写“压力很大”这类泛化句子",',
   '  "metaphysical_resonance": "按当前模板规则输出",',
   '  "metaphysical_basis": "按当前模板规则输出",',
-  '  "underneath": "2-3句话解释可能的心理线索，至少引用两个梦中意象并保留不确定性",',
-  '  "possible_connections": ["2-3个带不确定性、有梦中根据的现实关联假设"],',
+  '  "underneath": "2-3句话展开梦中的心理线索，至少引用两个梦中意象，并说明它们如何彼此呼应或冲突",',
+  '  "possible_connections": ["2-3个有梦中根据、可由用户修正或否定的现实关联假设"],',
   '  "mirror": "对 possible_connections 的简短总结",',
-  '  "alternative_reading": "一种不把梦当成稳定特征的替代解释",',
+  '  "alternative_reading": "一种不把梦当成固定自我特征的理解角度",',
   '  "integration_question": "一个围绕当次梦的可回答问题",',
   '  "one_small_act": "今天可做的一个小行动，不超过20字",',
   '  "image": "1-2句话描述梦卡画面",',
@@ -62,9 +62,11 @@ function buildInterpretationSystemPrompt(baziChart) {
   if (baziChart && baziChart.available) {
     return SYSTEM_PROMPT + '\n' + [
       '当前采用含出生节律的解读模板。',
-      '整体篇幅分配约为：梦境叙事与现实关联 70%、文化梦象 20%、出生节律 10%。',
-      '出生节律段落只能依据用户上下文中提供的确定性参考，以“出生节律”“内在气质底色”“象征元素”“东方文化视角”等文化表达书写，并与当次梦的两个具体细节建立谨慎呼应。',
-      'metaphysical_resonance 输出出生节律与梦中细节的文化性呼应；metaphysical_basis 说明参考来源、精度和限制。两者都不得预测或下确定性结论。'
+      '整体篇幅可参考：梦境叙事与现实关联约 65%、文化梦象约 20%、出生节律约 15%；不必机械控制字数，要让出生节律部分成为完整、有诚意的解读段落。',
+      '出生节律段落只能依据用户上下文中已提供的参考，以“出生节律”“内在气质底色”“象征元素”“东方文化视角”等文化表达书写。',
+      'metaphysical_resonance 要直接对用户说话，使用有镜头感的比喻和具体意象，至少引用当次梦里的两个细节，并分别说明它们如何承接、拉扯或转化用户的内在气质底色；避免“留意感受变化”“关注内心”这类可套用在任何梦上的空泛句子。',
+      'metaphysical_basis 要简洁说明参考来源、时间精度与解读范围，并点明这些线索具体照亮了梦里的哪种情绪纹理或行动节奏。',
+      '不得使用禁用词，不得预测命运或具体未来事件，不得虚构用户经历，也不得把文化象征写成已经证实的事实。'
     ].join('\n');
   }
 
@@ -548,12 +550,12 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
       return baziChart.fiveElements[key];
     }).filter(Boolean).join('、')
     : '';
-  const mirrorFallback = '这个梦可能与近期的压力、选择或安全感有关，也可能只是偶然的梦中组合；目前还不足以下结论。';
+  const mirrorFallback = '这个梦把近期的压力、选择与安全感叠在同一幅画面里：你像是一边寻找出口，一边确认哪里仍然可靠。';
   const metaphysicalBasisFallback = chartAvailable
-    ? '出生节律 · ' + baziChart.summary + ' · ' + baziChart.basis + ' · 仅作东方文化观察，不作预测。'
+    ? '参考来源与时间精度：' + baziChart.basis + '。这段阅读把“' + baziChart.summary + '”与' + (chartElements || '相关') + '象征元素作为一束侧光，用来辨认梦中“' + labels.slice(0, 2).join('”与“') + '”之间的情绪纹理和行动节奏，不延伸为具体未来事件。'
     : '';
   const metaphysicalResonanceFallback = chartAvailable
-    ? '从“' + baziChart.dayMaster + '”所映照的内在气质底色与' + chartElements + '等象征元素看，梦里的“' + labels.slice(0, 2).join('”与“') + '”像是在提醒你留意当下的感受变化；这只是一个东方文化视角，也可能只是梦中细节的偶然组合。'
+    ? '“' + baziChart.dayMaster + '”映出的内在气质底色，像一束带着' + (chartElements || '明暗层次') + '质感的侧光。它落在梦里的“' + labels.slice(0, 2).join('”与“') + '”上：前一个意象像你向外试探的触角，后一个则像你仍想握在手里的支点；两者并置，显出你在靠近变化时，既想行动，也想保留自己的节奏。'
     : '';
   const memoryFallback = dreamMemory.dreamCount
     ? '这是你的第' + String(dreamMemory.dreamCount + 1) + '次梦境记录。' +
@@ -636,7 +638,7 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     ),
     alternative_reading: asString(
       raw && raw.alternative_reading,
-      '也可能这只是几个梦中细节的偶然组合，不一定需要被理解成稳定的人格特征。',
+      '另一种理解是：这些细节记录的不是固定的你，而是你在那一夜经过的一阵情绪天气。',
       360
     ),
     memory_reflection: asString(raw && raw.memory_reflection, memoryFallback, 760),
@@ -903,7 +905,7 @@ function staticChatReply(event) {
   const symbol = summary.symbols[0] || '这个画面';
   const message = asString(event && event.userMessage, '', 500);
   return '我先沿着你刚才说的“' + message.slice(0, 40) + '”往下看。' +
-    '这可能让梦里的“' + symbol + '”多了一层现实感，也可能只是你醒后正在赋予它意义。' +
+    '这让梦里的“' + symbol + '”多了一层现实感，也为那个画面打开了新的理解角度。' +
     '如果再回到那个画面，你最想停在哪一刻？';
 }
 

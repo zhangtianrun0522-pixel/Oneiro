@@ -253,22 +253,18 @@ Page({
       ctx.fillStyle = 'rgba(159, 183, 201, 0.6)';
       ctx.font = '400 21px sans-serif';
       ctx.fillText('基于你最近 ' + content.evidenceCount + ' 个梦', width / 2, 505);
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
-      ctx.font = '400 18px sans-serif';
-      ctx.fillText(content.disclaimer, width / 2, 555);
     }
 
     ctx.strokeStyle = 'rgba(202, 177, 117, 0.36)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(110, 674);
-    ctx.lineTo(width - 110, 674);
+    ctx.moveTo(110, 646);
+    ctx.lineTo(width - 110, 646);
     ctx.stroke();
 
     ctx.fillStyle = 'rgba(239, 228, 200, 0.62)';
     ctx.font = '500 18px sans-serif';
-    ctx.fillText('ONEIRO · 私密梦境记录', width / 2, 704);
+    ctx.fillText('ONEIRO · 私密梦境记录', width / 2, 676);
   },
 
   drawArtifact3x4: function (ctx, width, height) {
@@ -349,22 +345,18 @@ Page({
       ctx.fillStyle = 'rgba(159, 183, 201, 0.62)';
       ctx.font = '400 27px sans-serif';
       ctx.fillText('基于你最近 ' + content.evidenceCount + ' 个梦', width / 2, 920);
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
-      ctx.font = '400 23px sans-serif';
-      ctx.fillText(content.disclaimer, width / 2, 995);
     }
 
     ctx.strokeStyle = 'rgba(202, 177, 117, 0.38)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(150, 1450);
-    ctx.lineTo(width - 150, 1450);
+    ctx.moveTo(150, 1400);
+    ctx.lineTo(width - 150, 1400);
     ctx.stroke();
 
     ctx.fillStyle = 'rgba(239, 228, 200, 0.64)';
     ctx.font = '500 23px sans-serif';
-    ctx.fillText('ONEIRO · 私密梦境记录', width / 2, 1494);
+    ctx.fillText('ONEIRO · 私密梦境记录', width / 2, 1444);
   },
 
   saveCurrentFormat: function () {

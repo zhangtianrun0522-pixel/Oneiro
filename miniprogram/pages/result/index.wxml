@@ -80,7 +80,7 @@
         <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{index + 1}}. {{item}}</text>
       </view>
       <text wx:if="{{interpretationUnavailable}}" class="reading-copy">本次未生成解读，原梦仍已保存。你可以保留记录，或直接删除。</text>
-      <text wx:if="{{!interpretationUnavailable}}" class="reading-boundary">这些只是可能的理解，也可能只是偶然的梦中组合。</text>
+      <text wx:if="{{!interpretationUnavailable}}" class="reading-boundary">这是一种理解角度，你可以保留、修正或否定它。</text>
     </view>
 
     <view wx:if="{{!interpretationUnavailable}}" class="reading-block alternative-reading">
