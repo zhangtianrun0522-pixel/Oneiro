@@ -75,9 +75,9 @@ assertIncludes('miniprogram/utils/cloudBase.js', 'pollDreamImageQuality');
 assertIncludes('miniprogram/utils/cloudBase.js', 'getProfileMemory');
 assertIncludes('miniprogram/utils/cloudBase.js', 'generateProfilePortrait');
 
-assertIncludes('miniprogram/pages/new-dream/index.js', "cloudBase.interpretDream");
-assertIncludes('miniprogram/pages/new-dream/index.js', "cloudBase.saveDream");
-assertIncludes('miniprogram/pages/new-dream/index.js', "dream_saved_before_interpretation");
+assertIncludes('miniprogram/pages/home/index.js', "cloudBase.interpretDream");
+assertIncludes('miniprogram/pages/home/index.js', "cloudBase.saveDream");
+assertIncludes('miniprogram/pages/home/index.js', "dream_saved_before_interpretation");
 assertIncludes('miniprogram/utils/cloudBase.js', "deleteDream");
 assertIncludes('miniprogram/utils/cloudBase.js', "getDreamArchive");
 assertIncludes('miniprogram/pages/dream-chat/index.js', "cloudBase.chatAboutDream");

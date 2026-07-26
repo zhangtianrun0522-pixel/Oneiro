@@ -231,6 +231,7 @@ type WxMock = {
   setStorageSync: (key: string, value: any) => void;
   navigateTo: (options: { url: string }) => void;
   reLaunch: (options: { url: string }) => void;
+  switchTab: (options: { url: string }) => void;
   showToast: (options: { title: string }) => void;
   showModal: (options: Record<string, any>) => void;
   showLoading: (options: { title: string }) => void;
@@ -322,6 +323,9 @@ function createWxMock(): WxMock {
       this.storage[key] = value;
     },
     navigateTo(options) {
+      this.navigations.push(options.url);
+    },
+    switchTab(options) {
       this.navigations.push(options.url);
     },
     reLaunch(options) {
@@ -767,7 +771,6 @@ for (const path of [
   'miniprogram/project.config.json',
   'miniprogram/project.private.config.json',
   'miniprogram/pages/home/index.json',
-  'miniprogram/pages/new-dream/index.json',
   'miniprogram/pages/result/index.json',
   'miniprogram/pages/dream-chat/index.json',
   'miniprogram/pages/archive/index.json',
@@ -805,7 +808,7 @@ for (const [path, expected] of [
   ['miniprogram/pages/home/index.wxml', '打开梦境档案'],
   ['miniprogram/pages/home/index.wxml', '我的资料'],
   ['miniprogram/pages/home/index.wxml', 'fromShare'],
-  ['miniprogram/pages/new-dream/index.wxml', 'bindtap="generateDreamCard"'],
+  ['miniprogram/pages/home/index.wxml', 'bindtap="generateDreamCard"'],
   ['miniprogram/pages/result/index.wxml', 'theme-{{dream.result.card_theme}}'],
   ['miniprogram/pages/result/index.wxml', 'dream-ai-image'],
   ['miniprogram/pages/result/index.wxml', '画面生成中'],
@@ -815,11 +818,15 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', '文化象征'],
   ['miniprogram/pages/result/index.wxml', '心理视角'],
   ['miniprogram/pages/result/index.wxml', '聊聊这个梦'],
-  ['miniprogram/pages/result/index.wxml', '梦的叙事与张力'],
+  ['miniprogram/pages/result/index.wxml', 'class="core-observation"'],
+  ['miniprogram/pages/result/index.wxml', 'dream.result.reading_hook'],
+  ['miniprogram/pages/result/index.wxml', '三个视角'],
+  ['miniprogram/pages/result/index.wxml', 'bindtap="toggleFullReading"'],
+  ['miniprogram/pages/result/index.wxml', 'bindtap="toggleMoreActions"'],
   ['miniprogram/pages/result/index.wxml', '另一种可能'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="saveCard"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="saveFullReading"'],
-  ['miniprogram/pages/result/index.wxml', '保存收藏梦卡'],
+  ['miniprogram/pages/result/index.wxml', '收藏梦卡'],
   ['miniprogram/pages/result/index.wxml', '保存完整解读'],
   ['miniprogram/pages/result/index.wxml', '分享这张梦卡'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="newDream"'],
@@ -842,7 +849,8 @@ for (const [path, expected] of [
   ['miniprogram/pages/diagnostics/index.wxml', 'AI SMOKE TEST'],
   ['miniprogram/pages/diagnostics/index.wxml', 'bindtap="runSmokeTest"'],
   ['miniprogram/pages/archive/index.wxml', '私人梦境牌组'],
-  ['miniprogram/pages/archive/index.wxml', '本月主牌'],
+  ['miniprogram/pages/archive/index.wxml', '本月观察'],
+  ['miniprogram/pages/archive/index.wxml', 'class="month-observation"'],
   ['miniprogram/pages/archive/index.wxml', 'wx:for="{{timelineGroups}}"'],
   ['miniprogram/pages/archive/index.wxml', 'timelineTimestamp'],
   ['miniprogram/pages/archive/index.wxml', 'archive-thumb-placeholder'],
@@ -885,19 +893,19 @@ for (const [path, expected] of [
   ['miniprogram/utils/cloudBase.js', "refineDream"],
   ['miniprogram/utils/cloudBase.js', "getProfileMemory"],
   ['miniprogram/utils/cloudBase.js', "generateProfilePortrait"],
-  ['miniprogram/pages/new-dream/index.js', "validateDreamText"],
-  ['miniprogram/pages/new-dream/index.js', "interpretDream"],
-  ['miniprogram/pages/new-dream/index.js', "cloudResult.blocked"],
-  ['miniprogram/pages/new-dream/index.js', "createLocalResult"],
-  ['miniprogram/pages/new-dream/index.js', "saveDream"],
-  ['miniprogram/pages/new-dream/index.js', "dream_saved_before_interpretation"],
-  ['miniprogram/pages/new-dream/index.js', "dream_submit"],
-  ['miniprogram/pages/new-dream/index.js', "interpretation_success"],
-  ['miniprogram/pages/new-dream/index.js', "interpretationProvider"],
-  ['miniprogram/pages/new-dream/index.js', "provider: provider"],
-  ['miniprogram/pages/new-dream/index.js', "wx.showModal"],
-  ['miniprogram/pages/new-dream/index.js', "buildLocalDreamResult"],
-  ['miniprogram/pages/new-dream/index.js', "pages/result/index?id="],
+  ['miniprogram/pages/home/index.js', "validateDreamText"],
+  ['miniprogram/pages/home/index.js', "interpretDream"],
+  ['miniprogram/pages/home/index.js', "cloudResult.blocked"],
+  ['miniprogram/pages/home/index.js', "createLocalResult"],
+  ['miniprogram/pages/home/index.js', "saveDream"],
+  ['miniprogram/pages/home/index.js', "dream_saved_before_interpretation"],
+  ['miniprogram/pages/home/index.js', "dream_submit"],
+  ['miniprogram/pages/home/index.js', "interpretation_success"],
+  ['miniprogram/pages/home/index.js', "interpretationProvider"],
+  ['miniprogram/pages/home/index.js', "provider: provider"],
+  ['miniprogram/pages/home/index.js', "wx.showModal"],
+  ['miniprogram/pages/home/index.js', "buildLocalDreamResult"],
+  ['miniprogram/pages/home/index.js', "pages/result/index?id="],
   ['miniprogram/pages/home/index.js', "dream_start"],
   ['miniprogram/pages/home/index.js', "share_landing_view"],
   ['miniprogram/pages/result/index.js', "findDreamById"],
@@ -932,7 +940,7 @@ for (const [path, expected] of [
   ['miniprogram/pages/diagnostics/index.js', "cloudHealth"],
   ['miniprogram/pages/diagnostics/index.js', "normalizeAiHealth"],
   ['miniprogram/pages/share/index.js', "share_card_open"],
-  ['miniprogram/pages/result/index.js', "pages/new-dream/index"],
+  ['miniprogram/pages/result/index.js', "tabNav.switchTab('pages/home/index')"],
   ['miniprogram/pages/result/index.js', "pages/archive/index"],
   ['miniprogram/pages/result/index.js', "onShareAppMessage"],
   ['miniprogram/pages/result/index.js', "themePalettes"],
@@ -1116,6 +1124,7 @@ assert.ok(wx.cloudCalls.some((call) => call.name === 'trackEvent'));
 
 const app = {
   globalData: {
+    pendingTabParams: {} as Record<string, Record<string, any>>,
     currentDream: null,
     currentArtifact: null,
     lastProfile: {
@@ -1127,6 +1136,12 @@ const app = {
     },
   },
 };
+// tabNav 依赖运行时的 getApp() 与 wx，因此在 wx / app 就绪后再加载
+const tabNav = loadCommonJS<Record<string, any>>('miniprogram/utils/tabNav.js', {
+  getApp: () => app,
+  wx,
+});
+
 const pageModules = {
   '../../utils/acceptanceDream': acceptance,
   '../../utils/analytics': analytics,
@@ -1137,6 +1152,7 @@ const pageModules = {
   '../../utils/dreamArtifacts': dreamArtifacts,
   '../../utils/dreamMemory': dreamMemory,
   '../../utils/canvasFrame': canvasFrame,
+  '../../utils/tabNav': tabNav,
 };
 
 const homePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);
@@ -1173,10 +1189,8 @@ assert.equal(profilePage.data.memoryState.current.version, 2);
 assert.equal(profilePage.data.memoryState.pastHistory.some((item: Record<string, any>) => item.version === 1 && item.status === 'superseded'), true);
 assert.equal(profilePage.data.memoryState.current.summary, '这是我确认过措辞的阶段画像。');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'profileMemory' && call.data.action === 'save'));
-homePage.startDream();
-assert.equal(last(wx.navigations), '/pages/new-dream/index');
-
-const newDreamPage = loadPage('miniprogram/pages/new-dream/index.js', pageModules, wx, app);
+// home 与 new-dream 已合并：首页本身就是采集页，不再有二次跳转
+const newDreamPage = homePage;
 newDreamPage.generateDreamCard();
 assert.equal(last(wx.toasts), '先写下一点梦');
 wx.blockNextInterpret = true;
@@ -1352,7 +1366,7 @@ assert.equal(
   3
 );
 resultPage.newDream();
-assert.equal(last(wx.navigations), '/pages/new-dream/index');
+assert.equal(last(wx.navigations), '/pages/home/index');
 resultPage.openArchive();
 assert.equal(last(wx.navigations), '/pages/archive/index');
 resultPage.deleteDream();
@@ -1385,7 +1399,11 @@ sharePage.onLoad({ id: 'card-mock' });
 assert.equal(sharePage.data.loading, false);
 assert.equal(sharePage.data.payload.title, '云影');
 sharePage.startDream();
-assert.equal(last(wx.navigations), '/pages/home/index?fromShare=1');
+// 改用原生 tabBar 后 switchTab 不能带查询串，fromShare 经 tabNav 暂存交接
+assert.equal(last(wx.navigations), '/pages/home/index');
+assert.equal(app.globalData.pendingTabParams['pages/home/index'].fromShare, true);
+assert.equal(tabNav.takeParams('pages/home/index').fromShare, true);
+assert.equal(Object.keys(tabNav.takeParams('pages/home/index')).length, 0);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'getShareCard'));
 
 const diagnosticsPage = loadPage('miniprogram/pages/diagnostics/index.js', pageModules, wx, app);

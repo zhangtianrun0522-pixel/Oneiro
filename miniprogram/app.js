@@ -33,6 +33,8 @@ App({
 
   globalData: {
     cloudStatus: null,
+    // switchTab 不能带查询串，跳 tab 的参数在这里中转（见 utils/tabNav.js）
+    pendingTabParams: {},
     identity: null,
     currentDream: null,
     currentArtifact: null,

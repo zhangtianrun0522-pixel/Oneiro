@@ -514,6 +514,16 @@ Page({
     this.refreshRecentDreams();
   },
 
+  openProfile: function () {
+    analytics.trackEvent('profile_open', { source: 'home' });
+    tabNav.switchTab('pages/profile/index');
+  },
+
+  openArchive: function () {
+    analytics.trackEvent('archive_open', { source: 'home' });
+    tabNav.switchTab('pages/archive/index');
+  },
+
   refreshRecentDreams: function () {
     var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
     this.setData({
@@ -553,6 +563,9 @@ Page({
     var dreamText = this.data.dreamText.trim();
     var profile = readProfile();
     var safety = contentSafety.validateDreamText(dreamText);
+    // 合并前首页点「保存并解读」发 dream_start、new-dream 自动提交发
+    // dream_submit，两者是同一次用户动作。合并后在同一处补齐，保持漏斗口径不变。
+    analytics.trackEvent('dream_start', { source: 'home' });
     analytics.trackEvent('dream_submit', {
       length: dreamText.length
     });
