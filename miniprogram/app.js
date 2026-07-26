@@ -13,6 +13,20 @@ App({
         that.globalData.identity = identity;
         analytics.trackEvent('login_ready', { source: identity.source });
         cloudBase.flushEvents(analytics.getEvents());
+        that.flushPendingDreamDeletes();
+      });
+    });
+  },
+
+  flushPendingDreamDeletes: function () {
+    var pending = wx.getStorageSync('oneiro:pendingCloudDeletes') || [];
+    if (!Array.isArray(pending) || !pending.length) return;
+    var remaining = pending.slice();
+    pending.forEach(function (dreamId) {
+      cloudBase.deleteDream(dreamId, function (result) {
+        if (!result || !result.ok) return;
+        remaining = remaining.filter(function (item) { return item !== dreamId; });
+        wx.setStorageSync('oneiro:pendingCloudDeletes', remaining);
       });
     });
   },
@@ -26,7 +40,8 @@ App({
       nickname: '',
       birthDate: '',
       birthTime: '',
-      birthPlace: ''
+      birthPlace: '',
+      gender: ''
     }
   }
 });

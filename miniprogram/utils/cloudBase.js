@@ -127,8 +127,47 @@ function saveProfile(profile, callback) {
   return callCloudFunction('saveProfile', { profile: profile }, callback);
 }
 
+function profileMemory(action, data, callback) {
+  return callCloudFunction('profileMemory', Object.assign({ action: action || 'get' }, data || {}), callback);
+}
+
+function getProfileMemory(callback) {
+  return profileMemory('get', {}, callback);
+}
+
+function generateProfilePortrait(changeReason, callback) {
+  return profileMemory('generate', { changeReason: changeReason || '' }, callback);
+}
+
+function saveProfilePortrait(snapshotId, snapshot, callback) {
+  return profileMemory('save', { snapshotId: snapshotId || '', snapshot: snapshot || {} }, callback);
+}
+
+function confirmProfilePortrait(snapshotId, callback) {
+  return profileMemory('confirm', { snapshotId: snapshotId || '' }, callback);
+}
+
+function rejectProfilePortrait(snapshotId, callback) {
+  return profileMemory('reject', { snapshotId: snapshotId || '' }, callback);
+}
+
+function toggleProfilePortrait(snapshotId, useInFutureReadings, callback) {
+  return profileMemory('toggleUse', {
+    snapshotId: snapshotId || '',
+    useInFutureReadings: !!useInFutureReadings
+  }, callback);
+}
+
+function restoreProfilePortrait(snapshotId, callback) {
+  return profileMemory('restore', { snapshotId: snapshotId || '' }, callback);
+}
+
 function saveDream(dream, callback) {
   return callCloudFunction('saveDream', { dream: dream }, callback);
+}
+
+function getDreamArchive(callback) {
+  return callCloudFunction('saveDream', { action: 'list' }, callback);
 }
 
 function deleteDream(dreamId, callback) {
@@ -174,6 +213,18 @@ function deleteLifeNote(noteId, callback) {
   }, callback);
 }
 
+function getLifeNotes(callback) {
+  return callCloudFunction('saveDream', { action: 'listLifeNotes' }, callback);
+}
+
+function editLifeNote(noteId, text, callback) {
+  return callCloudFunction('saveDream', {
+    action: 'editLifeNote',
+    noteId: noteId || '',
+    text: text || ''
+  }, callback);
+}
+
 function editSymbol(dreamId, oldSymbol, newSymbol, callback) {
   return callCloudFunction('saveDream', {
     action: 'editSymbol',
@@ -183,10 +234,9 @@ function editSymbol(dreamId, oldSymbol, newSymbol, callback) {
   }, callback);
 }
 
-function createShareCard(dream, imageFileId, callback) {
+function createShareCard(dream, callback) {
   return callCloudFunction('createShareCard', {
-    dream: dream,
-    imageFileId: imageFileId || ''
+    dream: dream
   }, callback);
 }
 
@@ -194,15 +244,41 @@ function getShareCard(shareId, callback) {
   return callCloudFunction('getShareCard', { shareId: shareId || '' }, callback);
 }
 
-function generateDreamImage(prompt, dreamId, theme, callback) {
+function generateDreamImage(prompt, dreamId, theme, visualPlan, callback) {
   if (typeof theme === 'function') {
     callback = theme;
     theme = 'mist';
+    visualPlan = null;
+  } else if (typeof visualPlan === 'function') {
+    callback = visualPlan;
+    visualPlan = null;
   }
   return callCloudFunction('generateDreamImage', {
     prompt: prompt || '',
     dreamId: dreamId || '',
-    theme: theme || 'mist'
+    theme: theme || 'mist',
+    visualPlan: visualPlan && typeof visualPlan === 'object' ? visualPlan : null
+  }, callback);
+}
+
+// Optional progressive-quality contract. Older deployments do not understand
+// these actions; callers intentionally treat a failed start as a no-op.
+function startDreamImageQuality(dreamId, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  return callCloudFunction('generateDreamImage', Object.assign({
+    action: 'startQuality',
+    dreamId: dreamId || ''
+  }, options || {}), callback);
+}
+
+function pollDreamImageQuality(jobId, dreamId, callback) {
+  return callCloudFunction('generateDreamImage', {
+    action: 'pollQuality',
+    jobId: jobId || '',
+    dreamId: dreamId || ''
   }, callback);
 }
 
@@ -211,11 +287,34 @@ function imageHealth(callback) {
 }
 
 function imageSmokeTest(callback) {
-  return callCloudFunction('generateDreamImage', {
-    prompt: 'vertical 3:4 tarot-inspired illustration panel, moon, silver key, vintage ink watercolor, no frame, no text',
-    dreamId: 'diagnostics-smoke-test',
-    theme: 'moon'
-  }, callback);
+  var dreamId = 'diagnostics-image-' + String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
+  var smokeDream = {
+    id: dreamId,
+    dreamText: 'Diagnostics-only image generation smoke test. Please delete this temporary entry.',
+    status: 'ready',
+    result: { card_theme: 'moon' }
+  };
+
+  return saveDream(smokeDream, function (saved) {
+    if (!saved || !saved.ok) {
+      if (callback) callback(Object.assign({ ok: false, reason: 'smoke_dream_create_failed' }, saved || {}));
+      return;
+    }
+
+    generateDreamImage(
+      'a person reaches toward a silver key beneath a moonlit opening',
+      dreamId,
+      'moon',
+      function (result) {
+        deleteDream(dreamId, function (cleanup) {
+          var response = Object.assign({}, result || {});
+          response.cleanupOk = !!(cleanup && cleanup.ok);
+          if (!response.cleanupOk) response.cleanupReason = (cleanup && cleanup.reason) || 'smoke_dream_cleanup_failed';
+          if (callback) callback(response);
+        });
+      }
+    );
+  });
 }
 
 function interpretDream(dreamText, profile, cardIndex, callback) {
@@ -241,6 +340,15 @@ function chatAboutDream(dreamText, dreamResult, messages, userMessage, callback)
     dreamResult: dreamResult || {},
     messages: messages || [],
     userMessage: userMessage || ''
+  }, callback);
+}
+
+function refineDream(dreamText, dreamResult, answer, callback) {
+  return callCloudFunction('interpretDream', {
+    refineDream: true,
+    dreamText: dreamText || '',
+    dreamResult: dreamResult || {},
+    answer: answer || ''
   }, callback);
 }
 
@@ -306,63 +414,45 @@ function resolveCloudImage(fileId, imageUrl, callback) {
   return true;
 }
 
-function uploadShareCard(dreamId, filePath, callback) {
-  if (!cloudReady) {
-    initCloud();
-  }
-
-  if (!cloudReady || !hasCloud() || !wx.cloud.uploadFile || !filePath) {
-    if (callback) {
-      callback(null);
-    }
-    return false;
-  }
-
-  wx.cloud.uploadFile({
-    cloudPath: 'share-cards/' + String(dreamId || 'dream') + '-' + String(Date.now()) + '.png',
-    filePath: filePath,
-    success: function (res) {
-      if (callback) {
-        callback(res);
-      }
-    },
-    fail: function () {
-      if (callback) {
-        callback(null);
-      }
-    }
-  });
-
-  return true;
-}
-
 module.exports = {
   CLOUD_STATUS_KEY: CLOUD_STATUS_KEY,
   CLOUD_ENV_ID: CLOUD_ENV_ID,
   initCloud: initCloud,
   getIdentity: getIdentity,
   saveProfile: saveProfile,
+  getProfileMemory: getProfileMemory,
+  generateProfilePortrait: generateProfilePortrait,
+  saveProfilePortrait: saveProfilePortrait,
+  confirmProfilePortrait: confirmProfilePortrait,
+  rejectProfilePortrait: rejectProfilePortrait,
+  toggleProfilePortrait: toggleProfilePortrait,
+  restoreProfilePortrait: restoreProfilePortrait,
   saveDream: saveDream,
+  getDreamArchive: getDreamArchive,
   deleteDream: deleteDream,
   getRevisit: getRevisit,
   answerRevisit: answerRevisit,
   skipRevisit: skipRevisit,
   addLifeNote: addLifeNote,
   deleteLifeNote: deleteLifeNote,
+  getLifeNotes: getLifeNotes,
+  editLifeNote: editLifeNote,
   editSymbol: editSymbol,
   createShareCard: createShareCard,
   getShareCard: getShareCard,
   generateDreamImage: generateDreamImage,
+  startDreamImageQuality: startDreamImageQuality,
+  pollDreamImageQuality: pollDreamImageQuality,
   imageHealth: imageHealth,
   imageSmokeTest: imageSmokeTest,
   interpretDream: interpretDream,
   speechRecognize: speechRecognize,
   chatAboutDream: chatAboutDream,
+  refineDream: refineDream,
   aiHealth: aiHealth,
   aiSmokeTest: aiSmokeTest,
   trackEvent: trackEvent,
   flushEvents: flushEvents,
   cloudHealth: cloudHealth,
-  resolveCloudImage: resolveCloudImage,
-  uploadShareCard: uploadShareCard
+  resolveCloudImage: resolveCloudImage
 };

@@ -14,6 +14,9 @@ exports.main = async function (event) {
     birthDate: String(profile.birthDate || ''),
     birthTime: String(profile.birthTime || ''),
     birthPlace: String(profile.birthPlace || ''),
+    gender: ['male', 'female'].indexOf(String(profile.gender || '').trim().toLowerCase()) >= 0
+      ? String(profile.gender).trim().toLowerCase()
+      : '',
     updatedAt: now
   };
   const existing = await db.collection('users').where({ openid: wxContext.OPENID }).limit(1).get();

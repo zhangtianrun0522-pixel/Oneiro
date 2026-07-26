@@ -4,9 +4,119 @@
     <text>PROFILE</text>
   </view>
 
-  <text class="eyebrow">Private Profile</text>
+  <text class="eyebrow">Personal Memory Center</text>
   <text class="title">我的资料</text>
-  <text class="profile-intro">填写出生信息后，之后的解读会多一个“出生节律”视角。全部可跳过、可随时清空，资料仅用于解读参考，不会出现在分享梦卡中。</text>
+  <text class="profile-intro">Oneiro 会跟着你的梦、对话和补充慢慢更新这段理解。它是可修改的当下观察，不是对你的定义。</text>
+
+  <view wx:if="{{revisit}}" class="profile-revisit">
+    <text class="profile-revisit-kicker">YESTERDAY'S DREAM</text>
+    <text class="profile-revisit-title">昨天的梦「{{revisit.title}}」</text>
+    <text class="profile-revisit-question">{{revisit.question}}</text>
+    <view wx:if="{{!revisitAnswering}}" class="profile-revisit-actions">
+      <button class="profile-revisit-answer" bindtap="startAnswerRevisit">回答</button>
+      <button class="profile-revisit-skip" bindtap="skipRevisitPrompt">跳过</button>
+    </view>
+    <text wx:if="{{!revisitAnswering}}" class="profile-revisit-disable" bindtap="disableRevisitPrompts">不再提醒</text>
+    <view wx:else class="profile-revisit-composer">
+      <textarea
+        class="profile-revisit-textarea"
+        bindinput="onRevisitAnswerInput"
+        value="{{revisitAnswerText}}"
+        maxlength="300"
+        auto-height
+        placeholder="写下此刻的变化或感受"
+        placeholder-class="muted"
+      />
+      <button class="profile-revisit-send" bindtap="submitRevisitAnswer">发送</button>
+    </view>
+  </view>
+
+  <view class="memory-section portrait-section">
+    <view class="section-heading">
+      <view>
+        <text class="memory-kicker">ONEIRO'S UNDERSTANDING</text>
+        <text class="memory-title">我的阶段画像</text>
+      </view>
+      <text class="portrait-focus-label">{{memoryState.current ? '此刻' : '等待形成'}}</text>
+    </view>
+
+    <view wx:if="{{memoryState.current}}" class="portrait-card portrait-feature current-portrait">
+      <text class="portrait-status">此刻的阶段画像 · {{memoryState.current.useInFutureReadings === false ? '暂不用于解读' : '用于后续解读'}}</text>
+      <textarea
+        wx:if="{{portraitEditing}}"
+        class="portrait-editor"
+        value="{{portraitEditSummary}}"
+        maxlength="500"
+        auto-height
+        bindinput="onPortraitSummaryInput"
+      />
+      <text wx:else class="portrait-summary">{{memoryState.current.summary}}</text>
+      <text class="portrait-reason">{{memoryState.current.changeReason}}</text>
+      <view wx:if="{{portraitEditing}}" class="portrait-actions">
+        <button class="portrait-primary" loading="{{portraitSaving}}" bindtap="savePortraitEdit">保存修改</button>
+        <button class="portrait-secondary" bindtap="cancelPortraitEdit">取消</button>
+      </view>
+      <view wx:else class="portrait-actions">
+        <button class="portrait-secondary" bindtap="startPortraitEdit">修改这段理解</button>
+        <button class="portrait-link" bindtap="togglePortraitUse">{{memoryState.current.useInFutureReadings === false ? '恢复用于解读' : '暂停用于解读'}}</button>
+      </view>
+    </view>
+
+    <view wx:else class="portrait-card portrait-empty-card">
+      <text class="portrait-empty-title">还没有形成可查看的阶段画像</text>
+      <text class="portrait-empty-copy">先保存基础资料，或记录一个梦。Oneiro 会从这些真实线索开始理解你。</text>
+    </view>
+
+    <button class="portrait-generate" loading="{{portraitLoading}}" disabled="{{portraitLoading}}" data-reason="手动刷新" bindtap="generatePortrait">
+      {{memoryState.current ? '按最新变化更新' : '生成第一份阶段画像'}}
+    </button>
+    <text class="portrait-note">新梦、梦后对话和资料变化都会在后台更新这段理解。</text>
+
+    <view wx:if="{{memoryState.pastHistory.length}}" class="portrait-history-toggle" bindtap="togglePortraitHistory">
+      <text>{{showPortraitHistory ? '收起历史版本' : '查看历史版本'}} · {{memoryState.pastHistory.length}}</text>
+      <text>{{showPortraitHistory ? '收起' : '展开'}}</text>
+    </view>
+    <view wx:if="{{showPortraitHistory && memoryState.pastHistory.length}}" class="portrait-history">
+      <view wx:for="{{memoryState.pastHistory}}" wx:key="clientId" class="history-item">
+        <view class="history-copy">
+          <text>V{{item.version}} · {{item.status === 'superseded' ? '当时的理解' : '历史画像'}}</text>
+          <text wx:if="{{item.userEdited}}">用户编辑</text>
+        </view>
+        <button class="history-restore" data-id="{{item.clientId}}" bindtap="restorePortrait">回溯</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="memory-section supporting-section">
+    <view class="section-heading">
+      <view>
+        <text class="memory-kicker">RECENTLY NOTICED</text>
+        <text class="memory-title">最近的线索</text>
+      </view>
+      <text class="memory-count">{{insights.dreamCount}} 梦</text>
+    </view>
+    <text class="memory-summary">{{insights.stageSummary}}</text>
+  </view>
+
+  <view class="memory-section facts-section supporting-section">
+    <view class="section-heading">
+      <view>
+        <text class="memory-kicker">REAL LIFE</text>
+        <text class="memory-title">系统提取的现实线索</text>
+      </view>
+      <text class="memory-count">{{lifeNotes.length}} 条</text>
+    </view>
+    <text wx:if="{{!lifeNotes.length}}" class="memory-summary">系统会从梦后对话和次日回访中提取有现实落点的线索，普通猜测不会直接成为记忆。</text>
+    <view wx:for="{{lifeNotesPreview}}" wx:for-item="note" wx:for-index="noteIndex" wx:key="localKey" class="fact-item">
+      <text class="fact-copy">{{note.text}}</text>
+      <view class="fact-actions">
+        <text data-index="{{noteIndex}}" bindtap="editLifeNote">修改</text>
+        <text data-index="{{noteIndex}}" bindtap="deleteLifeNote">删除</text>
+      </view>
+    </view>
+  </view>
+
+  <text class="form-section-title">基础资料 · 可选</text>
 
   <text class="field-label">称呼 / 可选</text>
   <input class="field" value="{{profile.nickname}}" data-key="nickname" bindinput="onInput" maxlength="30" placeholder="怎么称呼你" placeholder-class="muted" />
@@ -19,14 +129,28 @@
     <view class="field picker-field {{profile.birthDate ? '' : 'muted'}}">{{profile.birthDate || '选择出生日期'}}</view>
   </picker>
 
-  <text class="field-label">出生时间 / 可选</text>
+  <view class="field-heading">
+    <text class="field-label">出生时间 / 可选</text>
+    <button wx:if="{{profile.birthTime}}" class="clear-field" bindtap="clearBirthTime">清除</button>
+  </view>
   <picker mode="time" value="{{profile.birthTime}}" bindchange="onBirthTimeChange">
     <view class="field picker-field {{profile.birthTime ? '' : 'muted'}}">{{profile.birthTime || '选择时间'}}</view>
+  </picker>
+
+  <text class="field-label">性别 / 可选</text>
+  <picker mode="selector" range="{{genderOptions}}" value="{{genderIndex}}" bindchange="onGenderChange">
+    <view class="field picker-field {{profile.gender ? '' : 'muted'}}">{{profile.gender === 'male' ? '男' : profile.gender === 'female' ? '女' : '不填写'}}</view>
   </picker>
 
   <text class="field-label">出生城市 / 可选</text>
   <input class="field" value="{{profile.birthPlace}}" data-key="birthPlace" bindinput="onInput" maxlength="60" placeholder="例如：上海" placeholder-class="muted" />
 
   <button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveProfile">保存资料</button>
-  <text class="privacy-copy">出生资料完全自愿，可随时修改或清空，仅用于解读参考。</text>
+  <text class="privacy-copy">出生资料完全自愿，可随时修改或清空；命理视角会保留，但不会成为记录和基础解读的门槛。</text>
+</view>
+
+<view class="bottom-nav">
+  <button class="bottom-nav-item" bindtap="newDream">写梦</button>
+  <button class="bottom-nav-item" bindtap="openArchive">梦册</button>
+  <button class="bottom-nav-item active">我</button>
 </view>

@@ -12,6 +12,136 @@
   margin-top: 52rpx;
 }
 
+.timeline-month {
+  margin-top: 42rpx;
+}
+
+.timeline-month:first-child {
+  margin-top: 0;
+}
+
+.timeline-month-label {
+  display: block;
+  color: rgba(202, 177, 117, 0.7);
+  font-size: 20rpx;
+  font-weight: 800;
+  letter-spacing: 3rpx;
+}
+
+.timeline-track {
+  position: relative;
+  margin-top: 18rpx;
+}
+
+.timeline-track::before {
+  position: absolute;
+  top: 18rpx;
+  bottom: 18rpx;
+  left: 17rpx;
+  width: 1rpx;
+  background: rgba(159, 183, 201, 0.24);
+  content: '';
+}
+
+.timeline-entry {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 154rpx;
+  margin: 0;
+  padding: 14rpx 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.timeline-entry::after {
+  border: 0;
+}
+
+.timeline-rail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36rpx;
+  flex: 0 0 36rpx;
+  align-self: stretch;
+}
+
+.timeline-node {
+  position: relative;
+  z-index: 1;
+  width: 11rpx;
+  height: 11rpx;
+  border: 4rpx solid #131927;
+  border-radius: 50%;
+  background: rgba(159, 183, 201, 0.7);
+}
+
+.timeline-node.is-key-node {
+  width: 15rpx;
+  height: 15rpx;
+  border-color: #131927;
+  background: rgba(202, 177, 117, 0.94);
+  box-shadow: 0 0 0 5rpx rgba(202, 177, 117, 0.12);
+}
+
+.archive-thumb {
+  position: relative;
+  width: 106rpx;
+  height: 132rpx;
+  flex: 0 0 106rpx;
+  overflow: hidden;
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 10rpx;
+  background: linear-gradient(145deg, #18202a, #68737c 62%, #e4e4dc);
+}
+
+.archive-thumb.theme-tide { background: linear-gradient(145deg, #102832, #356f78 62%, #d5e8df); }
+.archive-thumb.theme-threshold { background: linear-gradient(145deg, #1c2130, #73634a 62%, #ead9aa); }
+.archive-thumb.theme-shadow { background: linear-gradient(145deg, #0d0f16, #273049 62%, #a8b2c3); }
+.archive-thumb.theme-falling { background: linear-gradient(145deg, #191729, #555070 62%, #ead0be); }
+.archive-thumb.theme-archive { background: linear-gradient(145deg, #172033, #5c6573 62%, #e0d8c4); }
+.archive-thumb.theme-hearth { background: linear-gradient(145deg, #201819, #755243 62%, #efd2a6); }
+.archive-thumb.theme-moon { background: linear-gradient(145deg, #10182b, #3e517a 62%, #dfe7f1); }
+
+.archive-thumb-image {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.archive-thumb-placeholder {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+  padding: 12rpx 10rpx;
+  box-sizing: border-box;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(5, 7, 12, 0.48));
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 15rpx;
+  font-weight: 800;
+  letter-spacing: 1rpx;
+}
+
+.timeline-copy {
+  min-width: 0;
+  flex: 1;
+  padding: 0 16rpx;
+}
+
+.timeline-entry.is-key-moment .archive-title {
+  color: rgba(239, 228, 200, 0.92);
+}
+
+.timeline-repeat {
+  display: block;
+  margin-top: 8rpx;
+  color: rgba(202, 177, 117, 0.72);
+  font-size: 19rpx;
+}
+
 .deck-count {
   display: block;
   margin-top: 28rpx;
@@ -19,6 +149,81 @@
   font-size: 24rpx;
   font-weight: 800;
   letter-spacing: 5rpx;
+}
+
+.insight-panel {
+  margin-top: 24rpx;
+  padding: 28rpx;
+  border: 1rpx solid rgba(159, 183, 201, 0.12);
+  border-radius: 24rpx;
+  background: rgba(159, 183, 201, 0.055);
+}
+
+.insight-label,
+.insight-summary,
+.month-card-label,
+.month-card-title,
+.month-card-copy {
+  display: block;
+}
+
+.insight-label,
+.month-card-label {
+  color: rgba(159, 183, 201, 0.48);
+  font-size: 17rpx;
+  font-weight: 800;
+  letter-spacing: 4rpx;
+}
+
+.insight-summary {
+  margin-top: 14rpx;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 24rpx;
+  line-height: 1.75;
+}
+
+.insight-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.insight-key {
+  color: rgba(202, 177, 117, 0.58);
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+.insight-value {
+  padding: 7rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.44);
+  font-size: 18rpx;
+}
+
+.month-main-card {
+  margin-top: 24rpx;
+  padding: 30rpx;
+  border-left: 4rpx solid rgba(202, 177, 117, 0.64);
+  background: linear-gradient(135deg, rgba(202, 177, 117, 0.11), rgba(39, 48, 73, 0.2));
+}
+
+.month-card-title {
+  margin-top: 12rpx;
+  color: rgba(239, 228, 200, 0.9);
+  font-size: 36rpx;
+  font-weight: 650;
+  letter-spacing: 7rpx;
+}
+
+.month-card-copy {
+  margin-top: 14rpx;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 22rpx;
+  line-height: 1.7;
 }
 
 .filter-banner {
@@ -139,3 +344,46 @@
   font-size: 20rpx;
   letter-spacing: 4rpx;
 }
+
+.timeline-copy .archive-date {
+  display: block;
+  margin-left: 0;
+  color: rgba(159, 183, 201, 0.52);
+  font-size: 18rpx;
+  letter-spacing: 2rpx;
+}
+
+.timeline-copy .archive-weather {
+  width: auto;
+  margin-top: 8rpx;
+}
+
+/* Claude Design timeline: an unframed private diary on warm paper. */
+.empty { margin-top: 54rpx; padding: 36rpx 0; border-top: 1rpx solid rgba(33, 29, 23, 0.12); border-bottom: 1rpx solid rgba(33, 29, 23, 0.12); border-radius: 0; color: rgba(33, 29, 23, 0.5); }
+.archive-list { margin-top: 54rpx; }
+.timeline-month { margin-top: 48rpx; }
+.timeline-month-label { color: #211d17; font-size: 32rpx; font-weight: 500; letter-spacing: 1rpx; }
+.timeline-track { margin-top: 10rpx; }
+.timeline-track::before { left: 19rpx; background: rgba(33, 29, 23, 0.16); }
+.timeline-entry { min-height: 168rpx; padding: 18rpx 0; }
+.timeline-node { border-color: #b8863b; background: #f2ecdf; }
+.timeline-node.is-key-node { border-color: #b8863b; background: #b8863b; box-shadow: 0 0 0 5rpx rgba(184, 134, 59, 0.12); }
+.archive-thumb { border: 0; border-radius: 0; }
+.timeline-entry.is-key-moment .archive-title, .archive-title { color: #211d17; font-size: 28rpx; font-weight: 600; letter-spacing: 1rpx; }
+.archive-weather { color: rgba(33, 29, 23, 0.52); }
+.archive-date, .timeline-copy .archive-date { color: rgba(33, 29, 23, 0.4); }
+.timeline-repeat { color: rgba(184, 134, 59, 0.86); }
+.deck-count { color: rgba(33, 29, 23, 0.48); }
+.insight-panel { border: 0; border-radius: 0; background: #fbf6ec; }
+.insight-label, .month-card-label { color: rgba(33, 29, 23, 0.46); }
+.insight-summary { color: rgba(33, 29, 23, 0.7); }
+.insight-key { color: rgba(184, 134, 59, 0.9); }
+.insight-value { border: 1rpx solid rgba(33, 29, 23, 0.14); border-radius: 0; background: transparent; color: rgba(33, 29, 23, 0.62); }
+.month-main-card { border: 1rpx solid rgba(184, 134, 59, 0.48); border-left-width: 1rpx; background: transparent; }
+.month-card-title { color: #211d17; }
+.month-card-copy { color: rgba(33, 29, 23, 0.62); }
+.filter-banner { border-left-color: rgba(184, 134, 59, 0.54); background: #fbf6ec; color: rgba(33, 29, 23, 0.62); }
+.filter-clear, .archetype-banner-arrow { color: #b8863b; }
+.archetype-banner { border: 1rpx solid rgba(184, 134, 59, 0.42); background: transparent; box-shadow: none; }
+.archetype-banner-label { color: rgba(33, 29, 23, 0.48); }
+.archetype-banner-title { color: #211d17; }

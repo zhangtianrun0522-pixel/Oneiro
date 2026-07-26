@@ -5,14 +5,35 @@
   </view>
 
   <text class="eyebrow">Private Dream Archive</text>
-  <text class="title">你的梦境档案</text>
+  <text class="title">你的私人梦境牌组</text>
   <view wx:if="{{symbolFilter}}" class="filter-banner">
     <text>只看含有「{{symbolFilter}}」的梦</text>
     <text class="filter-clear" bindtap="clearFilter">清除筛选</text>
   </view>
   <text wx:if="{{hasArchive}}" class="deck-count">已记下 {{archiveCount}} 个梦</text>
+  <view wx:if="{{insights.eligible}}" class="insight-panel">
+    <text class="insight-label">阶段观察</text>
+    <text class="insight-summary">{{insights.stageSummary}}</text>
+    <view wx:if="{{insights.recurringPeople.length}}" class="insight-row">
+      <text class="insight-key">人物</text>
+      <text wx:for="{{insights.recurringPeople}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+    </view>
+    <view wx:if="{{insights.recurringEmotions.length}}" class="insight-row">
+      <text class="insight-key">情绪</text>
+      <text wx:for="{{insights.recurringEmotions}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+    </view>
+    <view wx:if="{{insights.recurringPlaces.length}}" class="insight-row">
+      <text class="insight-key">场景</text>
+      <text wx:for="{{insights.recurringPlaces}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+    </view>
+  </view>
+  <view wx:if="{{insights.monthlyCard.eligible}}" class="month-main-card">
+    <text class="month-card-label">本月主牌 · {{insights.monthlyCard.month}}</text>
+    <text class="month-card-title">{{insights.monthlyCard.title}}</text>
+    <text class="month-card-copy">{{insights.monthlyCard.insight}}</text>
+  </view>
   <view wx:if="{{archetypeEligible}}" class="archetype-banner" bindtap="openArchetypeCard">
-    <text class="archetype-banner-label">你的梦境原型</text>
+    <text class="archetype-banner-label">阶段梦境原型</text>
     <text class="archetype-banner-title">{{archetype.label}}</text>
     <text class="archetype-banner-arrow">解锁分享卡 →</text>
   </view>
@@ -22,18 +43,35 @@
   </view>
 
   <view wx:else class="archive-list">
-    <button wx:for="{{archive}}" wx:key="id" class="archive-item" data-index="{{index}}" bindtap="openDream">
-      <view class="mini-card-mark">
-        <text>{{item.result ? item.result.card_no : '原梦'}}</text>
+    <view wx:for="{{timelineGroups}}" wx:for-item="group" wx:key="key" class="timeline-month">
+      <text class="timeline-month-label">{{group.label}}</text>
+      <view class="timeline-track">
+        <button wx:for="{{group.dreams}}" wx:for-item="dream" wx:for-index="dreamIndex" wx:key="id" class="timeline-entry {{dream.isKeyMoment ? 'is-key-moment' : ''}}" data-index="{{dream.archiveIndex}}" bindtap="openDream">
+          <view class="timeline-rail">
+            <view class="timeline-node {{dream.isKeyMoment ? 'is-key-node' : ''}}"></view>
+          </view>
+          <view class="archive-thumb theme-{{dream.themeClass}}">
+            <image wx:if="{{dream.thumbnailPath}}" class="archive-thumb-image" src="{{dream.thumbnailPath}}" mode="aspectFill"></image>
+            <view wx:else class="archive-thumb-placeholder">
+              <text>{{dream.result ? dream.result.card_no : '原梦'}}</text>
+            </view>
+          </view>
+          <view class="timeline-copy">
+            <text class="archive-date">{{dream.timelineTimestamp}}</text>
+            <text class="archive-title">{{dream.result ? dream.result.title : '已保存，尚未解读'}}</text>
+            <text class="archive-weather">{{dream.result ? dream.result.emotional_weather : dream.dreamText}}</text>
+            <text wx:if="{{dream.repeatLabel}}" class="timeline-repeat">{{dream.repeatLabel}}</text>
+          </view>
+        </button>
       </view>
-      <view>
-        <text class="archive-title">{{item.result ? item.result.title : '已保存，尚未解读'}}</text>
-        <text class="archive-weather">{{item.result ? item.result.emotional_weather : item.dreamText}}</text>
-        <text wx:if="{{item.result && item.result.symbols}}" class="archive-copy">{{item.result.symbols[0]}} / {{item.result.symbols[1]}} / {{item.result.symbols[2]}}</text>
-      </view>
-      <text class="archive-date">{{item.dateLabel}}</text>
-    </button>
+    </view>
   </view>
 
   <button class="primary-button" bindtap="newDream">记下新的梦</button>
+</view>
+
+<view class="bottom-nav">
+  <button class="bottom-nav-item" bindtap="newDream">写梦</button>
+  <button class="bottom-nav-item active">梦册</button>
+  <button class="bottom-nav-item" bindtap="openProfile">我</button>
 </view>
