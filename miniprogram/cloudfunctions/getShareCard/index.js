@@ -12,17 +12,18 @@ exports.main = async function (event) {
   }
 
   const result = await db.collection('share_pages')
-    .where({ slug: shareId, revokedAt: null })
+    .where({ slug: shareId })
     .limit(1)
     .get();
 
-  if (!result.data || !result.data.length) {
+  const sharePage = result.data && result.data[0];
+  if (!sharePage || sharePage.revokedAt || sharePage.revoked === true) {
     return { ok: false, reason: 'not_found' };
   }
 
   return {
     ok: true,
     shareId: shareId,
-    payload: result.data[0].payload
+    payload: sharePage.payload
   };
 };

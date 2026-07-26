@@ -7,9 +7,14 @@ const db = cloud.database();
 const REQUIRED_COLLECTIONS = [
   'users',
   'dream_entries',
+  'life_notes',
+  'profile_snapshots',
+  'profile_memory_state',
+  'deletion_jobs',
   'events',
   'share_pages',
-  'generated_assets'
+  'generated_assets',
+  'image_generation_jobs'
 ];
 
 function errorSummary(error) {

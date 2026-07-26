@@ -10,7 +10,6 @@ function fallbackPayload() {
     emotionalWeather: '一张梦卡正在路上。',
     symbols: ['梦'],
     cardInsight: '写下你的梦，也可以抽出属于自己的牌。',
-    imageFileId: ''
   };
 }
 
