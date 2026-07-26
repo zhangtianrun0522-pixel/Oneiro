@@ -1030,3 +1030,92 @@
   background: #211d17;
   color: #f2ecdf;
 }
+
+/* ── 三级阅读结构 ───────────────────────────────────────────────
+   第一层 核心观察 → 聊聊这个梦 → 第二层 三个视角 → 第三层 完整展开
+   ───────────────────────────────────────────────────────────── */
+.core-observation {
+  display: block;
+  margin-bottom: 32rpx;
+  color: var(--ink);
+  font-size: 32rpx;
+  font-weight: 600;
+  line-height: 1.72;
+}
+
+.tier-label {
+  display: block;
+  margin: 46rpx 0 4rpx;
+  padding-bottom: 14rpx;
+  border-bottom: 1rpx solid rgba(33, 29, 23, 0.14);
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  font-weight: 800;
+  letter-spacing: 4rpx;
+}
+
+.tier-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  min-height: var(--tap-min);
+  margin-top: 40rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.2);
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  font-weight: 700;
+}
+
+.tier-toggle-icon {
+  font-size: 26rpx;
+  line-height: 1;
+  transition: transform 200ms ease;
+}
+
+.tier-toggle-icon.is-open { transform: rotate(180deg); }
+
+.tier-full { margin-top: 8rpx; }
+
+/* ── 底部操作：一个主操作 + 一个次操作，其余收进「更多」 ── */
+.more-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  min-height: var(--tap-min);
+  margin-top: 28rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+.more-toggle-icon {
+  font-size: 24rpx;
+  line-height: 1;
+  transition: transform 200ms ease;
+}
+
+.more-toggle-icon.is-open { transform: rotate(180deg); }
+
+.more-actions {
+  display: flex;
+  flex-direction: column;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
+}
+
+.more-actions .text-button {
+  width: 100% !important;
+  min-height: var(--tap-min);
+  border-bottom: 1rpx solid rgba(33, 29, 23, 0.08);
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  line-height: var(--tap-min);
+}
+
+.more-actions .delete-button {
+  border-bottom: 0;
+  color: var(--cinnabar-ink);
+}
+
+.share-button { margin-top: 20rpx; }

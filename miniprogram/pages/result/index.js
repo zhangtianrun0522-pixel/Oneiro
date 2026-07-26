@@ -498,6 +498,8 @@ Page({
     sharePath: '',
     sharePreparing: false,
     cardSaved: false,
+    showFullReading: false,
+    showMoreActions: false,
     possibleConnections: [],
     interpretationUnavailable: true,
     refineAnswer: '',
@@ -941,6 +943,21 @@ Page({
     var dreamId = this.data.dream && this.data.dream.id ? this.data.dream.id : '';
     analytics.trackEvent('dream_chat_open', { dreamId: dreamId });
     wx.navigateTo({ url: '/pages/dream-chat/index?id=' + encodeURIComponent(dreamId) });
+  },
+
+  // 第三层：完整解读默认收起，避免核心观察被长文淹没
+  toggleFullReading: function () {
+    var next = !this.data.showFullReading;
+    this.setData({ showFullReading: next });
+    if (next) {
+      analytics.trackEvent('result_full_reading_expand', {
+        dreamId: this.data.dream && this.data.dream.id ? this.data.dream.id : ''
+      });
+    }
+  },
+
+  toggleMoreActions: function () {
+    this.setData({ showMoreActions: !this.data.showMoreActions });
   },
 
   onRefineAnswerInput: function (event) {

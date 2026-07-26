@@ -60,32 +60,42 @@
   </block>
 
   <view class="reading grounded-reading">
+    <!-- 第一层：一句核心观察 -->
     <text class="section-title">这个梦的观察</text>
+    <text wx:if="{{!interpretationUnavailable}}" class="core-observation">{{dream.result.reading_hook}}</text>
 
     <view class="original-dream">
       <text class="reading-label">你记下的原梦</text>
       <text class="original-copy">{{dream.dreamText}}</text>
     </view>
 
-    <view class="reading-block">
-      <text class="reading-label">梦里发生了什么</text>
-      <text class="reading-copy">{{dream.result.dream_translation}}</text>
+    <!-- 未生成解读时直接说明，不藏在折叠里 -->
+    <view wx:if="{{interpretationUnavailable}}" class="reading-block">
+      <text class="reading-copy">本次未生成解读，原梦仍已保存。你可以保留记录，或直接删除。</text>
     </view>
 
-    <view class="reading-block">
-      <text class="reading-label">梦的叙事与张力</text>
-      <text class="reading-copy reading-hook">{{dream.result.reading_hook}}</text>
+    <!-- 聊聊这个梦：紧跟核心观察，不必读完全文才出现 -->
+    <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry" bindtap="openDreamChat">
+      <view class="chat-entry-copy">
+        <text class="reading-label">聊聊这个梦</text>
+        <text class="chat-entry-question">{{dream.result.integration_question}}</text>
+      </view>
+      <text class="chat-entry-arrow">→</text>
     </view>
 
-    <view wx:if="{{dream.result.cultural_symbolism}}" class="reading-block cultural-reading">
-      <text class="reading-label">文化象征</text>
-      <text class="reading-copy">{{dream.result.cultural_symbolism}}</text>
-    </view>
+    <!-- 第二层：三个视角 -->
+    <view wx:if="{{!interpretationUnavailable}}" class="lens-group">
+      <text class="tier-label">三个视角</text>
 
-    <view wx:if="{{dream.result.underneath}}" class="reading-block psychological-reading">
-      <text class="reading-label">心理视角</text>
-      <text class="reading-copy">{{dream.result.underneath}}</text>
-    </view>
+      <view wx:if="{{dream.result.cultural_symbolism}}" class="reading-block cultural-reading">
+        <text class="reading-label">文化象征</text>
+        <text class="reading-copy">{{dream.result.cultural_symbolism}}</text>
+      </view>
+
+      <view wx:if="{{dream.result.underneath}}" class="reading-block psychological-reading">
+        <text class="reading-label">心理视角</text>
+        <text class="reading-copy">{{dream.result.underneath}}</text>
+      </view>
 
     <view wx:if="{{dream.result.metaphysical_resonance || (dream.result.metaphysical_reading && (dream.result.metaphysical_reading.temperament || dream.result.metaphysical_reading.dream_echo || dream.result.metaphysical_reading.tension || dream.result.metaphysical_reading.rhythm))}}" class="reading-block metaphysical-reading">
       <view class="metaphysical-heading">
@@ -111,52 +121,63 @@
         </view>
       </block>
       <text wx:if="{{dream.result.metaphysical_resonance}}" class="metaphysical-resonance">{{dream.result.metaphysical_resonance}}</text>
-    </view>
-
-    <view wx:if="{{dream.result.referenced_life_note}}" class="reading-block life-note-reading">
-      <text class="reading-label">你之前提到过</text>
-      <text class="reading-copy">"{{dream.result.referenced_life_note.text}}"</text>
-      <view class="life-note-footer" bindtap="openLifeNoteSource">
-        <text class="life-note-date">{{dream.result.referenced_life_note.sourceDate}}</text>
-        <text class="life-note-link">为什么这样理解？</text>
       </view>
     </view>
 
-    <view class="reading-block">
-      <text class="reading-label">与你有关</text>
-      <view class="connection-list">
-        <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{index + 1}}. {{item}}</text>
+    <!-- 第三层：完整展开，默认收起 -->
+    <view wx:if="{{!interpretationUnavailable}}" class="tier-toggle" bindtap="toggleFullReading">
+      <text class="tier-toggle-label">{{showFullReading ? '收起完整解读' : '展开完整解读'}}</text>
+      <text class="tier-toggle-icon {{showFullReading ? 'is-open' : ''}}">⌄</text>
+    </view>
+
+    <view wx:if="{{showFullReading && !interpretationUnavailable}}" class="tier-full">
+      <view class="reading-block">
+        <text class="reading-label">梦里发生了什么</text>
+        <text class="reading-copy">{{dream.result.dream_translation}}</text>
       </view>
-      <text wx:if="{{interpretationUnavailable}}" class="reading-copy">本次未生成解读，原梦仍已保存。你可以保留记录，或直接删除。</text>
-      <text wx:if="{{!interpretationUnavailable}}" class="reading-boundary">这是一种理解角度，你可以保留、修正或否定它。</text>
-    </view>
 
-    <view wx:if="{{!interpretationUnavailable}}" class="reading-block alternative-reading">
-      <text class="reading-label">另一种可能</text>
-      <text class="reading-copy">{{dream.result.alternative_reading}}</text>
-    </view>
-
-    <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry" bindtap="openDreamChat">
-      <view class="chat-entry-copy">
-        <text class="reading-label">聊聊这个梦</text>
-        <text class="chat-entry-question">{{dream.result.integration_question}}</text>
+      <view wx:if="{{dream.result.referenced_life_note}}" class="reading-block life-note-reading">
+        <text class="reading-label">你之前提到过</text>
+        <text class="reading-copy">"{{dream.result.referenced_life_note.text}}"</text>
+        <view class="life-note-footer" bindtap="openLifeNoteSource">
+          <text class="life-note-date">{{dream.result.referenced_life_note.sourceDate}}</text>
+          <text class="life-note-link">为什么这样理解？</text>
+        </view>
       </view>
-      <text class="chat-entry-arrow">→</text>
-    </view>
 
+      <view class="reading-block">
+        <text class="reading-label">与你有关</text>
+        <view class="connection-list">
+          <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{item}}</text>
+        </view>
+        <text class="reading-boundary">这是一种理解角度，你可以保留、修正或否定它。</text>
+      </view>
+
+      <view wx:if="{{!interpretationUnavailable}}" class="reading-block alternative-reading">
+        <text class="reading-label">另一种可能</text>
+        <text class="reading-copy">{{dream.result.alternative_reading}}</text>
+      </view>
+    </view>
   </view>
 
+  <!-- 一个主操作 + 一个次操作，其余收进「更多」 -->
   <block wx:if="{{!interpretationUnavailable}}">
-  <button class="primary-button" bindtap="saveCard">{{cardSaved ? '已保存收藏梦卡' : '保存收藏梦卡'}}</button>
-  <button class="ghost-button" bindtap="saveFullReading">保存完整解读</button>
-  <button wx:if="{{!sharePath}}" class="ghost-button share-button" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard">分享这张梦卡</button>
-  <button wx:else class="ghost-button share-button" open-type="share">分享给朋友</button>
+    <button class="primary-button" bindtap="saveCard">{{cardSaved ? '已收藏梦卡' : '收藏梦卡'}}</button>
+    <button wx:if="{{!sharePath}}" class="ghost-button share-button" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard">分享这张梦卡</button>
+    <button wx:else class="ghost-button share-button" open-type="share">分享给朋友</button>
   </block>
-  <view class="result-actions">
+
+  <view class="more-toggle" bindtap="toggleMoreActions">
+    <text class="more-toggle-label">更多</text>
+    <text class="more-toggle-icon {{showMoreActions ? 'is-open' : ''}}">⌄</text>
+  </view>
+
+  <view wx:if="{{showMoreActions}}" class="more-actions">
+    <button wx:if="{{!interpretationUnavailable}}" class="text-button" bindtap="saveFullReading">保存完整解读</button>
     <button class="text-button" bindtap="newDream">再记一个梦</button>
     <button class="text-button" bindtap="openArchive">梦境档案</button>
+    <button class="text-button delete-button" bindtap="deleteDream">删除这个梦</button>
   </view>
-  <button class="delete-button" bindtap="deleteDream">删除这个梦</button>
   <text wx:if="{{shareImagePath}}" class="share-ready">梦卡图已准备，可保存或分享</text>
   <canvas type="2d" id="shareCanvas" class="share-canvas"></canvas>
 </view>
