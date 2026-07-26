@@ -6,10 +6,6 @@
     #050609;
 }
 
-.dream-card-stage {
-  height: 893rpx;
-}
-
 .dream-card-switcher {
   position: relative;
   width: 100%;
@@ -103,12 +99,6 @@
   height: 18rpx;
   margin-left: 18rpx;
   background: #e43b25;
-}
-
-.back-divider > view {
-  flex: 1;
-  height: 3rpx;
-  background: #1458d4;
 }
 
 .back-label {
@@ -448,114 +438,6 @@
   background: rgba(255, 236, 199, 0.64);
 }
 
-.card-title {
-  display: block;
-  text-align: center;
-  color: #172033;
-  font-size: 54rpx;
-  font-weight: 600;
-  letter-spacing: 18rpx;
-}
-
-.profile-summary {
-  display: block;
-  margin-top: 18rpx;
-  text-align: center;
-  color: rgba(23, 32, 51, 0.32);
-  font-size: 20rpx;
-  font-weight: 800;
-  letter-spacing: 4rpx;
-}
-
-.weather {
-  display: block;
-  margin: 16rpx auto 0;
-  width: 86%;
-  text-align: center;
-  color: rgba(23, 32, 51, 0.54);
-  font-size: 24rpx;
-  line-height: 1.8;
-}
-
-.finalized-mark {
-  display: block;
-  margin-top: 14rpx;
-  text-align: center;
-  color: rgba(202, 177, 117, 0.72);
-  font-size: 17rpx;
-  font-weight: 800;
-  letter-spacing: 3rpx;
-}
-
-.symbols {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 14rpx;
-  margin: 24rpx 0 8rpx;
-}
-
-.symbol {
-  padding: 10rpx 20rpx;
-  border: 1rpx solid rgba(23, 32, 51, 0.08);
-  border-radius: 999rpx;
-  color: rgba(23, 32, 51, 0.56);
-  font-size: 20rpx;
-  font-weight: 700;
-}
-
-.ritual {
-  margin-top: 24rpx;
-  padding: 24rpx 26rpx;
-  border: 1rpx solid rgba(23, 32, 51, 0.06);
-  border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.42);
-  text-align: center;
-}
-
-.ritual-label {
-  display: block;
-  color: rgba(23, 32, 51, 0.2);
-  font-size: 16rpx;
-  font-weight: 900;
-  letter-spacing: 8rpx;
-}
-
-.ritual-text {
-  display: block;
-  margin-top: 12rpx;
-  color: #172033;
-  font-size: 26rpx;
-  font-weight: 800;
-  line-height: 1.55;
-}
-
-.meta-hint {
-  margin-top: 16rpx;
-  padding: 22rpx 24rpx;
-  border-radius: 22rpx;
-  background: rgba(159, 183, 201, 0.14);
-  color: rgba(23, 32, 51, 0.52);
-  font-size: 21rpx;
-  line-height: 1.65;
-  text-align: center;
-}
-
-.card-footer {
-  justify-content: center;
-  margin-top: 26rpx;
-}
-
-.oracle-line {
-  margin-top: 34rpx;
-  padding: 34rpx 30rpx;
-  border-left: 4rpx solid rgba(159, 183, 201, 0.34);
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 31rpx;
-  font-weight: 500;
-  line-height: 1.8;
-}
-
 .reading {
   margin-top: 34rpx;
   padding: 34rpx;
@@ -639,93 +521,6 @@
   border-left-color: rgba(159, 183, 201, 0.36);
 }
 
-.refine-card {
-  margin-top: 34rpx;
-  padding: 28rpx;
-  border: 1rpx solid rgba(202, 177, 117, 0.18);
-  border-radius: 22rpx;
-  background: linear-gradient(140deg, rgba(202, 177, 117, 0.08), rgba(159, 183, 201, 0.04));
-}
-
-.refine-question,
-.final-label,
-.final-answer,
-.final-insight,
-.refine-skip {
-  display: block;
-}
-
-.refine-question {
-  margin-top: 14rpx;
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 26rpx;
-  line-height: 1.7;
-}
-
-.refine-input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 130rpx;
-  margin-top: 20rpx;
-  padding: 20rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.1);
-  border-radius: 16rpx;
-  background: rgba(8, 12, 20, 0.34);
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 24rpx;
-  line-height: 1.65;
-}
-
-.refine-button {
-  width: auto;
-  margin: 18rpx 0 0;
-  padding: 14rpx 22rpx;
-  border-radius: 999rpx;
-  background: rgba(202, 177, 117, 0.84);
-  color: #111621;
-  font-size: 21rpx;
-  font-weight: 700;
-  line-height: 1.5;
-}
-
-.refine-button::after {
-  border: 0;
-}
-
-.refine-skip {
-  margin-top: 14rpx;
-  color: rgba(255, 255, 255, 0.28);
-  font-size: 19rpx;
-}
-
-.final-reading {
-  margin-top: 20rpx;
-  padding: 22rpx;
-  border-left: 4rpx solid rgba(202, 177, 117, 0.54);
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.final-label {
-  color: rgba(202, 177, 117, 0.58);
-  font-size: 18rpx;
-  font-weight: 800;
-  letter-spacing: 2rpx;
-}
-
-.final-answer {
-  margin-top: 10rpx;
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 24rpx;
-  line-height: 1.7;
-}
-
-.final-insight {
-  margin-top: 14rpx;
-  color: rgba(239, 228, 200, 0.72);
-  font-size: 24rpx;
-  line-height: 1.72;
-}
-
 .dream-chat-entry {
   display: flex;
   align-items: center;
@@ -772,11 +567,6 @@
   color: rgba(255, 255, 255, 0.45);
   font-size: 26rpx;
   line-height: 1.9;
-}
-
-.reading-hook {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 28rpx;
 }
 
 .metaphysical-reading {
@@ -846,18 +636,6 @@
   border-top: 1rpx solid rgba(255, 255, 255, 0.05);
 }
 
-.reading-basis {
-  display: block;
-  margin-top: 14rpx;
-  color: rgba(226, 232, 227, 0.52);
-  font-size: 20rpx;
-  line-height: 1.6;
-}
-
-.reading-block {
-  margin-top: 30rpx;
-}
-
 .reading-label {
   display: block;
   color: rgba(159, 183, 201, 0.7);
@@ -866,28 +644,8 @@
   letter-spacing: 7rpx;
 }
 
-.question {
-  margin-top: 28rpx;
-  padding: 28rpx;
-  border-radius: 24rpx;
-  background: rgba(159, 183, 201, 0.1);
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 26rpx;
-  line-height: 1.8;
-}
-
-.share-button {
-  margin-top: 22rpx;
-}
-
 .primary-button + .ghost-button {
   margin-top: 20rpx;
-}
-
-.result-actions {
-  display: flex;
-  gap: 18rpx;
-  margin-top: 18rpx;
 }
 
 .text-button {
@@ -991,7 +749,6 @@
 .original-copy, .reading-copy, .connection-item { font-size: 27rpx; line-height: 1.82; }
 .reading-block { margin-top: 34rpx; }
 .reading-label, .metaphysical-subtitle { color: #b8863b; font-size: 19rpx; letter-spacing: 2rpx; }
-.reading-hook { color: #211d17; font-size: 28rpx; }
 .cultural-reading, .psychological-reading { padding: 0; border-left: 0; background: transparent; }
 .metaphysical-reading, .life-note-reading { padding: 26rpx; border-left: 3rpx solid rgba(184, 134, 59, 0.5); background: #fbf6ec; }
 .metaphysical-subsection { border-top-color: rgba(33, 29, 23, 0.1); }
