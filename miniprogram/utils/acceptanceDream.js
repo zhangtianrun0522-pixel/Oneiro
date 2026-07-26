@@ -18,6 +18,8 @@ const acceptanceDreamResult = {
     '月光、图书馆和清水共同构成了一个“记忆被情绪浸泡”的场景：理性仍在整理答案，但真正的线索已经从情绪里浮出来。',
   underneath:
     '图书馆像你正在整理的记忆与知识系统，涨起的清水说明情绪已经漫过理性分类。银色钥匙代表一个可以进入新阶段的线索，但白鸟撞窗的无声感提示你还有某种表达被挡在玻璃另一侧。',
+  cultural_symbolism:
+    '在传统象征里，水常与情绪和变化相连，钥匙则指向开启与选择。它们在这次梦里的并置更像一面文化镜子，而不是吉凶预告。',
   echo:
     '今日月相让直觉比平时更容易浮出水面，适合倾听那些尚未成句的感觉。',
   mirror:
@@ -26,7 +28,33 @@ const acceptanceDreamResult = {
     '如果那把银色钥匙只能打开一件事，你最希望它打开哪一个被你暂时搁置的愿望？',
   one_small_act: '写下钥匙会打开的门',
   image_prompt:
-    'surreal moonlit library slowly flooding with clear water, silver key floating between shelves, silent white bird at a window',
+    'a person reaches for a silver key in a moonlit library filling with clear water, a silent white bird at the window',
+  visual_plan: {
+    version: 'oneiro-visual-plan-v1',
+    raw_text: acceptanceDreamText,
+    main_event: '梦者在逐渐涨水的图书馆里伸手去拿漂浮的银色钥匙',
+    emotion: ['期待', '压抑'],
+    emotion_intensity: 0.76,
+    setting: '月光照亮的图书馆',
+    characters: [{ role: '主体', description: '伸手触碰钥匙的人', importance: 1 }],
+    objects: [
+      { name: '银色钥匙', importance: 1, visualizable: true },
+      { name: '涨起的清水', importance: 0.9, visualizable: true },
+      { name: '无声撞窗的白鸟', importance: 0.8, visualizable: true }
+    ],
+    anomalies: ['图书馆里的清水不断上涨，白鸟撞窗却没有声音'],
+    symbols: ['银色钥匙', '清水', '白鸟'],
+    memory_elements: [],
+    preserve_elements: ['伸手的人', '银色钥匙', '涨起的清水', '无声白鸟'],
+    hidden_symbol: '窗上的细小裂纹',
+    composition: {
+      template: 'off_center_diagonal',
+      subject_position: '人物位于左下，伸出的手被放大',
+      visual_flow: '从左下手臂指向中央钥匙，再落到右上白鸟',
+      spatial_layers: '前景手与水，中景钥匙和书架，远景窗与白鸟',
+      negative_space: '右侧保留约40%安静水面和月光'
+    }
+  },
   omens: {
     lucky_color: '#9fb7c9',
     lucky_color_name: '月雾蓝',

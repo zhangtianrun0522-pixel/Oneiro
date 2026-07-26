@@ -24,7 +24,7 @@ export const ACCEPTANCE_DREAM_RESULT: DreamResult = {
   integration_question: '如果那把银色钥匙只能打开一件事，你最希望它打开哪一个被你暂时搁置的愿望？',
   one_small_act: '写下钥匙会打开的门',
   image_prompt:
-    'surreal moonlit library slowly flooding with clear water, silver key floating between shelves, silent white bird at a window, poetic symbolic dream, fine art paper texture',
+    'A person reaches for a silver key in a flooding library; a silent white bird stays distant. Tense anticipation, intensity 0.76. Off-center diagonal from hand to key to bird, 40% quiet water. Electric cobalt, vermilion, sunflower yellow, ink black, warm cream.',
   omens: {
     lucky_color: '#9fb7c9',
     lucky_color_name: '月雾蓝',

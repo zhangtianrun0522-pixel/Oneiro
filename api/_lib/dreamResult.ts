@@ -66,7 +66,7 @@ export function normalizeDreamResult(raw: any): any {
     one_small_act: asString(raw?.one_small_act, '写下一个反复出现的意象', 40),
     image_prompt: asString(
       raw?.image_prompt,
-      'surreal symbolic dream scene, moonlit threshold, soft cinematic light, poetic and mysterious',
+      'one condensed dream event, one clear focal action, asymmetric composition, 40% breathing space, emotion-led high-saturation palette of 4-6 inks',
       360
     ),
     omens: {

@@ -1,7 +1,7 @@
 import { IncomingMessage, ServerResponse } from 'http';
 
 const DEFAULT_STYLE =
-  'artistic woodcut print, elegant minimalist ink outlines, mystical symbolism, surreal tarot aesthetic, sophisticated monochromatic, fine art paper texture';
+  'original vertical 3:4 dream illustration, high-saturation flat color blocks, rough screenprint and risograph texture, deep hand-drawn contours with uneven pressure, subtle ink misregistration, uneven ink coverage, visible paper grain, simplified adult figures with faces reduced to a few marks or silhouettes, minimal hatching, asymmetric editorial dream-poster composition, one clear focal event, 35-50% breathing space, no tarot border, no title, no number, no frame, no text, no photorealism, no 3D, no glossy gradients, no detailed face, no symmetrical centered template, no generic purple fantasy, no polished AI stock illustration';
 const DEFAULT_OPENAI_IMAGE_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_IMAGE_MODEL = 'gpt-image-1.5';
 const DEFAULT_OPENAI_IMAGE_SIZE = '1024x1536';

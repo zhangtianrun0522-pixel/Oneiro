@@ -2,12 +2,12 @@ const { acceptanceDreamResult, acceptanceDreamText } = require('../../utils/acce
 const analytics = require('../../utils/analytics');
 const cloudBase = require('../../utils/cloudBase');
 const { buildLocalDreamResult } = require('../../utils/localDreamOracle');
-const dreamArtifacts = require('../../utils/dreamArtifacts');
-const canvasFrame = require('../../utils/canvasFrame');
 
 var CARD_WIDTH = 900;
 var CARD_HEIGHT = 1200;
 var READING_CARD_HEIGHT = 2300;
+var QUALITY_POLL_INTERVAL_MS = 3000;
+var QUALITY_POLL_MAX_ATTEMPTS = 60;
 var themePalettes = {
   tide: {
     stops: ['#102832', '#356f78', '#d5e8df'],
@@ -85,8 +85,14 @@ var themePalettes = {
 
 function findDreamById(id) {
   var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
-  var targetId = decodeURIComponent(id || '');
+  var targetId;
   var i;
+
+  try {
+    targetId = decodeURIComponent(id || '');
+  } catch (error) {
+    return null;
+  }
 
   for (i = 0; i < archive.length; i += 1) {
     if (archive[i].id === targetId) {
@@ -97,13 +103,67 @@ function findDreamById(id) {
   return null;
 }
 
-function formatDate(date) {
+function normalizeDreamId(id) {
+  try {
+    return decodeURIComponent(id || '');
+  } catch (error) {
+    return '';
+  }
+}
+
+function hasMatchingDreamId(dream, id) {
+  return !!dream && dream.id === id;
+}
+
+function persistLocalDream(dream) {
+  var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
+  wx.setStorageSync('oneiro:dreamArchive', archive.map(function (item) {
+    return item.id === dream.id ? dream : item;
+  }));
+}
+
+function scrubLocalPortraitSource(dreamId) {
+  var state = wx.getStorageSync('oneiro:profileMemory') || {};
+  var changed = false;
+  function scrub(snapshot) {
+    if (!snapshot) return snapshot;
+    var refs = Array.isArray(snapshot.sourceRefs) ? snapshot.sourceRefs : [];
+    var hit = refs.some(function (ref) {
+      return ref && (ref.sourceType === 'dream_entries' || ref.type === 'dream') && String(ref.sourceLocalId || ref.sourceId || ref.id || '') === dreamId;
+    });
+    if (!hit) return snapshot;
+    changed = true;
+    return Object.assign({}, snapshot, {
+      stale: true,
+      staleReason: 'source_dream_deleted',
+      useInFutureReadings: false,
+      summary: '画像来源已发生变化，请根据当前资料重新生成。',
+      traits: [],
+      themes: [],
+      realLifeContext: [],
+      sourceRefs: refs.filter(function (ref) {
+        return !(ref && (ref.sourceType === 'dream_entries' || ref.type === 'dream') && String(ref.sourceLocalId || ref.sourceId || ref.id || '') === dreamId);
+      }),
+      aiOriginal: null
+    });
+  }
+  state.current = scrub(state.current);
+  state.latestDraft = scrub(state.latestDraft);
+  state.history = (Array.isArray(state.history) ? state.history : []).map(scrub);
+  if (changed) wx.setStorageSync('oneiro:profileMemory', state);
+}
+
+function formatCardTimestamp(date) {
   var year = date.getFullYear();
   var month = date.getMonth() + 1;
   var day = date.getDate();
+  var hour = date.getHours();
+  var minute = date.getMinutes();
   month = month < 10 ? '0' + month : String(month);
   day = day < 10 ? '0' + day : String(day);
-  return year + '.' + month + '.' + day;
+  hour = hour < 10 ? '0' + hour : String(hour);
+  minute = minute < 10 ? '0' + minute : String(minute);
+  return year + '.' + month + '.' + day + ' · ' + hour + ':' + minute;
 }
 
 function drawRoundRect(ctx, x, y, width, height, radius) {
@@ -124,38 +184,6 @@ function fillRoundRect(ctx, x, y, width, height, radius, color) {
   drawRoundRect(ctx, x, y, width, height, radius);
   ctx.fillStyle = color;
   ctx.fill();
-}
-
-function drawCenteredWrappedText(ctx, text, centerX, y, maxWidth, lineHeight, maxLines) {
-  var content = text || '';
-  var line = '';
-  var lines = [];
-  var i;
-
-  for (i = 0; i < content.length; i += 1) {
-    var nextLine = line + content[i];
-    if (ctx.measureText(nextLine).width > maxWidth && line) {
-      lines.push(line);
-      line = content[i];
-    } else {
-      line = nextLine;
-    }
-  }
-
-  if (line) {
-    lines.push(line);
-  }
-
-  if (maxLines && lines.length > maxLines) {
-    lines = lines.slice(0, maxLines);
-    lines[lines.length - 1] = lines[lines.length - 1].slice(0, -1) + '…';
-  }
-
-  for (i = 0; i < lines.length; i += 1) {
-    ctx.fillText(lines[i], centerX, y + i * lineHeight);
-  }
-
-  return y + lines.length * lineHeight;
 }
 
 function fillEllipse(ctx, x, y, radiusX, radiusY, startAngle, endAngle, color) {
@@ -257,32 +285,6 @@ function drawImageCover(ctx, image, x, y, width, height, background) {
   ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
 }
 
-function drawOverlaySymbols(ctx, symbols, startY) {
-  var items = (symbols || []).slice(0, 4);
-  var widths = [];
-  var total = 0;
-  var gap = 12;
-  var i;
-  var x;
-
-  ctx.font = '700 22px sans-serif';
-  items.forEach(function (label) {
-    var width = Math.min(150, ctx.measureText(label).width + 36);
-    widths.push(width);
-    total += width;
-  });
-  total += Math.max(0, items.length - 1) * gap;
-  x = (CARD_WIDTH - total) / 2;
-
-  for (i = 0; i < items.length; i += 1) {
-    fillRoundRect(ctx, x, startY, widths[i], 42, 21, 'rgba(5, 6, 9, 0.42)');
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
-    ctx.textAlign = 'center';
-    ctx.fillText(items[i], x + widths[i] / 2, startY + 28);
-    x += widths[i] + gap;
-  }
-}
-
 function drawLeftWrappedText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   var content = text || '';
   var line = '';
@@ -378,10 +380,9 @@ function drawSymbols(ctx, symbols, startY) {
   return startY + rows.length * 58;
 }
 
-function drawCard(ctx, dream, displayDate, imagePath) {
+function drawCard(ctx, dream, displayTimestamp, imagePath) {
   var result = dream.result || acceptanceDreamResult;
-  var symbols = result.symbols || [];
-  var artRect = { x: 36, y: 36, width: 828, height: 1128, radius: 24 };
+  var artRect = { x: 0, y: 0, width: CARD_WIDTH, height: CARD_HEIGHT, radius: 0 };
   var overlay;
 
   ctx.clearRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
@@ -389,41 +390,26 @@ function drawCard(ctx, dream, displayDate, imagePath) {
   ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
   drawDreamArt(ctx, result.card_theme || 'mist', imagePath, artRect);
-  canvasFrame.drawOrnamentalFrame(ctx, CARD_WIDTH, CARD_HEIGHT, { margin: 20 });
+
+  overlay = ctx.createLinearGradient(0, 0, 0, 180);
+  overlay.addColorStop(0, 'rgba(5, 6, 9, 0.38)');
+  overlay.addColorStop(1, 'rgba(5, 6, 9, 0)');
+  ctx.fillStyle = overlay;
+  ctx.fillRect(0, 0, CARD_WIDTH, 180);
 
   ctx.save();
-  drawRoundRect(ctx, artRect.x, artRect.y, artRect.width, artRect.height, artRect.radius);
-  ctx.clip();
-  overlay = ctx.createLinearGradient(0, 650, 0, 1164);
-  overlay.addColorStop(0, 'rgba(5, 6, 9, 0)');
-  overlay.addColorStop(0.48, 'rgba(5, 6, 9, 0.26)');
-  overlay.addColorStop(1, 'rgba(5, 6, 9, 0.9)');
-  ctx.fillStyle = overlay;
-  ctx.fillRect(36, 620, 828, 544);
-  ctx.restore();
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+  ctx.shadowColor = 'rgba(5, 6, 9, 0.52)';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
   ctx.font = '800 24px sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('ONEIRO', 70, 84);
+  ctx.fillText('ONEIRO', 54, 62);
+
   ctx.textAlign = 'right';
-  ctx.fillText(result.card_no || 'NO. 001', 830, 84);
-
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '600 64px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(result.title || '梦卡', CARD_WIDTH / 2, 934);
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.76)';
-  ctx.font = '26px sans-serif';
-  drawCenteredWrappedText(ctx, result.emotional_weather || '', CARD_WIDTH / 2, 982, 700, 38, 2);
-
-  drawOverlaySymbols(ctx, symbols, 1064);
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-  ctx.font = '800 22px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('Oneiro · ' + displayDate, CARD_WIDTH / 2, 1142);
+  ctx.fillText(result.card_no || 'NO. 001', 846, 58);
+  ctx.font = '600 20px sans-serif';
+  ctx.fillText(displayTimestamp, 846, 92);
+  ctx.restore();
 }
 
 function drawReadingPanel(ctx, label, text, x, y, width, maxLines) {
@@ -443,7 +429,7 @@ function drawReadingPanel(ctx, label, text, x, y, width, maxLines) {
   return Math.max(y + panelHeight + 26, bottomY + 48);
 }
 
-function drawFullReadingCard(ctx, dream, displayDate, imagePath) {
+function drawFullReadingCard(ctx, dream, displayTimestamp, imagePath) {
   var result = dream.result || acceptanceDreamResult;
   var y;
 
@@ -451,7 +437,7 @@ function drawFullReadingCard(ctx, dream, displayDate, imagePath) {
   ctx.fillStyle = '#fdfaf5';
   ctx.fillRect(0, 0, CARD_WIDTH, READING_CARD_HEIGHT);
 
-  drawCard(ctx, dream, displayDate, imagePath);
+  drawCard(ctx, dream, displayTimestamp, imagePath);
 
   ctx.fillStyle = '#fdfaf5';
   ctx.fillRect(0, CARD_HEIGHT, CARD_WIDTH, READING_CARD_HEIGHT - CARD_HEIGHT);
@@ -485,40 +471,84 @@ function drawFullReadingCard(ctx, dream, displayDate, imagePath) {
 
   ctx.fillStyle = 'rgba(23, 32, 51, 0.26)';
   ctx.font = '800 22px sans-serif';
-  ctx.fillText('Oneiro · ' + displayDate, CARD_WIDTH / 2, READING_CARD_HEIGHT - 56);
+  ctx.fillText('Oneiro · ' + displayTimestamp, CARD_WIDTH / 2, READING_CARD_HEIGHT - 56);
+}
+
+function cardBackInsight(result) {
+  if (!result) return '';
+  if (result.reflection_answer && result.card_insight) return result.card_insight;
+  return result.reading_hook || result.emotional_weather || '';
 }
 
 Page({
   data: {
-    displayDate: formatDate(new Date()),
+    entryReady: false,
+    displayTimestamp: formatCardTimestamp(new Date()),
+    cardFlipped: false,
+    cardBackInsight: '',
     imageStatus: 'idle',
     imageErrorMessage: '',
     imageLoadError: '',
     aiImageFileId: '',
     aiImageLocalPath: '',
+    imageQualityStatus: 'idle',
     shareImagePath: '',
+    publicShareImagePath: '',
     lastFullReadingPath: '',
     sharePath: '',
+    sharePreparing: false,
+    cardSaved: false,
     possibleConnections: [],
-    interpretationUnavailable: false,
+    interpretationUnavailable: true,
+    refineAnswer: '',
+    refining: false,
     dream: {
-      dreamText: acceptanceDreamText,
-      result: acceptanceDreamResult
+      dreamText: '',
+      result: {}
     }
   },
 
   onLoad: function (options) {
     var app = getApp();
-    var isFixture = options && options.fixture === '1';
-    var savedDream = options && options.id ? findDreamById(options.id) : null;
-    var dream = isFixture
-      ? {
+    var requestsFixture = options && options.fixture === '1';
+    var isFixture = options && options.fixture === '1' && options.devPreview === '1';
+    var hasRouteId = !!(options && Object.prototype.hasOwnProperty.call(options, 'id'));
+    var routeDreamId = hasRouteId ? normalizeDreamId(options.id) : '';
+    var savedDream = hasRouteId && routeDreamId ? findDreamById(routeDreamId) : null;
+    var currentDream = app.globalData.currentDream;
+    var matchingCurrentDream = hasRouteId && hasMatchingDreamId(currentDream, routeDreamId)
+      ? currentDream
+      : null;
+    var dream;
+
+    this.entryRouteId = hasRouteId ? routeDreamId : '';
+    this.entryIsFixture = isFixture && !hasRouteId;
+    this.redirectingHome = false;
+    this.setData({ entryReady: false });
+
+    if (requestsFixture && !isFixture) {
+      this.redirectHome();
+      return;
+    }
+
+    if (hasRouteId) {
+      dream = savedDream || matchingCurrentDream;
+    } else if (isFixture) {
+      dream = {
         dreamText: acceptanceDreamText,
         profile: wx.getStorageSync('oneiro:lastProfile') || app.globalData.lastProfile,
         result: buildLocalDreamResult(acceptanceDreamResult, acceptanceDreamText),
         createdAt: new Date().toISOString()
-      }
-      : savedDream || app.globalData.currentDream || this.data.dream;
+      };
+    } else {
+      dream = currentDream;
+    }
+
+    if (!dream) {
+      this.redirectHome();
+      return;
+    }
+
     var interpretationUnavailable = !dream.result;
     if (interpretationUnavailable) {
       dream.result = {
@@ -533,7 +563,9 @@ Page({
         integration_question: ''
       };
     }
-    var displayDate = dream.createdAt ? formatDate(new Date(dream.createdAt)) : this.data.displayDate;
+    var displayTimestamp = dream.createdAt
+      ? formatCardTimestamp(new Date(dream.createdAt))
+      : this.data.displayTimestamp;
     if (!interpretationUnavailable && !dream.result.card_no) {
       dream.result.card_no = dream.result.card_no || 'NO. 001';
       dream.result.profile_summary = dream.result.profile_summary || '梦境记忆';
@@ -543,10 +575,14 @@ Page({
       : [dream.result.mirror].filter(Boolean);
     this.setData({
       dream: dream,
-      displayDate: displayDate,
+      displayTimestamp: displayTimestamp,
+      cardBackInsight: cardBackInsight(dream.result),
+      imageQualityStatus: dream.result.image_quality_status || 'idle',
       possibleConnections: possibleConnections,
-      interpretationUnavailable: interpretationUnavailable
+      interpretationUnavailable: interpretationUnavailable,
+      entryReady: true
     });
+    this.restoreSavedDreamImage(dream);
     analytics.trackEvent('result_view', {
       dreamId: dream.id || '',
       cardTheme: dream.result.card_theme || 'mist',
@@ -557,19 +593,75 @@ Page({
   onReady: function () {
     var that = this;
 
+    if (!this.isEntryValid()) {
+      this.redirectHome();
+      return;
+    }
     if (this.data.interpretationUnavailable) return;
 
     setTimeout(function () {
-      that.renderShareCard({
-        silent: true,
-        success: function (tempFilePath) {
-          that.setData({ shareImagePath: tempFilePath });
-        }
-      });
       that.requestDreamImage(function () {
         that.renderShareCard({ silent: true });
       });
+      that.resumeDreamImageQuality();
     }, 300);
+  },
+
+  isEntryValid: function () {
+    var currentDream;
+
+    if (this.redirectingHome || !this.data.entryReady) return false;
+    if (this.entryIsFixture) return true;
+
+    currentDream = getApp().globalData.currentDream;
+    if (this.entryRouteId) {
+      return hasMatchingDreamId(this.data.dream, this.entryRouteId) && (
+        !!findDreamById(this.entryRouteId) || hasMatchingDreamId(currentDream, this.entryRouteId)
+      );
+    }
+
+    return hasMatchingDreamId(this.data.dream, currentDream && currentDream.id);
+  },
+
+  redirectHome: function () {
+    if (this.redirectingHome) return;
+    this.redirectingHome = true;
+    this.setData({ entryReady: false });
+    wx.reLaunch({ url: '/pages/home/index' });
+  },
+
+  restoreSavedDreamImage: function (dream) {
+    var that = this;
+    var result = dream && dream.result ? dream.result : {};
+    var imageUrl = String(result.imageUrl || '');
+    var fileId = String(result.imageFileId || result.image_file_id || result.fileID || result.fileId || '');
+    if (!imageUrl && !fileId) return;
+    if (fileId && !result.image_file_id) {
+      dream.result = Object.assign({}, result, { image_file_id: fileId });
+      persistLocalDream(dream);
+    }
+    this.setData({ imageStatus: 'loading', aiImageFileId: fileId, imageLoadError: '' });
+    cloudBase.resolveCloudImage(fileId, imageUrl, function (localPath, loadError) {
+      that.setData({
+        aiImageLocalPath: localPath || '',
+        imageStatus: localPath ? 'ready' : 'failed',
+        imageErrorMessage: localPath ? '' : '云端画面暂时无法加载，已使用梦象卡面',
+        imageLoadError: localPath ? '' : String(loadError || 'cloud_image_load_failed').slice(0, 300)
+      });
+    });
+  },
+
+  onUnload: function () {
+    this.stopDreamImageQualityPolling();
+  },
+
+  toggleDreamCard: function () {
+    var next = !this.data.cardFlipped;
+    this.setData({ cardFlipped: next });
+    analytics.trackEvent('dream_card_flip', {
+      dreamId: this.data.dream && this.data.dream.id ? this.data.dream.id : '',
+      side: next ? 'back' : 'front'
+    });
   },
 
   requestDreamImage: function (done) {
@@ -577,7 +669,7 @@ Page({
     var result = this.data.dream.result || {};
     var prompt = result.image_prompt || result.image || '';
 
-    if (result.imageUrl || !prompt) {
+    if (result.imageUrl || result.image_file_id || result.imageFileId || result.fileID || result.fileId || (!prompt && !result.visual_plan)) {
       if (done) {
         done();
       }
@@ -585,19 +677,29 @@ Page({
     }
 
     this.setData({ imageStatus: 'generating', imageErrorMessage: '' });
-    cloudBase.generateDreamImage(prompt, this.data.dream.id || '', result.card_theme || 'mist', function (imageRes) {
+    cloudBase.generateDreamImage(
+      prompt,
+      this.data.dream.id || '',
+      result.card_theme || 'mist',
+      result.visual_plan || null,
+      function (imageRes) {
       var dream = that.data.dream;
 
       if (imageRes && imageRes.ok && imageRes.imageUrl) {
         dream.result = Object.assign({}, dream.result, {
           imageUrl: imageRes.imageUrl,
+          image_file_id: imageRes.fileID || '',
           image_provider: imageRes.provider || '',
           image_model: imageRes.model || '',
           image_style_version: imageRes.styleVersion || '',
           image_cache_hit: !!imageRes.cacheHit,
           image_format: imageRes.imageFormat || '',
-          image_bytes: Number(imageRes.imageBytes || 0)
+          image_bytes: Number(imageRes.imageBytes || 0),
+          image_visual_plan: imageRes.visualPlan || result.visual_plan || null,
+          image_quality_check: imageRes.qualityCheck || null
         });
+        persistLocalDream(dream);
+        cloudBase.saveDream(dream);
         that.setData({
           dream: dream,
           aiImageFileId: imageRes.fileID || ''
@@ -617,6 +719,9 @@ Page({
           }
           if (done) {
             done();
+          }
+          if (localPath) {
+            that.startDreamImageQuality(imageRes, result);
           }
         });
         analytics.trackEvent('generated_image_success', {
@@ -640,14 +745,182 @@ Page({
           done();
         }
       }
+      }
+    );
+  },
+
+  startDreamImageQuality: function (fastImage, visualResult) {
+    var that = this;
+    var dream = this.data.dream;
+
+    if (!dream || !dream.id || this.data.imageQualityStatus === 'queued' || this.data.imageQualityStatus === 'polling') {
+      return;
+    }
+
+    this.setData({ imageQualityStatus: 'queued' });
+    this.qualityRequestActive = true;
+    cloudBase.startDreamImageQuality(dream.id, {
+      prompt: visualResult.image_prompt || visualResult.image || '',
+      theme: visualResult.card_theme || 'mist',
+      visualPlan: visualResult.visual_plan || null,
+      fastImageFileId: fastImage.fileID || '',
+      fastImageUrl: fastImage.imageUrl || ''
+    }, function (startResult) {
+      var jobId;
+
+      if (!that.qualityRequestActive) return;
+
+      if (!startResult || !startResult.ok) {
+        that.stopDreamImageQualityPolling('unavailable');
+        return;
+      }
+
+      if (startResult.imageUrl) {
+        that.applyDreamImageQuality(startResult);
+        return;
+      }
+
+      jobId = startResult.jobId || startResult.taskId || startResult.qualityJobId || startResult.id || '';
+      if (!jobId) {
+        that.stopDreamImageQualityPolling('unavailable');
+        return;
+      }
+
+      that.qualityJobId = jobId;
+      that.qualityPollAttempt = 0;
+      var currentDream = that.data.dream;
+      currentDream.result = Object.assign({}, currentDream.result, {
+        image_quality_job_id: jobId,
+        image_quality_status: 'polling'
+      });
+      persistLocalDream(currentDream);
+      cloudBase.saveDream(currentDream);
+      that.setData({ dream: currentDream, imageQualityStatus: 'polling' });
+      that.pollDreamImageQuality();
     });
+  },
+
+  resumeDreamImageQuality: function () {
+    var dream = this.data.dream;
+    var result = dream && dream.result ? dream.result : {};
+    var jobId = result.image_quality_job_id || '';
+    var status = String(result.image_quality_status || this.data.imageQualityStatus || '').toLowerCase();
+    if (!jobId || (status !== 'polling' && status !== 'queued')) return;
+    this.qualityJobId = jobId;
+    this.qualityPollAttempt = 0;
+    this.qualityRequestActive = true;
+    this.setData({ imageQualityStatus: 'polling' });
+    this.pollDreamImageQuality();
+  },
+
+  pollDreamImageQuality: function () {
+    var that = this;
+    var dream = this.data.dream;
+    var jobId = this.qualityJobId;
+
+    if (!this.qualityRequestActive || !jobId || !dream || !dream.id || this.qualityPollAttempt >= QUALITY_POLL_MAX_ATTEMPTS) {
+      this.stopDreamImageQualityPolling('timeout');
+      return;
+    }
+
+    this.qualityPollAttempt += 1;
+    cloudBase.pollDreamImageQuality(jobId, dream.id, function (pollResult) {
+      var status = String(pollResult && (pollResult.status || pollResult.state) || '').toLowerCase();
+
+      if (!that.qualityRequestActive || that.qualityJobId !== jobId) return;
+
+      if (pollResult && pollResult.ok && pollResult.imageUrl) {
+        that.applyDreamImageQuality(pollResult);
+        return;
+      }
+      if (!pollResult || !pollResult.ok || status === 'failed' || status === 'cancelled' || status === 'canceled') {
+        that.stopDreamImageQualityPolling('unavailable');
+        return;
+      }
+
+      that.qualityPollTimer = setTimeout(function () {
+        that.pollDreamImageQuality();
+      }, QUALITY_POLL_INTERVAL_MS);
+    });
+  },
+
+  applyDreamImageQuality: function (qualityImage) {
+    var that = this;
+    var dream = this.data.dream;
+
+    if (!this.qualityRequestActive || !dream || !dream.result || !qualityImage || !qualityImage.imageUrl) {
+      this.stopDreamImageQualityPolling('unavailable');
+      return;
+    }
+
+    cloudBase.resolveCloudImage(qualityImage.fileID || qualityImage.fileId || '', qualityImage.imageUrl, function (localPath) {
+      if (!that.qualityRequestActive) return;
+      if (!localPath) {
+        that.stopDreamImageQualityPolling('unavailable');
+        return;
+      }
+      dream.result = Object.assign({}, dream.result, {
+        imageUrl: qualityImage.imageUrl,
+        image_file_id: qualityImage.fileID || qualityImage.fileId || dream.result.image_file_id || '',
+        image_provider: qualityImage.provider || dream.result.image_provider || '',
+        image_model: qualityImage.model || dream.result.image_model || '',
+        image_quality: 'high',
+        image_quality_status: 'ready',
+        image_format: qualityImage.imageFormat || dream.result.image_format || '',
+        image_bytes: Number(qualityImage.imageBytes || dream.result.image_bytes || 0)
+      });
+      persistLocalDream(dream);
+      cloudBase.saveDream(dream);
+      that.setData({
+        dream: dream,
+        aiImageFileId: qualityImage.fileID || qualityImage.fileId || '',
+        aiImageLocalPath: localPath,
+        imageQualityStatus: 'ready',
+        shareImagePath: '',
+        publicShareImagePath: '',
+        sharePath: ''
+      });
+      that.stopDreamImageQualityPolling('ready');
+      analytics.trackEvent('generated_image_quality_success', {
+        dreamId: dream.id || '',
+        provider: qualityImage.provider || '',
+        model: qualityImage.model || ''
+      });
+    });
+  },
+
+  stopDreamImageQualityPolling: function (status) {
+    if (this.qualityPollTimer) {
+      clearTimeout(this.qualityPollTimer);
+      this.qualityPollTimer = null;
+    }
+    this.qualityJobId = '';
+    this.qualityPollAttempt = 0;
+    this.qualityRequestActive = false;
+    if (status) {
+      this.setData({ imageQualityStatus: status });
+      if (status === 'ready' || status === 'timeout' || status === 'unavailable') {
+        var dream = this.data.dream;
+        if (dream && dream.result) {
+          dream.result = Object.assign({}, dream.result, {
+            image_quality_status: status
+          });
+          persistLocalDream(dream);
+          cloudBase.saveDream(dream);
+        }
+      }
+    }
   },
 
   retryDreamImage: function () {
     var dream = this.data.dream;
 
     if (dream && dream.result) {
-      dream.result = Object.assign({}, dream.result, { imageUrl: '' });
+      dream.result = Object.assign({}, dream.result, {
+        imageUrl: '',
+        image_quality_job_id: '',
+        image_quality_status: 'idle'
+      });
     }
     this.setData({
       dream: dream,
@@ -656,8 +929,11 @@ Page({
       imageLoadError: '',
       aiImageFileId: '',
       aiImageLocalPath: '',
-      shareImagePath: ''
+      imageQualityStatus: 'idle',
+      shareImagePath: '',
+      publicShareImagePath: ''
     });
+    this.stopDreamImageQualityPolling();
     this.requestDreamImage();
   },
 
@@ -665,6 +941,57 @@ Page({
     var dreamId = this.data.dream && this.data.dream.id ? this.data.dream.id : '';
     analytics.trackEvent('dream_chat_open', { dreamId: dreamId });
     wx.navigateTo({ url: '/pages/dream-chat/index?id=' + encodeURIComponent(dreamId) });
+  },
+
+  onRefineAnswerInput: function (event) {
+    this.setData({ refineAnswer: event.detail.value });
+  },
+
+  refineDreamCard: function () {
+    var that = this;
+    var dream = this.data.dream;
+    var answer = String(this.data.refineAnswer || '').trim();
+    if (!dream || !dream.result || this.data.refining) return;
+    if (!answer) {
+      wx.showToast({ title: '写一句你的联想就好', icon: 'none' });
+      return;
+    }
+    this.setData({ refining: true });
+    analytics.trackEvent('dream_refine_submit', { dreamId: dream.id || '', length: answer.length });
+    cloudBase.refineDream(dream.dreamText, dream.result, answer, function (result) {
+      that.setData({ refining: false });
+      if (!result || !result.ok) {
+        wx.showToast({ title: result && result.message ? result.message : '暂时无法定稿', icon: 'none' });
+        return;
+      }
+      dream.result = Object.assign({}, dream.result, {
+        public_title: dream.result.public_title || dream.result.title || '梦卡',
+        title: result.final_title || dream.result.title,
+        card_insight: result.final_card_insight || dream.result.card_insight,
+        personal_connection: result.personal_connection || '',
+        reflection_answer: answer.slice(0, 500),
+        finalized_at: new Date().toISOString(),
+        refinement_provider: result.provider || ''
+      });
+      dream.updatedAt = new Date().toISOString();
+      persistLocalDream(dream);
+      cloudBase.saveDream(dream);
+      that.setData({
+        dream: dream,
+        cardBackInsight: cardBackInsight(dream.result),
+        refineAnswer: '',
+        shareImagePath: '',
+        publicShareImagePath: '',
+        sharePath: ''
+      });
+      that.renderShareCard({ silent: true, force: true });
+      analytics.trackEvent('dream_refine_success', {
+        dreamId: dream.id || '',
+        provider: result.provider || '',
+        fallback: !!result.fallback
+      });
+      wx.showToast({ title: '最终梦卡已更新', icon: 'success' });
+    });
   },
 
   openLifeNoteSource: function () {
@@ -717,17 +1044,6 @@ Page({
     });
   },
 
-  openTopicCard: function () {
-    var app = getApp();
-    var milestone = this.data.dream.result.symbol_milestones && this.data.dream.result.symbol_milestones[0];
-    if (!milestone) return;
-    app.globalData.currentArtifact = {
-      type: 'topic',
-      topicCard: dreamArtifacts.buildTopicCard(milestone.symbol)
-    };
-    wx.navigateTo({ url: '/pages/artifact/index?type=topic' });
-  },
-
   deleteDream: function () {
     var that = this;
     var dream = this.data.dream;
@@ -741,14 +1057,28 @@ Page({
       confirmColor: '#b85c54',
       success: function (res) {
         if (!res.confirm) return;
-        var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
-        wx.setStorageSync('oneiro:dreamArchive', archive.filter(function (item) {
-          return item.id !== dream.id;
-        }));
-        cloudBase.deleteDream(dream.id);
-        analytics.trackEvent('dream_deleted', { dreamId: dream.id });
-        that.setData({ dreamDeleted: true });
-        wx.navigateTo({ url: '/pages/archive/index' });
+        wx.showLoading({ title: '正在删除' });
+        cloudBase.deleteDream(dream.id, function (result) {
+          var canDeleteLocally = result && result.ok;
+          wx.hideLoading();
+          if (!canDeleteLocally && result && result.reason !== 'cloud_unavailable') {
+            wx.showToast({ title: '云端删除失败，请稍后重试', icon: 'none' });
+            return;
+          }
+          var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
+          wx.setStorageSync('oneiro:dreamArchive', archive.filter(function (item) {
+            return item.id !== dream.id;
+          }));
+          scrubLocalPortraitSource(dream.id);
+          if (!canDeleteLocally) {
+            var pendingDeletes = wx.getStorageSync('oneiro:pendingCloudDeletes') || [];
+            if (pendingDeletes.indexOf(dream.id) < 0) pendingDeletes.push(dream.id);
+            wx.setStorageSync('oneiro:pendingCloudDeletes', pendingDeletes.slice(-30));
+          }
+          analytics.trackEvent('dream_deleted', { dreamId: dream.id, cloudDeleted: canDeleteLocally });
+          that.setData({ dreamDeleted: true });
+          wx.navigateTo({ url: '/pages/archive/index' });
+        });
       }
     });
   },
@@ -758,14 +1088,36 @@ Page({
 
     analytics.trackEvent('share', {
       dreamId: this.data.dream.id || '',
-      hasImage: !!this.data.shareImagePath,
+      hasImage: !!this.data.publicShareImagePath,
       hasSharePath: !!this.data.sharePath
     });
     return {
-      title: '我刚抽到一张梦卡：' + this.data.dream.result.title,
+      title: '我刚抽到一张梦卡：' + (
+        this.data.dream.result.reflection_answer
+          ? (this.data.dream.result.public_title || '梦卡')
+          : this.data.dream.result.title
+      ),
       path: sharePath,
-      imageUrl: this.data.shareImagePath || ''
+      imageUrl: this.data.sharePath ? (this.data.publicShareImagePath || '') : ''
     };
+  },
+
+  prepareShareCard: function () {
+    var that = this;
+    if (this.data.sharePreparing) return;
+    this.setData({ sharePreparing: true });
+    this.renderShareCard({
+      force: true,
+      publishShare: true,
+      publicShare: true,
+      success: function () {
+        that.setData({ sharePreparing: false });
+        wx.showToast({ title: that.data.sharePath ? '分享梦卡已准备' : '图片已准备，可直接转发', icon: 'none' });
+      },
+      fail: function () {
+        that.setData({ sharePreparing: false });
+      }
+    });
   },
 
   renderShareCard: function (options) {
@@ -818,16 +1170,13 @@ Page({
               destHeight: canvasHeight,
               success: function (fileRes) {
                 if (!config.fullReading) {
-                  that.setData({ shareImagePath: fileRes.tempFilePath });
-                  cloudBase.uploadShareCard(that.data.dream.id || '', fileRes.tempFilePath, function (uploadRes) {
-                    var fileId = uploadRes && uploadRes.fileID ? uploadRes.fileID : '';
-
-                    if (uploadRes && uploadRes.fileID) {
-                      analytics.trackEvent('image_upload_success', {
-                        dreamId: that.data.dream.id || ''
-                      });
-                    }
-                    cloudBase.createShareCard(that.data.dream, fileId, function (shareRes) {
+                  if (config.publicShare) {
+                    that.setData({ publicShareImagePath: fileRes.tempFilePath });
+                  } else {
+                    that.setData({ shareImagePath: fileRes.tempFilePath });
+                  }
+                  if (config.publishShare) {
+                    cloudBase.createShareCard(that.data.dream, function (shareRes) {
                       if (shareRes && shareRes.path) {
                         that.setData({ sharePath: shareRes.path });
                         analytics.trackEvent('share_card_ready', {
@@ -835,7 +1184,7 @@ Page({
                         });
                       }
                     });
-                  });
+                  }
                 } else {
                   that.setData({ lastFullReadingPath: fileRes.tempFilePath });
                 }
@@ -874,26 +1223,26 @@ Page({
           var aiImage = canvas.createImage();
           aiImage.onload = function () {
             if (config.fullReading) {
-              drawFullReadingCard(ctx, that.data.dream, that.data.displayDate, aiImage);
+              drawFullReadingCard(ctx, that.data.dream, that.data.displayTimestamp, aiImage);
             } else {
-              drawCard(ctx, that.data.dream, that.data.displayDate, aiImage);
+              drawCard(ctx, that.data.dream, that.data.displayTimestamp, aiImage);
             }
             exportCard();
           };
           aiImage.onerror = function () {
             if (config.fullReading) {
-              drawFullReadingCard(ctx, that.data.dream, that.data.displayDate);
+              drawFullReadingCard(ctx, that.data.dream, that.data.displayTimestamp);
             } else {
-              drawCard(ctx, that.data.dream, that.data.displayDate);
+              drawCard(ctx, that.data.dream, that.data.displayTimestamp, null);
             }
             exportCard();
           };
           aiImage.src = imagePath;
         } else {
           if (config.fullReading) {
-            drawFullReadingCard(ctx, that.data.dream, that.data.displayDate);
+            drawFullReadingCard(ctx, that.data.dream, that.data.displayTimestamp);
           } else {
-            drawCard(ctx, that.data.dream, that.data.displayDate);
+            drawCard(ctx, that.data.dream, that.data.displayTimestamp, null);
           }
           exportCard();
         }
@@ -901,6 +1250,7 @@ Page({
   },
 
   saveCard: function () {
+    var that = this;
     var dreamId = this.data.dream.id || '';
 
     this.renderShareCard({
@@ -909,6 +1259,7 @@ Page({
         wx.saveImageToPhotosAlbum({
           filePath: tempFilePath,
           success: function () {
+            that.setData({ cardSaved: true });
             analytics.trackEvent('export_success', {
               dreamId: dreamId
             });

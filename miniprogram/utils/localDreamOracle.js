@@ -19,11 +19,47 @@ function cloneResult(result) {
 
 var symbolRules = [
   {
+    label: '暴雨',
+    titleWord: '雨',
+    theme: 'tide',
+    keywords: ['暴雨', '大雨', '下暴雨', '下雨', '雨'],
+    meaning: '暴雨把原本在背景里的变化推到眼前，带来突然、密集而难以忽略的输入。',
+    mirror: '现实里可能有一件长期没有回应的事，最近突然变成需要你承接的消息、任务或压力。',
+    action: '列出一件突然变多的事，标记承接/拒绝'
+  },
+  {
+    label: '暴雪',
+    titleWord: '雪',
+    theme: 'tide',
+    keywords: ['暴雪', '大雪', '下暴雪', '下大雪', '下雪', '飘雪', '雪'],
+    meaning: '暴雪把视野、路径和原有秩序一起遮住，也让环境的变化变得无法忽略。',
+    mirror: '现实里可能有一件事突然变得更难判断，但它也迫使你看清真正需要保留的东西。',
+    action: '写下一个需要先观察再应对的变化'
+  },
+  {
+    label: '沙漠',
+    titleWord: '漠',
+    theme: 'mist',
+    keywords: ['沙漠', '荒漠', '沙丘'],
+    meaning: '沙漠把资源稀薄、路径难寻和缺少遮蔽的处境压缩成一个空间。',
+    mirror: '现实里可能有一件事长期缺少进展、回应或可用资源。',
+    action: '写下目前最缺的一项资源'
+  },
+  {
+    label: '玫瑰',
+    titleWord: '花',
+    theme: 'hearth',
+    keywords: ['玫瑰花', '玫瑰', '花朵', '鲜花'],
+    meaning: '玫瑰把美感、欲望、照料与刺痛放在同一朵花里；它从哪里出现，比花本身更重要。',
+    mirror: '你可能正在面对一个条件并不理想，却已经开始生长的念头、关系或机会。',
+    action: '给一个正在生长的念头留出一小时'
+  },
+  {
     label: '清水',
     titleWord: '潮',
     theme: 'tide',
-    keywords: ['水', '海', '河', '湖', '雨', '洪水', '清水', '下雨'],
-    meaning: '水代表正在浮上来的情绪、直觉和记忆。',
+    keywords: ['水', '海', '河', '湖', '洪水', '清水', '溪', '江', '池'],
+    meaning: '明确出现的水体代表正在浮上来的情绪、直觉和记忆。',
     mirror: '你可能正在让某个感受越过理性控制，开始承认它真实存在。',
     action: '写下这股情绪最想保护你的部分'
   },
@@ -40,7 +76,7 @@ var symbolRules = [
     label: '钥匙',
     titleWord: '钥',
     theme: 'threshold',
-    keywords: ['钥匙', '锁', '打开', '密码'],
+    keywords: ['钥匙', '锁', '密码'],
     meaning: '钥匙象征解决问题的线索，或你已经拥有但尚未使用的能力。',
     mirror: '你并非没有答案，更像是在等待一个可以安心使用答案的时机。',
     action: '写下你已经拥有的一项资源'
@@ -234,6 +270,42 @@ function titleFor(symbols) {
   return symbols[0].titleWord + '牌';
 }
 
+function localVisualPlan(text, symbols, mood) {
+  var source = String(text || '');
+  var labels = symbols.map(function (symbol) { return symbol.label; }).slice(0, 5);
+  var anomalyPatterns = ['通向海里', '漂浮', '飞起来', '没有脸', '变成', '另一个我', '无限', '倒着', '消失', '不会醒'];
+  var anomaly = anomalyPatterns.filter(function (item) {
+    return source.indexOf(item) >= 0;
+  })[0] || '';
+  var compositions = ['off_center_diagonal', 'threshold_depth', 'cropped_closeup', 'split_distance', 'low_horizon', 'vertical_drift'];
+  var composition = compositions[source.length % compositions.length];
+
+  return {
+    version: 'oneiro-visual-plan-v1',
+    raw_text: source.slice(0, 1200),
+    main_event: compactDream(source),
+    emotion: [mood.label || '神秘'],
+    emotion_intensity: 0.65,
+    setting: labels[0] || '未定义的梦境空间',
+    characters: [],
+    objects: labels.slice(0, 4).map(function (label, index) {
+      return { name: label, importance: Math.max(0.5, 0.9 - index * 0.1), visualizable: true };
+    }),
+    anomalies: anomaly ? [anomaly] : [],
+    symbols: labels,
+    memory_elements: [],
+    preserve_elements: labels.slice(0, 4),
+    hidden_symbol: labels[4] || '',
+    composition: {
+      template: composition,
+      subject_position: '',
+      visual_flow: '',
+      spatial_layers: '',
+      negative_space: '保留约40%低密度呼吸空间'
+    }
+  };
+}
+
 function buildLocalDreamResult(baseResult, dreamText) {
   var result = cloneResult(baseResult);
   var text = String(dreamText || '');
@@ -265,6 +337,8 @@ function buildLocalDreamResult(baseResult, dreamText) {
     '构成了主要梦象，它们共同指向一种正在被你整理的内在经验。';
   result.underneath =
     meanings.join(' ') + '这些符号合在一起，说明梦在把一个原本模糊的感受变得可以被你辨认。';
+  result.cultural_symbolism =
+    '从文化象征看，“' + primary.label + '”与“' + secondary.label + '”常被用来描绘过渡、寻找与变化。放回这次梦里，它们是一种可供联想的传统意象，不是对未来的确定判断。';
   result.reading_hook =
     '这个梦最有张力的地方，是“' + primary.label + '”和“' + secondary.label + '”同时出现：你似乎一边在靠近什么，一边又在保留退路。这个矛盾比单独的象征更值得继续看。';
   result.alternative_reading =
@@ -277,10 +351,37 @@ function buildLocalDreamResult(baseResult, dreamText) {
   result.image =
     '梦卡画面以' + labels.join('、') + '为核心，把梦里最强烈的情绪凝成一张可以收藏的象征图。';
   result.image_prompt =
-    'vertical 3:4 tarot-inspired illustration panel, symbols: ' + labels.slice(0, 5).join(', ') +
-    ', vintage ink line art, muted watercolor, aged paper, no frame, no text';
+    'one main dream event with ' + labels.slice(0, 4).join(', ') +
+    ', one clear focal action, condensed dream scene';
+  result.visual_plan = localVisualPlan(text, symbols, mood);
   result.echo =
     '今天适合从“' + secondary.label + '”这个符号开始，给梦里的感觉一个现实中的小出口。';
+
+  if (labels.indexOf('沙漠') >= 0 && labels.indexOf('暴雨') >= 0) {
+    result.underneath = '这次梦的核心不是“暴雨代表什么”，而是一个原本干涸、无遮蔽的空间突然出现了过量输入。' +
+      '你没有写自己逃跑、寻找避雨处或被冲走，梦把注意力停在“变化发生了”这一刻。' +
+      '它可能对应一件长期缺少进展或资源、最近突然需要你处理的工作、关系或创作事项；真正要判断的是，这场变化对你来说是补给，还是新的负担。';
+    result.cultural_symbolism = '在传统象征语境里，“沙漠”偏向资源稀薄、路径难寻的处境，“暴雨”偏向外部条件骤变和情势集中涌入。' +
+      '两者并置的文化意象是“原本难以推进的秩序被突然打破”，不是对未来的吉凶判断。';
+    result.reading_hook = '“沙漠”提供了缺少资源和遮蔽的底盘，“暴雨”却把外界输入突然推高；梦的张力不在雨好不好，而在你要承接多少、拒绝多少。';
+    result.mirror = '它可能对应一件从“迟迟没变化”突然变成“需要马上应对”的现实事项。优先检查最近一周的工作、关系或创作，而不是把梦理解成预兆。';
+    result.integration_question = '最近有没有一件事从“没动静”突然变成“要马上处理”？';
+    result.one_small_act = '列出一件突然变多的事，标记承接/拒绝';
+    result.echo = '今天把一件突然变多的事拆成“必须承接”和“可以拒绝”。';
+  }
+
+  if (labels.indexOf('沙漠') >= 0 && labels.indexOf('暴雪') >= 0 && labels.indexOf('玫瑰') >= 0) {
+    result.underneath = '这次梦的关键不是“暴雪”和“玫瑰”各自代表什么，而是它们先后发生在同一片沙地：环境变得更严苛，新的东西却仍然长了出来。' +
+      '梦里没有写你去躲雪、拔掉玫瑰或把它带走，视线停在“它竟然出现了”这一刻。' +
+      '它可能对应现实里的工作、关系或创作：你原以为条件不够，某个念头或机会却已经冒头。';
+    result.cultural_symbolism = '在传统象征语境里，“沙漠”指向匮乏与难以生长的处境，“暴雪”推高遮蔽与考验，“玫瑰”把美与刺放在一起。三者并置，呈现的是不理想条件里的生长，不是未来判断。';
+    result.reading_hook = '“沙漠”让生长看起来不可能，“暴雪”又把环境推向更严苛，但“玫瑰”还是出现了；梦的张力在于你是否愿意相信这件新生的东西。';
+    result.mirror = '它可能对应一件条件并不理想、却已经出现新可能的工作、关系或创作事项。先确认它是否真的在生长，再决定要保护、验证还是放下。';
+    result.integration_question = '最近有没有一件事在条件并不理想时，反而长出了新的可能？';
+    result.one_small_act = '给一个正在生长的念头留出一小时';
+    result.echo = '今天先给一件新出现的东西留出观察时间，不急着证明它能不能留下。';
+  }
+
   result.omens = Object.assign({}, result.omens || {}, {
     lucky_color_name: mood.label + '色',
     reason: '这组梦象适合用' + mood.label + '的方式被轻轻辨认。'
