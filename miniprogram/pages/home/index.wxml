@@ -18,7 +18,7 @@
   <view class="capture-surface {{recording ? 'is-recording' : ''}} {{dreamText ? 'has-draft' : ''}}">
     <view class="capture-header">
       <text class="capture-label">{{recording ? '正在听你说' : dreamText ? '梦的草稿' : '一段梦的开始'}}</text>
-      <text class="capture-prompt">轻触写梦 · 长按说梦</text>
+      <text wx:if="{{dreamText}}" class="capture-prompt">{{dreamText.length}} / 1200</text>
     </view>
     <textarea
       class="dream-input"
@@ -41,13 +41,13 @@
       <text wx:if="{{recording}}">松开完成 · {{recordingSeconds}}s</text>
       <block wx:else><text class="voice-button-icon">◌</text><text>按住说话</text></block>
     </button>
-    <text wx:if="{{!recognizing}}" class="voice-hint">{{recording ? '松开后自动转成文字' : '松开识别；也可点击开始 / 停止'}}</text>
+    <text wx:if="{{!recognizing}}" class="voice-hint">{{recording ? '松开后自动转成文字' : '按住说话，松开自动转成文字'}}</text>
     <text wx:if="{{recognizing}}" class="recognizing-note">正在整理刚才的话…</text>
   </view>
 
   <button class="primary-button" disabled="{{recording || recognizing}}" bindtap="generateDreamCard">
     <view class="primary-button-copy">
-      <text class="primary-button-en">SAVE &amp; INTERPRET</text>
+      <text class="primary-button-en">SAVE / INTERPRET</text>
       <text class="primary-button-cn">保存并解读</text>
     </view>
     <text class="primary-button-arrow">→</text>

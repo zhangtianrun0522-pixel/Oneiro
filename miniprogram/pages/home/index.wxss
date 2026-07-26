@@ -1,21 +1,25 @@
+/* padding-bottom 交给 app.wxss 的 .screen 统一处理（固定导航 + 安全区），
+   这里只覆写左右和顶部内距。之前写死 70rpx 会让主按钮被底部导航切掉。 */
 .screen {
   min-height: 100vh;
-  padding: 60rpx 48rpx 70rpx;
-  background: #f2ecdf;
-  color: #211d17;
+  padding-top: 48rpx;
+  padding-right: 48rpx;
+  padding-left: 48rpx;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .brand {
-  margin-bottom: 108rpx;
-  color: #211d17;
+  margin-bottom: 44rpx;
+  color: var(--ink);
   font-size: 24rpx;
   font-weight: 800;
   letter-spacing: 7rpx;
 }
 
 .eyebrow {
-  color: #b8863b;
-  font-size: 18rpx;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 4rpx;
 }
@@ -31,26 +35,26 @@
 }
 
 .copy {
-  margin-top: 28rpx;
-  color: rgba(33, 29, 23, 0.62);
-  font-size: 25rpx;
-  line-height: 1.8;
+  margin-top: 20rpx;
+  color: var(--ink-70);
+  font-size: 26rpx;
+  line-height: 1.7;
 }
 
 .hero {
-  margin-bottom: 58rpx;
+  margin-bottom: 36rpx;
 }
 
 .title-accent {
   margin-top: 0;
-  color: #c1443b;
+  color: var(--cinnabar);
 }
 
 .hero-note {
   display: block;
-  margin-top: 18rpx;
-  color: rgba(33, 29, 23, 0.42);
-  font-size: 22rpx;
+  margin-top: 14rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
   line-height: 1.6;
 }
 
@@ -58,14 +62,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
-  min-height: 112rpx;
+  width: 100% !important;
+  min-height: 108rpx;
   margin-top: 0;
   padding: 0 28rpx;
   border: 0;
   border-radius: 0;
-  background: #211d17;
-  color: #f2ecdf;
+  background: var(--ink);
+  color: var(--paper);
   text-align: left;
 }
 
@@ -76,8 +80,8 @@
 }
 
 .primary-button-en {
-  color: rgba(242, 236, 223, 0.52);
-  font-size: 16rpx;
+  color: rgba(242, 236, 223, 0.66);
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 3rpx;
 }
@@ -147,42 +151,46 @@
 }
 
 .capture-surface {
-  margin-top: -16rpx;
-  padding: 28rpx 0 24rpx;
+  margin-top: -8rpx;
+  padding: 20rpx 0 20rpx;
   border: 0;
 }
 
 .capture-surface.has-draft, .capture-surface.is-recording { border: 0; }
-.capture-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12rpx; }
-.capture-label { color: #b8863b; font-size: 20rpx; font-weight: 700; letter-spacing: 1rpx; }
-.capture-prompt { color: rgba(33, 29, 23, 0.36); font-size: 19rpx; }
-.dream-input { width: 100%; min-height: 270rpx; padding: 16rpx 0; background: transparent; color: #211d17; font-size: 28rpx; line-height: 1.8; }
-.capture-divider { height: 1rpx; margin: 4rpx 0 26rpx; background: rgba(33, 29, 23, 0.1); }
+.capture-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10rpx; }
+.capture-label { color: var(--gold-ink); font-size: var(--fs-label); font-weight: 700; letter-spacing: 1rpx; }
+.capture-prompt { color: var(--ink-55); font-size: var(--fs-label); }
+/* textarea 默认 height:150px，min-height 压不下去，必须显式给 height */
+.dream-input { box-sizing: border-box; width: 100%; height: 200rpx; padding: 12rpx 0; background: transparent; color: var(--ink); font-size: var(--fs-body); line-height: 1.8; }
+.capture-divider { height: 1rpx; margin: 4rpx 0 20rpx; background: rgba(33, 29, 23, 0.1); }
+
+/* 正圆语音按钮。width 必须带 !important，否则会被微信 button 的
+   内置 184px 压掉，渲染成椭圆（height 不受影响，所以只有宽度会失真）。 */
 .voice-button {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 188rpx;
+  width: 188rpx !important;
   height: 188rpx;
   margin: 0 auto;
-  padding: 0 18rpx;
+  padding: 0;
   border: 2rpx solid rgba(184, 134, 59, 0.72);
   border-radius: 50%;
   background: rgba(184, 134, 59, 0.12);
   box-shadow: 0 12rpx 30rpx rgba(109, 79, 38, 0.1), inset 0 0 0 10rpx rgba(251, 246, 236, 0.5);
-  color: #6f522a;
-  font-size: 25rpx;
+  color: var(--gold-ink);
+  font-size: var(--fs-aux);
   font-weight: 700;
   line-height: 1.45;
-  white-space: nowrap;
 }
 .voice-button::after { border: 0; }
-.voice-button-icon { margin-right: 8rpx; font-size: 34rpx; font-weight: 400; line-height: 1; }
-.voice-button.recording { border-color: #a9564b; background: #a9564b; color: #fbf6ec; box-shadow: 0 12rpx 32rpx rgba(169, 86, 75, 0.24), inset 0 0 0 10rpx rgba(251, 246, 236, 0.12); }
+.voice-button-icon { margin: 0 0 6rpx; font-size: 40rpx; font-weight: 400; line-height: 1; }
+.voice-button.recording { border-color: var(--cinnabar-ink); background: var(--cinnabar-ink); color: var(--paper-raised); box-shadow: 0 12rpx 32rpx rgba(169, 86, 75, 0.24), inset 0 0 0 10rpx rgba(251, 246, 236, 0.12); }
 .voice-button[disabled] { opacity: 0.55; }
-.voice-hint, .recognizing-note, .privacy-note { display: block; margin-top: 18rpx; color: rgba(33, 29, 23, 0.42); font-size: 20rpx; text-align: center; }
-.recognizing-note { color: #b8863b; font-size: 23rpx; }
-.privacy-note { margin-top: 18rpx; color: rgba(33, 29, 23, 0.36); line-height: 1.6; }
+.voice-hint, .recognizing-note, .privacy-note { display: block; margin-top: 14rpx; color: var(--ink-55); font-size: var(--fs-label); text-align: center; }
+.recognizing-note { color: var(--gold-ink); font-size: var(--fs-aux); }
+.privacy-note { margin-top: 14rpx; color: var(--ink-55); line-height: 1.6; }
 
 .recent-section { margin-top: 64rpx; }
 .recent-heading { display: flex; justify-content: space-between; color: rgba(33, 29, 23, 0.58); font-size: 20rpx; letter-spacing: 1rpx; }

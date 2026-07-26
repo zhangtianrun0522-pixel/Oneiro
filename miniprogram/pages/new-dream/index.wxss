@@ -1,12 +1,14 @@
 .screen {
   min-height: 100vh;
-  padding: 60rpx 48rpx 70rpx;
-  background: #f2ecdf;
-  color: #211d17;
+  padding-top: 48rpx;
+  padding-right: 48rpx;
+  padding-left: 48rpx;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .brand {
-  margin-bottom: 78rpx;
+  margin-bottom: 44rpx;
   color: #211d17;
   font-size: 24rpx;
   font-weight: 800;
@@ -14,8 +16,8 @@
 }
 
 .eyebrow {
-  color: #b8863b;
-  font-size: 18rpx;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 4rpx;
 }
@@ -63,15 +65,15 @@
 }
 
 .capture-label {
-  color: #b8863b;
-  font-size: 20rpx;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
   font-weight: 700;
   letter-spacing: 1rpx;
 }
 
 .capture-prompt {
-  color: rgba(33, 29, 23, 0.36);
-  font-size: 19rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
 }
 
 .dream-input {
@@ -92,27 +94,36 @@
   background: rgba(33, 29, 23, 0.1);
 }
 
+/* 与 home 的采集面板保持完全一致：同一个正圆按钮。
+   width 必须 !important，否则被微信 button 内置 184px 压成椭圆。 */
 .voice-button {
-  width: 100%;
-  height: 76rpx;
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 188rpx !important;
+  height: 188rpx;
+  margin: 0 auto;
   padding: 0;
-  border: 1rpx solid rgba(184, 134, 59, 0.62);
-  border-radius: 0;
-  background: transparent;
-  color: rgba(33, 29, 23, 0.78);
-  font-size: 25rpx;
-  letter-spacing: 0;
-  line-height: 76rpx;
+  border: 2rpx solid rgba(184, 134, 59, 0.72);
+  border-radius: 50%;
+  background: rgba(184, 134, 59, 0.12);
+  box-shadow: 0 12rpx 30rpx rgba(109, 79, 38, 0.1), inset 0 0 0 10rpx rgba(251, 246, 236, 0.5);
+  color: var(--gold-ink);
+  font-size: var(--fs-aux);
+  font-weight: 700;
+  line-height: 1.45;
 }
+
+.voice-button-icon { margin: 0 0 6rpx; font-size: 40rpx; font-weight: 400; line-height: 1; }
 
 .voice-button::after {
   border: 0;
 }
 
 .voice-button.recording {
-  border-color: #c1443b;
-  background: #c1443b;
+  border-color: var(--cinnabar-ink);
+  background: var(--cinnabar-ink);
   color: #fbf6ec;
   animation: voice-breathing 1.5s ease-in-out infinite;
 }
@@ -155,9 +166,9 @@
 
 .privacy-note {
   display: block;
-  margin-top: 18rpx;
-  color: rgba(33, 29, 23, 0.36);
-  font-size: 20rpx;
+  margin-top: 14rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
   line-height: 1.6;
   text-align: center;
 }
@@ -371,8 +382,8 @@
 }
 
 .primary-button-en {
-  color: rgba(242, 236, 223, 0.52);
-  font-size: 16rpx;
+  color: rgba(242, 236, 223, 0.66);
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 3rpx;
 }
