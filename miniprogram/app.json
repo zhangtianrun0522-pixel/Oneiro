@@ -1,7 +1,6 @@
 {
   "pages": [
     "pages/home/index",
-    "pages/new-dream/index",
     "pages/result/index",
     "pages/dream-chat/index",
     "pages/archive/index",
@@ -24,9 +23,18 @@
     "backgroundColor": "#f2ecdf",
     "borderStyle": "black",
     "list": [
-      { "pagePath": "pages/home/index", "text": "写梦" },
-      { "pagePath": "pages/archive/index", "text": "梦册" },
-      { "pagePath": "pages/profile/index", "text": "我" }
+      {
+        "pagePath": "pages/home/index",
+        "text": "写梦"
+      },
+      {
+        "pagePath": "pages/archive/index",
+        "text": "梦册"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我"
+      }
     ]
   },
   "permission": {

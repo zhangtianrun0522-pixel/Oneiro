@@ -516,7 +516,7 @@ Page({
         if (wx.navigateBack) {
           wx.navigateBack({ delta: 1 });
         } else {
-          wx.navigateTo({ url: '/pages/new-dream/index' });
+          tabNav.switchTab('pages/home/index');
         }
       }
     });
@@ -524,7 +524,7 @@ Page({
 
 
   newDream: function () {
-    wx.navigateTo({ url: '/pages/new-dream/index' });
+    tabNav.switchTab('pages/home/index');
   }
 
 });

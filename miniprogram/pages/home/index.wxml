@@ -68,3 +68,26 @@
   </view>
 </view>
 
+<view wx:if="{{analysisActive}}" class="analysis-overlay">
+  <view class="analysis-sheet">
+    <view class="analysis-orbit"><view class="analysis-orbit-dot"></view></view>
+    <text class="analysis-eyebrow">ONEIRO · DREAM READING</text>
+    <text class="analysis-title">正在展开这场梦</text>
+    <text class="analysis-preview">“{{analysisPreview}}”</text>
+
+    <view class="analysis-current">
+      <text class="analysis-current-title">{{analysisStageTitle}}</text>
+      <text class="analysis-current-detail">{{analysisStageDetail}}</text>
+      <text class="analysis-elapsed">已用时 {{analysisElapsedSeconds}} 秒</text>
+    </view>
+
+    <view class="analysis-timeline">
+      <view wx:for="{{analysisStages}}" wx:key="title" class="analysis-step {{index < analysisStageIndex ? 'is-done' : ''}} {{index === analysisStageIndex ? 'is-active' : ''}}">
+        <view class="analysis-step-dot"></view>
+        <text class="analysis-step-title">{{item.title}}</text>
+      </view>
+    </view>
+
+    <text class="analysis-note">完整解读正在生成中，内容不会因为等待而被缩短。</text>
+  </view>
+</view>

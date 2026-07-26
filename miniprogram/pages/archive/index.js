@@ -261,7 +261,7 @@ Page({
 
   newDream: function () {
     analytics.trackEvent('dream_start', { source: 'archive' });
-    wx.navigateTo({ url: '/pages/new-dream/index' });
+    tabNav.switchTab('pages/home/index');
   }
 
 

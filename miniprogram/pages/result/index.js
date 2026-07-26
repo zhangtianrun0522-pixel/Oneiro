@@ -1342,7 +1342,7 @@ Page({
 
   newDream: function () {
     analytics.trackEvent('dream_start', { source: 'result' });
-    wx.navigateTo({ url: '/pages/new-dream/index' });
+    tabNav.switchTab('pages/home/index');
   },
 
   openArchive: function () {

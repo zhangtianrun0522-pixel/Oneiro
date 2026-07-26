@@ -143,6 +143,20 @@
   letter-spacing: 3rpx;
 }
 
+/* 顶部压一层由深到透的渐变，保证 .front-meta 的白字在任何底图
+   （AI 出图或 CSS 兜底梦象）上都有足够对比度 */
+.dream-art::before {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 168rpx;
+  background: linear-gradient(180deg, rgba(5, 6, 9, 0.58), rgba(5, 6, 9, 0));
+  content: '';
+  pointer-events: none;
+}
+
 .dream-art {
   position: relative;
   height: 100%;
@@ -255,10 +269,12 @@
   background: linear-gradient(145deg, #18202a 0%, #68737c 58%, #e4e4dc 100%);
 }
 
+/* 下移，避开顶部的 ONEIRO / 编号 / 时间戳条 —— 原本白字正好压在
+   淡黄色月亮上，读不出来 */
 .moon {
   position: absolute;
-  top: -18rpx;
-  right: 72rpx;
+  top: 104rpx;
+  right: 60rpx;
   width: 132rpx;
   height: 132rpx;
   border-radius: 999rpx;
