@@ -57,8 +57,14 @@ Page({
     var dream = findDream(options && options.id);
     var messages;
 
+    // 与 result 页保持一致：拿不到梦就退回去，不要把用户留在一个
+    // 看起来能用、实际没有任何上下文的对话界面上。
     if (!dream || !dream.result) {
       wx.showToast({ title: '暂时找不到这个梦', icon: 'none' });
+      setTimeout(function () {
+        if (getCurrentPages().length > 1) wx.navigateBack();
+        else wx.reLaunch({ url: '/pages/home/index' });
+      }, 1200);
       return;
     }
     messages = Array.isArray(dream.chatMessages) ? dream.chatMessages : [];

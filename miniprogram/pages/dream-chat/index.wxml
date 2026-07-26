@@ -9,40 +9,39 @@
     <text class="context-dream">{{dream.dreamText}}</text>
   </view>
 
-  <view class="guide-section">
-    <text class="guide-label">从一个具体地方开始</text>
-    <view class="guide-list">
-      <text class="guide-chip" data-prompt="梦里最清楚的画面是：" bindtap="useGuide">梦里最清楚的画面</text>
-      <text class="guide-chip" data-prompt="醒来以后，我最明显的情绪是：" bindtap="useGuide">醒来后的情绪</text>
-      <text class="guide-chip" data-prompt="这让我想到现实里的：" bindtap="useGuide">现实里的对应</text>
-    </view>
-  </view>
-
   <scroll-view class="message-list" scroll-y scroll-into-view="{{scrollTarget}}">
-    <view
-      wx:for="{{messages}}"
-      wx:key="index"
-      id="message-{{index}}"
-      class="message-row {{item.role === 'user' ? 'is-user' : 'is-assistant'}}"
-    >
-      <text class="message-role">{{item.role === 'user' ? '你' : 'ONEIRO'}}</text>
-      <text class="message-copy">{{item.content}}</text>
-    </view>
-    <view wx:if="{{sending}}" class="message-row is-assistant is-loading">
-      <text class="message-role">ONEIRO</text>
-      <text class="message-copy">正在沿着这个梦继续想…</text>
+    <!-- 对话少时贴着输入器往上排，不在中间留一大片空白 -->
+    <view class="message-stack">
+      <view
+        wx:for="{{messages}}"
+        wx:key="index"
+        id="message-{{index}}"
+        class="message-row {{item.role === 'user' ? 'is-user' : 'is-assistant'}}"
+      >
+        <text class="message-role">{{item.role === 'user' ? '你' : 'ONEIRO'}}</text>
+        <text class="message-copy">{{item.content}}</text>
+      </view>
+      <view wx:if="{{sending}}" class="message-row is-assistant is-loading">
+        <text class="message-role">ONEIRO</text>
+        <text class="message-copy">正在沿着这个梦继续想…</text>
+      </view>
     </view>
   </scroll-view>
 
   <view class="chat-composer">
-    <text class="memory-note">系统会从对话中提取有用的现实线索，梦中的猜测不会直接当作事实。</text>
+    <!-- 轻量提示：只在还没开口时出现，点一下填进输入框 -->
+    <scroll-view wx:if="{{!inputValue && turnCount < maxTurns}}" class="guide-list" scroll-x show-scrollbar="{{false}}">
+      <text class="guide-chip" data-prompt="梦里最清楚的画面是：" bindtap="useGuide">梦里最清楚的画面</text>
+      <text class="guide-chip" data-prompt="醒来以后，我最明显的情绪是：" bindtap="useGuide">醒来后的情绪</text>
+      <text class="guide-chip" data-prompt="这让我想到现实里的：" bindtap="useGuide">现实里的对应</text>
+    </scroll-view>
     <view class="composer-row">
-      <text class="turn-limit">{{turnCount}} / {{maxTurns}}</text>
       <textarea
         class="chat-input"
         value="{{inputValue}}"
         maxlength="500"
         auto-height
+        cursor-spacing="24"
         disabled="{{sending || recognizing || turnCount >= maxTurns}}"
         bindinput="onInput"
         placeholder="说说梦里的画面或醒来后的感受…"
@@ -58,6 +57,9 @@
       >{{recording ? recordingSeconds + 's' : '说'}}</button>
       <button class="send-button" disabled="{{sending || recording || recognizing || turnCount >= maxTurns}}" bindtap="sendMessage">发送</button>
     </view>
-    <text class="voice-note">{{recognizing ? '正在整理刚才的话…' : recording ? '松开后转成文字' : '长按“说”输入，也可文字发送'}}</text>
+    <view class="composer-foot">
+      <text class="voice-note">{{recognizing ? '正在整理刚才的话…' : recording ? '松开后转成文字' : '按住「说」可以直接讲'}}</text>
+      <text class="turn-limit">{{turnCount}} / {{maxTurns}}</text>
+    </view>
   </view>
 </view>

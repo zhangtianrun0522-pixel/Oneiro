@@ -1,8 +1,13 @@
+/* 整屏 flex 纵向：消息区自适应剩余空间，输入器作为最后一个 flex 子项。
+   原本消息区写死 height: calc(100vh - 548rpx)、输入器 position:fixed，
+   既在空对话时留下大片空白，键盘弹出时也不会重排。 */
 .chat-screen {
-  min-height: 100vh;
-  padding: 48rpx 40rpx 270rpx;
-  background: #f2ecdf;
-  color: #211d17;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 40rpx 40rpx 0;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .chat-brand {
@@ -17,8 +22,8 @@
 }
 
 .chat-brand text:last-child {
-  color: rgba(33, 29, 23, 0.4);
-  font-size: 15rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
   letter-spacing: 2rpx;
 }
 
@@ -31,8 +36,8 @@
 .message-role,
 .guide-label {
   display: block;
-  color: #b8863b;
-  font-size: 18rpx;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 3rpx;
 }
@@ -58,13 +63,21 @@
   -webkit-line-clamp: 2;
 }
 
-.guide-section { margin-top: 28rpx; }
-.guide-list { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 14rpx; }
-.guide-chip { padding: 11rpx 14rpx; border: 1rpx solid rgba(184, 134, 59, 0.5); color: rgba(33, 29, 23, 0.68); font-size: 20rpx; line-height: 1.35; }
+.guide-list { white-space: nowrap; margin-bottom: 16rpx; }
+.guide-chip { display: inline-block; margin-right: 12rpx; padding: 14rpx 18rpx; border: 1rpx solid rgba(184, 134, 59, 0.5); color: var(--ink-70); font-size: var(--fs-label); line-height: 1.35; }
 
 .message-list {
-  height: calc(100vh - 548rpx);
-  margin-top: 30rpx;
+  flex: 1;
+  min-height: 0;
+  margin-top: 24rpx;
+}
+
+.message-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100%;
+  padding-top: 20rpx;
 }
 
 .message-row {
@@ -89,25 +102,21 @@
 .is-loading { opacity: 0.62; }
 
 .chat-composer {
-  position: fixed;
-  z-index: 5;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: 0 0 auto;
+  margin: 0 -40rpx;
   padding: 18rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
   border-top: 1rpx solid rgba(33, 29, 23, 0.16);
-  background: #f2ecdf;
+  background: var(--paper);
 }
 
-.memory-note { display: block; margin: 0 12rpx 14rpx; color: rgba(33, 29, 23, 0.46); font-size: 19rpx; line-height: 1.55; }
 .composer-row { display: flex; align-items: flex-end; gap: 12rpx; }
-.turn-limit { flex: 0 0 54rpx; height: 72rpx; color: rgba(33, 29, 23, 0.38); font-size: 17rpx; line-height: 72rpx; text-align: center; }
+.turn-limit { flex: 0 0 auto; color: var(--ink-55); font-size: var(--fs-label); }
 
 .chat-input {
   flex: 1;
   width: auto;
   min-width: 0;
-  min-height: 72rpx;
+  min-height: var(--tap-min);
   max-height: 160rpx;
   padding: 17rpx 12rpx;
   border: 0;
@@ -115,21 +124,21 @@
   border-radius: 0;
   background: transparent;
   color: #211d17;
-  font-size: 24rpx;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 
 .voice-button,
 .send-button {
-  flex: 0 0 72rpx;
-  width: 72rpx;
-  height: 72rpx;
+  flex: 0 0 var(--tap-min);
+  width: var(--tap-min) !important;
+  height: var(--tap-min);
   margin: 0;
   padding: 0;
   border-radius: 0;
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
-  line-height: 72rpx;
+  line-height: var(--tap-min);
 }
 
 .voice-button { border: 1rpx solid rgba(184, 134, 59, 0.62); background: transparent; color: #8a5d29; }
@@ -137,7 +146,8 @@
 .send-button { border: 1rpx solid #211d17; background: #211d17; color: #f2ecdf; }
 .voice-button::after, .send-button::after { border: 0; }
 .voice-button[disabled], .send-button[disabled] { opacity: 0.36; }
-.voice-note { display: block; margin-top: 10rpx; color: rgba(33, 29, 23, 0.4); font-size: 18rpx; text-align: center; }
+.composer-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12rpx; }
+.voice-note { color: var(--ink-55); font-size: var(--fs-label); }
 
 @keyframes voice-breathing {
   0% { box-shadow: 0 0 0 0 rgba(168, 109, 44, 0.22); }
