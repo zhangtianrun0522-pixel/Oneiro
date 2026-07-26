@@ -139,3 +139,22 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vercel
 .env*.local
+
+# macOS metadata
+.DS_Store
+
+# Local AI/browser tooling artifacts
+/.claude/
+/.playwright-cli/
+.thumbnail
+
+# Local design experiments and exported design sources
+/docs/design/*
+!/docs/design/ONEIRO_DREAM_IMAGE_SYSTEM_V1.md
+/项目页面重新设计/
+
+# One-off model experiment harnesses tied to local design outputs
+/scripts/fixtures/nano-internal-style-rounds.cjs
+/scripts/run-nano-internal-style-round.cjs
+/scripts/test-direct-nano-models.cjs
+/scripts/test-rehdasu-image2-same-prompts.cjs

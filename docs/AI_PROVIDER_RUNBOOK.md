@@ -7,16 +7,17 @@ This runbook covers the last manual CloudBase steps required before the Mini Pro
 - Mini Program AppID: `wx61800035c4e1a092`
 - CloudBase environment: `cloud1-d9gb0sjvg6a8d9864`
 - Cloud function: `interpretDream`
-- Current verified runtime provider: `cloudbase-static`
-- Current verified CloudBase function timeout from DevTools CLI: `3` seconds
+- Current verified runtime provider: `deepseek` (`deepseek-v4-flash`)
+- Current verified CloudBase function timeout from DevTools CLI: `60` seconds
 - Current safe provider health check:
 
 ```json
 {
-  "provider": "cloudbase-static",
-  "providerConfigured": false,
-  "hasApiKey": false,
-  "requestTimeoutMs": 18000,
+  "provider": "deepseek",
+  "providerConfigured": true,
+  "hasApiKey": true,
+  "model": "deepseek-v4-flash",
+  "requestTimeoutMs": 30000,
   "fallbackProvider": "cloudbase-static-fallback"
 }
 ```
@@ -25,10 +26,10 @@ This runbook covers the last manual CloudBase steps required before the Mini Pro
 
 In the WeChat CloudBase console, open environment `cloud1-d9gb0sjvg6a8d9864`, then open cloud function `interpretDream`.
 
-Set the function timeout to at least:
+Set the function timeout to:
 
 ```text
-20 seconds
+60 seconds
 ```
 
 Set these cloud function environment variables:
@@ -38,7 +39,7 @@ INTERPRET_PROVIDER=deepseek
 DEEPSEEK_API_KEY=<rotated-production-key>
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-INTERPRET_TIMEOUT_MS=18000
+INTERPRET_TIMEOUT_MS=30000
 ```
 
 Optional strict mode:
@@ -58,7 +59,7 @@ INTERPRET_PROVIDER=openai-compatible
 OPENAI_COMPATIBLE_API_KEY=<provider-key>
 OPENAI_COMPATIBLE_BASE_URL=https://example.com/v1
 OPENAI_COMPATIBLE_MODEL=<model-name>
-INTERPRET_TIMEOUT_MS=18000
+INTERPRET_TIMEOUT_MS=30000
 ```
 
 Compatibility aliases accepted by the cloud function:
@@ -97,7 +98,7 @@ You can also open the hidden Mini Program diagnostics page in WeChat Developer T
 /pages/diagnostics/index
 ```
 
-The project includes a WeChat Developer Tools compile condition named `AI 诊断页` for this route.
+The project intentionally keeps the default compile entry on `pages/home/index`; navigate to the hidden diagnostics route manually when needed.
 
 Expected DeepSeek result:
 
@@ -108,7 +109,7 @@ Expected DeepSeek result:
   "hasApiKey": true,
   "model": "deepseek-chat",
   "baseUrlHost": "api.deepseek.com",
-  "requestTimeoutMs": 18000
+  "requestTimeoutMs": 30000
 }
 ```
 
@@ -119,7 +120,7 @@ Expected OpenAI-compatible result:
   "provider": "openai-compatible",
   "providerConfigured": true,
   "hasApiKey": true,
-  "requestTimeoutMs": 18000
+  "requestTimeoutMs": 30000
 }
 ```
 
@@ -180,7 +181,7 @@ If `interpretationProvider` is `cloudbase-static-fallback`, the cloud function r
 
 - Check provider base URL, model name, quota, network access, and JSON response format support.
 - Confirm `INTERPRET_TIMEOUT_MS` is lower than or equal to the CloudBase function timeout.
-- Increase the CloudBase function timeout if `cloud functions info` still reports `timeout: 3`.
+- Recheck the CloudBase function timeout if a future deployment lowers it below `INTERPRET_TIMEOUT_MS`; the current verified timeout is 60 seconds.
 
 `providerConfigured: true` but generated dreams fail instead of falling back
 

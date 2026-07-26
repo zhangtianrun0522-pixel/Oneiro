@@ -1,6 +1,232 @@
 # Oneiro Project Progress
 
-Last updated: 2026-07-15
+Last updated: 2026-07-27
+
+## Git 工作区整理（2026-07-27）
+
+- 当前分支为 `codex-optimize-dream-interpretation`，与这一阶段的工作方向一致，但尚未设置远端跟踪分支。工作区没有已暂存改动，也没有执行提交或推送。
+- 本轮审计发现改动跨越记忆画像、梦境解读与图片生成、小程序纸本 UI/语音/入口保护、云端分享协议和发布文档，不应继续压成一个巨型提交，也不建议在整理前继续叠加新功能。
+- `.gitignore` 已补充 macOS、Claude 本地启动配置、Playwright 运行快照和设计工具缩略图规则；本地 Playwright 目录中存在与项目无关的 PDF，现已从 Git 候选范围排除，但未删除任何用户文件。
+- 建议按以下边界建立检查点：① 记忆画像与跨设备梦境数据；② 解梦、视觉计划与渐进式图片任务；③ 首页/写梦/聊梦/结果页纸本体验与入口保护；④ 分享、健康检查与 CloudBase 客户端协议；⑤ 文档和发布清单。
+- 拆分必须按代码块而不是整文件进行：`miniprogram/utils/cloudBase.js`、`pages/result/index.js`、`app.js`、`saveDream/index.js` 和发布检查脚本横跨多个协议；每个检查点都必须包含对应调用端、适配器和未跟踪依赖，并单独跑 `npm run check:mini-release`。
+- `docs/design/` 约 78 MB，包含 99 个模型实验输出与报告；`项目页面重新设计/` 约 4.1 MB，是 Claude Design 导出源和参考图。两者均保留原位，是否纳入版本库应单独决定，不与产品代码混合提交。
+
+## 扫码入口、语音与梦后记忆修复（2026-07-27）
+
+- 彻底移除开发工具根级条件编译列表，避免预览继续复用历史 `result?fixture=1` 启动项；`pages/home/index` 保持为 `app.json` 首个页面。结果页同时增加入口保护：只有 `fixture=1&devPreview=1` 才能打开内部样例，未授权样例链接或没有真实梦境上下文的结果页都会 `reLaunch` 回记梦首页。
+- 首页按住说话改为暖金色大圆形主按钮；首页、写梦、聊梦统一区分麦克风权限、云函数不可用、服务未配置、未听清和超时等语音失败原因。`speechRecognize`、`interpretDream`、`profileMemory` 已部署到 `cloud1-d9gb0sjvg6a8d9864`。
+- “聊聊这个梦”改为暖纸本视觉，支持长按语音转文字，并增加围绕梦中画面、醒来情绪和现实对应的引导入口。
+- 移除用户确认现实片段的交互。系统自动从聊天中提取近期事件、情绪、关系和工作生活变化等高价值线索，寒暄、纯梦境描述和模糊猜测不作为长期画像事实。
+- 卡片反面改为互斥渲染淡入，移除微信小程序不稳定的 3D 文字翻转，保留轻触切换；同时保留服务端/本地梦卡图片回填。
+- 验证通过：微信小程序自动化实测冷启动、旧 `fixture=1` 深链、空结果页深链、错误梦境 ID 深链均落到 `pages/home/index`；无效入口保持 `entryReady=false`，不会在重定向前闪现结果页骨架。`npm run check:mini-release`、`node --check`（首页/写梦/聊梦/结果页/画像云函数/解梦云函数）、`git diff --check` 均通过。最新全新预览二维码：`/private/tmp/oneiro-preview-home-entry-v6.png`，预览包 214,662 bytes。
+- 语音云函数若仍返回 `not_configured`，需要在 CloudBase 中补齐 `TENCENT_ASR_SECRET_ID` 与 `TENCENT_ASR_SECRET_KEY`；代码不会记录或暴露密钥。
+
+## Claude Design 纸本视觉重构（2026-07-26）
+
+- 已依据 `项目页面重新设计/Oneiro Redesign.dc.html` 完成首页、写梦、结果、梦册、资料页的纸本化 UI 重构：暖纸底、深墨字、朱砂强调、编辑式梦卡与时间轴梦册。
+- 全局小程序导航栏、字体回退、按钮基线与底部导航样式已统一；现有梦境保存、长按语音、识别和解读事件绑定保持不变。
+- 首页补回最近梦境横向卡片，并在首页、梦册、资料页加入统一底部导航。
+- 验证通过：`npm run check:mini-release`、`git diff --check`、微信开发者工具预览编译。
+- 最新预览二维码：`/private/tmp/oneiro-preview-claude-design-v3.png`；预览包 196,668 bytes。尚未提交或重新部署云函数。
+
+### 标注回合（2026-07-27）
+
+- 按原型标注将首页改为打开即写梦：直接提供文本输入、长按语音与“保存并解读”，提交后复用现有完整解读链路。
+- 将回访卡从首页迁移至资料页；删除示例梦入口；输入区取消独立背景和框体；保存按钮改为深墨纸本风格。
+- 结果页补充条件显示的“命理视角 / 出生节律”；资料页保留并明确性别字段。
+- `npm run check:mini-release` 与微信开发者工具预览通过；最新预览二维码：`/private/tmp/oneiro-preview-annotated-v1.png`，预览包 204,708 bytes。尚未提交或重新部署云函数。
+
+## 梦卡图片历史回填与朋友内测准备（2026-07-26）
+
+- 修复旧梦卡图片无法显示的问题：`saveDream` 列表接口会按用户和梦境 ID 查找 `generated_assets`，补回历史图片的 `image_file_id`，并重新生成有效临时地址；不会把分享卡图片误挂到梦卡上。
+- 客户端同步牌库时保留本机已下载的 `thumbnailPath`，避免云端记录刷新后清空缩略图；详情页发现补回的文件 ID 后会写回本地缓存。
+- `saveDream` 已部署到 `cloud1-d9gb0sjvg6a8d9864`，部署包 6.4 KB。
+- 验证通过：`npm run check:mini-release`、`git diff --check`、微信开发者工具预览编译。
+- 朋友内测预览二维码：`/private/tmp/oneiro-preview-archive-image-recovery-v2.png`；预览包 175.9 KB。图片能否恢复取决于对应文件仍存在于 `generated_assets` / 云存储；找不到的历史图片会继续显示基础占位卡面。
+
+## 阶段画像自动发布与历史回溯（2026-07-26）
+
+- 将阶段画像从“待用户确认的草稿”改为自动发布的当前理解：新梦、梦后对话、回访、现实片段或基础资料变化后，后台生成成功即成为当前画像；生成失败时保留上一版，不显示占位文案。
+- 当前画像改为朋友式单段描述，要求自然连接长期模式、近期变化和当前状态；页面不再展示“待确认/确认/忽略”，用户可以直接编辑当前画像。
+- 编辑会创建新的递增版本；历史版本默认折叠，支持“回溯”到旧版本。回溯会生成新的递增版本并保留完整历史，不覆盖原版本。
+- 资料页首屏优先展示阶段画像；近期梦境线索、最近现实片段和基础资料降为辅助信息。当前画像暂停使用时仍可查看，只是不再注入后续梦境解读。
+- `profileMemory` 新增自动发布编辑/回溯契约，旧草稿读取时归入历史；`saveProfilePortrait` 与 `restoreProfilePortrait` 均更新 `currentSnapshotId`。
+- 验证通过：`npm run check:mini-release`、`npm run check:phase3`、`npm run check:miniprogram`、`npm run typecheck`、`git diff --check`。
+- `profileMemory` 已重新部署（8.6 KB），并修复当前画像暂停后仍可查看、历史版本可回溯。最新预览二维码：`/private/tmp/oneiro-preview-portrait-auto-v1.png`；预览包 173,631 bytes。
+
+## Full-reading wait experience (2026-07-24)
+
+- Kept the complete grounded-reading payload and response contract intact. The user-facing flow now replaces the generic `wx.showLoading` state with a staged waiting panel: reading the dream scene, organizing literal clues, comparing confirmed memory, combining the birth-rhythm lens, and composing the full result.
+- The waiting copy is tied to real pipeline stages and the user's original dream excerpt; it does not expose raw model chain-of-thought or invent interim conclusions. The final response remains the full multi-perspective reading.
+- Raised the provider deadline floor from 18s to 30s. A stale `INTERPRET_TIMEOUT_MS=18000` environment value can no longer cut off a healthy full reading before the provider has a chance to finish. CloudBase's 60s function budget remains the upper bound.
+- Verification passed: `npm run check:miniprogram`, `npm run check:ai-readiness`, and `git diff --check`.
+- Next gate: deploy `interpretDream`, generate a fresh preview, and run five real-device submissions of the same dream on Wi-Fi and cellular. If latency remains uncomfortable or the app backgrounds, the next iteration is a durable interpretation job/status contract rather than reducing the analysis payload.
+
+## Grounded dream-fact extraction (2026-07-24)
+
+- Added literal extraction for snow, roses, sand, growth and weather changes. `dream_facts` now also preserves ordered `transitions`, so a dream such as “沙漠里开始下暴雪，然后沙地里长出了玫瑰花” is represented as a change sequence rather than three unrelated labels.
+- Strengthened the shared evidence path: partial model symbols are merged with all grounded source symbols, facts omitted by the model are restored from the original text, and the visual plan uses the grounded transition as its main event.
+- Reworked the deterministic cultural, psychological, personal-connection, and birth-rhythm fallbacks for the desert/snow/rose pattern so each section cites the actual scene and its relationship. The generic “只留下一个清晰落点” fallback is no longer used for that dream.
+- Mirrored the key fallback behavior in the local oracle and added a regression case to `scripts/check-ai-readiness.ts`.
+- Verification passed: `npm run check:ai-readiness`, `npm run check:miniprogram`, `npm run typecheck`, and `git diff --check`. No deployment or commit was performed in this step.
+
+## Birth-rhythm presentation and gender input (2026-07-24)
+
+- The result page now shows only the dream-specific birth-rhythm reading. The fixed chart basis, pillar list, hidden stems, auxiliary palaces, and calculation note remain in `bazi_chart` for internal/profile use but are no longer repeated inside each dream reading.
+- `temperament` is now framed as “这次被调动的底色”, so it must explain which aspect of the stable birth profile this dream activated rather than copying the same static chart paragraph.
+- Added optional gender to the profile form and saved profile payload. Four-pillar calculation remains available without it; when supplied, `lunar-javascript` receives the gender code for the luck-cycle direction, start timing, and eight major-cycle records. Without gender, the chart explicitly keeps `luckCycles.available=false` instead of guessing.
+- Verification passed: `npm run check:ai-readiness`, `npm run check:miniprogram`, and `npm run typecheck`. The updated `interpretDream` and `saveProfile` functions still need deployment before real-device verification.
+
+## Reading separation, chart engine, and card actions (2026-07-24)
+
+- Kept the user-facing labels `文化象征` and `心理视角`, but tightened the interpretation contract: cultural symbolism must stay in the shared traditional/collective-symbol layer; psychological perspective must start from two concrete dream details and explain their personal tension without dictionary-style symbol meanings. Prompt version is now `oneiro-grounded-reading-v0.8.0`.
+- Extended the deterministic birth-rhythm engine from true-solar-time four-pillar output to `bazi-v0.4-engine`: pillar details, hidden stems, element counts, dominant/missing elements, day-master element/polarity, balance label, and structured metaphysical sections. Existing fields remain compatible.
+- The result page now renders the structured birth-rhythm reading as inner tone, dream echo, tension, current rhythm, and calculation basis, while retaining the old two-field fallback for archived records.
+- Removed the result-page `生成分享话题卡` action and its generic topic-card path. Repeated-symbol milestones still open the private archive. The main card is now the single collectible/share object: `保存收藏梦卡` changes to a saved state, and the secondary action is `分享这张梦卡` before becoming `分享给朋友`.
+- Verification passed with `npm run check:mini-release`; `interpretDream` was redeployed to `cloud1-d9gb0sjvg6a8d9864` (3 files, 23.1 KB). A fresh Mini Program preview was generated at `/private/tmp/oneiro-preview-qr-reading-card-v2.png` (154.0 KB). Image2 remains disabled.
+
+## Rehdasu quality-route smoke test (2026-07-24)
+
+- Temporarily set `QUALITY_IMAGE_ENABLED=1` and invoked one owner-scoped `startQuality` request through the real Mini Program runtime. The route reused the existing `OPENAI_IMAGE_API_KEY` fallback; no separate key was added or copied.
+- The request returned `quality_provider_error` after about `2.45s`, produced no image, and the disposable dream was deleted successfully. `QUALITY_IMAGE_ENABLED` was restored to `0` immediately afterward.
+- A separate `QUALITY_IMAGE_API_KEY` was entered directly in the CloudBase console on 2026-07-24 from a local user-provided file; the key value is intentionally not recorded here. The quality route remains disabled until a health check and disposable smoke test pass.
+- Read-only health check now reports `providerConfigured: true`, `endpointHost: rehdasu.cn`, and `enabled: false`. A second owner-scoped disposable smoke test with the separate key still returned `quality_provider_error` after about `1.33s`; no image was produced and cleanup deleted the test dream. The switch was restored to `0` and verified. This rules out a missing-key configuration as the only cause; endpoint response/payload compatibility or provider-side authorization still needs diagnosis.
+- Root cause is now bounded: Rehdasu `POST /v1/images/generations` is a synchronous endpoint (historical successful calls take roughly 40–90+ seconds), while the Mini Program quality route requires a quick async task submit. A direct probe of `/v1/draw/completions` returned HTTP 404, so there is no verified async Rehdasu endpoint to use.
+- `generateDreamImage` now identifies endpoint mode, rejects `/v1/images/generations` as `quality_sync_endpoint_unsupported` before making a paid request, adds `output_format: 'png'` for compatible adapters, records only sanitized diagnostic codes, and isolates job IDs by endpoint/model/size/quality/adapter version. Local quality-job and image-contract tests passed; the function was redeployed to `cloud1-d9gb0sjvg6a8d9864` and online health remains `providerConfigured: true`, `enabled: false`.
+- This points to endpoint/credential compatibility or provider response handling, not the background-job storage flow. Do not enable the quality route for friends until the Rehdasu response error is observable through a safe provider diagnostic or an approved endpoint test.
+
+## Progressive nano -> image2 quality route implemented locally (2026-07-23)
+
+- The existing synchronous `nano-banana-fast` image path remains the default and was not changed.
+- `generateDreamImage` now accepts `action: startQuality` / `action: pollQuality` (also `image2.start` / `image2.poll`) for an owner-scoped, deterministic `image_generation_jobs` task. The task submits `gpt-image-2` once, then polls the provider without holding a WeChat cloud-function request open. Nested `{ data: { results: [...] } }` gateway responses are normalized.
+- The result page calls the quality actions only after the fast image is locally ready. It keeps the current card visible, polls every 3 seconds, replaces the image only after the quality asset downloads successfully, persists the job id/status for a later revisit, and keeps the fast image on any quality failure or timeout.
+- Added `QUALITY_IMAGE_*` configuration documentation and the private `image_generation_jobs` health collection. Quality configuration is independent from `OPENAI_IMAGE_*`; the CloudBase function now has the non-secret Rehdasu `gpt-image-2` route parameters saved with `QUALITY_IMAGE_ENABLED=0`.
+- Verification passed: `npm run check:image-contract`, `npm run check:image-quality-job`, `npm run check:cloudbase`, `npm run check:miniprogram`, `npm run check:phase3`, `npm run typecheck`, and `git diff --check`.
+- Next external step: verify that the existing image-provider key is accepted by the Rehdasu quality endpoint (the function already falls back to `OPENAI_IMAGE_API_KEY` when `QUALITY_IMAGE_API_KEY` is absent), then run one real-device dual-channel test and inspect latency/cost before enabling it for friends.
+- Deployment note: `generateDreamImage` (32.1 KB), `saveDream` (5.3 KB), and `cloudHealth` (1.4 KB) were redeployed successfully to `cloud1-d9gb0sjvg6a8d9864`. The new Mini Program preview passed at `154.4 KB`; QR: `/private/tmp/oneiro-preview.png`. `QUALITY_IMAGE_ENABLED=0`, so the live app continues using the existing fast path.
+
+## Rehdasu image2 Same-Six-Dream Comparison Complete (2026-07-23)
+
+- Reused the exact six compiled “内测画风” prompts from the two-round `nano-banana-fast` global test. No global or per-image prompt wording changed; only the provider/model request path changed to Rehdasu `gpt-image-2`, requested at `quality: medium`, `768×1024`, PNG.
+- Image2 is visually much closer to the confirmed style under identical prompts. The kitchen, reed field, floating waiting room, and boat/forest images have stronger narrative focus, saturated matte fields, simplified figures, and less generic AI polish. The boat/forest image is the strongest result.
+- Style is not fully stable: transparent city remains comparatively precise/diagrammatic, barbershop/market drifts into muted detailed ink illustration, and the v1.1 waiting-room prompt's invented pointing action is followed literally.
+- All six outputs are 3:4, but the gateway ignored the requested dimensions on five images: five returned `1086×1448`; only transparent city returned `768×1024`.
+- Successful client times were `80.5s`, `68.9s`, `62.2s`, `74.7s`, `41.0s`, and `312.0s` for the separately retried sixth image. The first sixth-image request exhausted retries after a long connection failure.
+- The account balance fell from `$9.50` to `$4.80`, so the actual test cost was `$4.70`. Usage records show retry-amplified billed 2K requests, far above the nominal six-image estimate.
+- Decision: do not move the synchronous Mini Program path to this Rehdasu image2 configuration. If retained, make it an opt-in quality route behind durable background jobs, idempotency, polling, strict retry caps, dimension normalization, and cost accounting.
+- Full prompts, dreams, outputs, observations, latency, cost, and decision: `docs/design/rehdasu-image2-internal-global-2026-07-23/README.md`.
+
+## “内测画风” Two-Round Global Prompt Test Complete (2026-07-23)
+
+- The three user-confirmed reference images are now the canonical style named **“内测画风”**. They are distinct from the rough screenprint/Risograph `oneiro-riso-dream-v1.3` production style and must not be conflated in prompts, reports, or future comparisons.
+- Added an explicit opt-in `internal_test` prompt preset, now at `oneiro-internal-test-style-v1.2`. Normal Mini Program requests still default to the existing production preset; style metadata and cache keys are isolated so the two styles cannot cross-hit.
+- The deployed `nano-banana-fast` path (`grsaiapi.com`) generated three fresh 3:4 comparisons through the authenticated Mini Program runtime: surreal `20.389s`, anxiety `14.707s`, and distance `20.043s`. All outputs are `896×1200`; all synthetic dreams and generated CloudBase assets were deleted through the normal cascade.
+- Visual verdict: the surreal door result is close to the confirmed style in its cobalt field, red/yellow focal object, quiet negative space, and story relationship. Anxiety is directionally close but introduced an inset white margin; distance preserves the story but is too clean/vector-like and too muted. The current model can reach “内测画风”, but the three-image batch is not yet stable enough to switch the product default.
+- Canonical references, generated images, exact test dreams, compiled prompts, model metadata, timings, and cleanup evidence are under `docs/design/internal-test-style-2026-07-23/`.
+- Two additional global-only Prompt iterations were tested with six completely different dreams. v1.1 removed the fixed near/far story formula and fixed blue/red/yellow preference; v1.2 filtered generic composition actions, grounded gestures, hardened full bleed, and strengthened anti-vector/repeated-texture rules.
+- Independent review: only reed field and barbershop/market reached the threshold (`12/14`); the other four scored `6`, `7`, `9`, and `7`. Both rounds passed only `1/3`, with one hard failure each. v1.2 improved full bleed to `3/3`, but transparent architecture still triggered a CAD/3D/vector hard failure.
+- Prompt wording is not the only limiter. Four of six interpretations used deterministic fallback after text-model timeouts, and multiple visual plans omitted critical characters, actions, or anomaly facts. The image provider also timed out repeatedly. All final images were eventually captured at `896×1200`, and all synthetic CloudBase records/assets were deleted.
+- Full two-round evidence, dreams, plans, compiled prompts, outputs, scoring, and decision: `docs/design/internal-test-global-iterations-2026-07-23/README.md`.
+- Decision: keep `internal_test` opt-in and do not switch the product default. Next test reference-image conditioning or a stronger style-adherent model against the same six-dream matrix; separately repair visual-plan fact retention and add resumable/background image generation.
+
+## Rehdasu GPT Image 2 Medium Three-Dream Test Complete (2026-07-23)
+
+- Reused the exact fixed healing, anxiety, and surreal prompts plus every approved `oneiro-riso-dream-v1.3` constraint. Only the Rehdasu request parameters changed to `quality: medium`, native `768×1024`, and PNG output; the deployed Mini Program remained unchanged.
+- All three calls succeeded at the requested native 3:4 geometry: healing `65.04s`, anxiety `60.98s`, surreal `56.97s`; average `61.0s`. Rehdasu billed each as one 1K image at `$0.30`, total `$0.90`.
+- Manual visual review: healing `13/14`, anxiety `13/14`, surreal `13/14`; batch `3/3` passed the `12/14` threshold. All three keep saturated spot inks, rough single contours, screenprint grain, hidden/minimal faces, asymmetric story-led composition, and no generated text or card frame.
+- Medium is the preferred Rehdasu tier over high for this product: compared with the high anxiety test, average latency fell about 32% and per-image cost fell 25%, while visual quality remained within the accepted direction. Native 3:4 also eliminates the crop step.
+- It is still not safe for the current synchronous 60-second WeChat cloud function: two of three measured client calls exceeded 60 seconds and all exceed the current 55-second internal image budget. Production remains on `nano-banana-fast`.
+- Evidence and individual observations: `docs/design/ONEIRO_REHDASU_IMAGE2_MEDIUM_TEST_2026-07-23.md`; images are under `docs/design/rehdasu-image2-medium-2026-07-23/`.
+- Immediate next gate: generate two more independent variants for each fixed dream and require at least `8/9` total passes. If that gate passes, add a Rehdasu Images adapter behind a feature flag and use an asynchronous queue/polling flow rather than the current synchronous cloud-function request.
+
+## Rehdasu GPT Image 2 Single-Sample Test Complete (2026-07-23)
+
+- Tested the user-provided Rehdasu gateway (`https://rehdasu.cn`) without changing the deployed Mini Program provider. The verified model id is `gpt-image-2`, called through `POST /v1/images/generations` with the exact fixed anxiety-corridor prompt and all approved `oneiro-riso-dream-v1.3` constraints preserved.
+- The existing subscription-group key was inactive and returned `SUBSCRIPTION_NOT_FOUND` without generating an image. The existing OpenAI balance-group key succeeded; no key was created or changed.
+- Successful request parameters: `1024×1536`, `quality: high`, JPEG, one image. Rehdasu recorded one 2K image, `1m 29s` total provider time, and `$0.40` cost. This is roughly five times slower than the current `nano-banana-fast` path at 16–19 seconds.
+- The raw 2:3 output was saved as `docs/design/rehdasu-image2-2026-07-23/anxiety-raw.png`; a non-generative center crop was saved at `1024×1365` as `anxiety-3x4.png` for the product's 3:4 card surface.
+- Manual visual score: `13/14` pass. It keeps the dream story legible, uses a strong asymmetric corridor/door focal path, vivid matte red/yellow/navy blocks, rough single ink contours, unresolved face, and no generated text, tarot frame, occult decoration, or glossy/3D artifacts. The remaining deduction is for the native 2:3 geometry and slightly over-explicit hand/anatomy detail.
+- Evidence and integration decision: `docs/design/ONEIRO_REHDASU_IMAGE2_TEST_2026-07-23.md`. Current recommendation is to keep production unchanged, then test `quality: medium` and a three-dream batch before switching; use a queue/background UX if the 60-second WeChat function limit remains.
+
+## Current Image Model Comparison Complete (2026-07-22)
+
+- The deployed production path was called directly through the authenticated WeChat runtime with the same three fixed healing/anxiety/surreal dream plans used in the prior internal stability work. Health confirmed `nano-banana-fast`, `oneiro-riso-dream-v1.3`, `768×1024`, `3:4`, and provider quality `low`.
+- All three fresh calls succeeded on the first attempt in roughly 16–19 seconds. Local evidence is under `docs/design/current-model-2026-07-22/`.
+- Human scoring against the preserved Oneiro contract: healing `13/14` pass, anxiety `9/14` fail, surreal `13/14` pass. The model can reach the direction, but `2/3` is not stable enough; the anxiety result drifted into polished commercial-comic language.
+- A same-prompt comparison with the built-in internal image model was attempted. The parallel batch failed at the image service network layer; a single-image retry exceeded six minutes without output and was terminated. No model switch was made without valid comparison evidence.
+- Full constraints, scores, model metadata, and decision: `docs/design/ONEIRO_CURRENT_MODEL_COMPARISON_2026-07-22.md`.
+- All three disposable CloudBase dreams and owned generated assets were deleted through the normal cascade; archive verification returned zero remaining test IDs.
+- Immediate next step: shorten the current style prompt into a story-first v1.4 candidate without dropping any approved constraints, then rerun the 3×3 acceptance matrix and the same-prompt internal-model comparison when that service is available.
+
+## Dream Card Presentation v1 Complete Locally (2026-07-22)
+
+- The result card is now a two-sided, full-bleed 3:4 collectible. Tapping the card flips between the image-led front and a restrained editorial back.
+- The front preserves the `ONEIRO` wordmark and shows only the stable card number plus the exact `YYYY.MM.DD · HH:mm` record time. The dream title, interpretation, symbol list, status messages, and retry action no longer appear over the artwork.
+- The back contains the dream title, condensed insight, selected dream symbols, and the integration question. Image generation status and retry now sit outside the physical card.
+- The saved front-card Canvas export follows the same hierarchy: full-bleed artwork with only `ONEIRO`, card number, and minute-level timestamp; Chinese text remains system-rendered rather than model-generated.
+- WeChat DevTools simulator verification passed for both faces, flip interaction, fallback-image status placement, and narrow-screen text fit. `npm run check:mini-release` and `git diff --check` pass. No preview upload, commit, or push was performed.
+- Immediate next step: run the live generated-art path on a physical phone, then tune front metadata contrast only if it becomes unreadable on unusually bright artwork.
+
+## Dream Image System v1.3 Deployed And Tested (2026-07-22)
+
+- Active live image style is `oneiro-riso-dream-v1.3`: high-saturation rough screenprint/Risograph inner art, pressure-varied hand-drawn contours, simplified faces, asymmetric editorial composition, and no generated text/frame/title.
+- `interpretDream` prompt version is now `oneiro-grounded-reading-v0.5.0`. Its normalized result includes `visual_plan`: one main event, at most one anomaly, two to four preserved elements, at most one hidden symbol, emotion/intensity, weighted people/objects, one of six composition modes, and 35–50% planned breathing space.
+- `generateDreamImage` rebuilds the plan from the owner-scoped stored dream, selects one of seven emotion palettes, compiles the provider prompt server-side, and no longer lets legacy `card_theme` determine the artwork palette. v1.3 adds a server-side source whitelist so hallucinated people, places, props, anomalies, symbols, and hidden symbols are removed even when an AI plan mixes them with grounded text.
+- `generated_assets` now stores the full generation prompt, normalized visual plan, model/style metadata, and a quality record. PNG/JPEG/WebP dimensions and `3:4` portrait geometry are checked automatically. Pixel-semantic checks remain explicitly marked `requires_vision_review` until a vision-review/regeneration loop is added.
+- The legacy Web/Vercel image endpoint now uses the same screenprint/Risograph default style and asks the interpretation model for a condensed event/emotion/composition/palette image prompt.
+- Canonical specification: `docs/design/ONEIRO_DREAM_IMAGE_SYSTEM_V1.md`. Full evidence and visual verdict: `docs/design/ONEIRO_STYLE_STABILITY_TEST_2026-07-22.md`.
+- `generateDreamImage` v1.3 is deployed to `cloud1-d9gb0sjvg6a8d9864`. Live health confirms style v1.3, provider readiness, seven palettes, and six composition modes.
+- Nine-card technical stability passed. A final v1.3 healing image passed manual review; the fresh surreal image could not be obtained after three provider timeouts. Provider reliability remains the main image-path risk.
+- Both requested sub-agent passes completed: technical regression found all 15 existing samples valid at `896×1200`; the final reviewer identified the prompt-only grounding weakness, which is now fixed and regression-tested server-side.
+- All nine synthetic cloud dream records and associated cloud assets were deleted after local capture; archive verification found zero remaining test IDs. Local fixtures remain under `docs/design/stability-v1-2026-07-22/`.
+- Verification passes: `npm run check:mini-release` and `git diff --check`. Worktree remains intentionally uncommitted/unpushed.
+- Immediate next step: add a bounded image-provider fallback/retry UX, then rerun v1.3 anxiety and surreal semantic review before inviting a wider group of friends.
+
+## V0.4 Phase 1–3 Development Complete Locally (2026-07-19)
+
+Current branch: `codex-optimize-dream-interpretation`. The worktree contains the completed implementation and remains uncommitted/unpushed. The updated Mini Program cloud functions were deployed and a new preview build was generated in this iteration.
+
+### Deployment and live verification — 2026-07-19
+
+- Environment `cloud1-d9gb0sjvg6a8d9864` now has all 11 functions. `cloudHealth`, `interpretDream`, `generateDreamImage`, `saveDream`, `createShareCard`, and `getShareCard` were updated; the new `profileMemory` function was created and then redeployed after its initial CloudBase `Creating` transition. All seven report `Active` on `Nodejs16.13`; `interpretDream` and `generateDreamImage` both report a 60-second timeout.
+- Live `cloudHealth` run `1784446424263` passed with all 9 required collections and storage. A disposable dream passed save, owner-scoped archive readback, life-note creation, share creation/read, deletion, share revocation, delayed dream-write rejection, delayed life-note rejection, and rejection of image generation for a nonexistent dream; its source dream was removed.
+- Live client-rule probing created a disposable server-side dream/share, then queried `dream_entries.localId` and `share_pages.slug` directly through the Mini Program database SDK. Both targeted reads returned zero rows while cloud-function reads succeeded, confirming revoked/private server records are not directly readable by the client; the test dream was then deleted and its share revoked.
+- Live provider health reports DeepSeek model `deepseek-v4-flash` with an 18-second request budget and image model `nano-banana-fast` with a 55-second request budget. The first live AI smoke test exposed an unescaped-control-character JSON response; the parser was repaired, regression tested, redeployed, and the second smoke test plus a full no-profile reading passed without fallback on prompt `oneiro-grounded-reading-v0.4.0`.
+- A post-fix live non-cached image request also passed: `nano-banana-fast` returned an 811,786-byte JPG with 17.2-second provider latency. Deleting its disposable source dream then removed the associated owned asset through the privacy cascade.
+- WeChat DevTools automation loaded diagnostics, profile memory center, private deck, no-profile dream input, voice state, and the multi-perspective result fixture. Diagnostics showed CloudBase ready, 9 collections, DeepSeek, and the OpenAI-compatible image provider.
+- Preview generated successfully for AppID `wx61800035c4e1a092`: `145.1 KB / 148,585 bytes`; QR output is `/private/tmp/oneiro-preview.png` and has been opened for scanning.
+- Remaining manual acceptance: scan the QR on a physical phone and verify microphone permission, album save, generated-image rendering on the phone network, and WeChat cross-session forwarding.
+
+### Phase 1 — Reliability and private-data consistency
+
+- Dream deletion now waits for the CloudBase result when available, queues offline cloud deletions, and uses an idempotent `deletion_jobs` tombstone. It rejects delayed writes and new shares as soon as deletion begins, revokes existing share pages, removes owned generated assets and source life notes, scrubs/invalidates derived profile snapshots, and only deletes the main dream after every privacy cascade succeeds.
+- Share pages are created only after the user explicitly prepares a share card and the server verifies ownership of the source dream. Public payloads and the separate public Canvas cover no longer accept or reuse private reflection-answer content, client file ids, local dream ids, or exact timestamps; revoked pages cannot be read.
+- Stable card numbering no longer reuses a number after archive deletion. Voice listeners are bound once, recording stops on unload, submission is disabled during record/recognition, and the voice funnel now emits analytics events.
+- `life_notes` and `profile_snapshots` are included in CloudBase health/deployment readiness.
+
+### Phase 2 — Interpretation and final-card loop
+
+- The result now presents four parallel perspectives: dream narrative/tension, cultural symbolism, psychological perspective, and personal connection. Optional birth data still adds the existing birth-rhythm perspective and never blocks the basic path.
+- The user can answer the interpretation question directly on the result page. `interpretDream` refines the first reading into a final title, card insight, and personal connection using AI with a deterministic fallback, then persists the final card.
+- Confirmed reality notes are selected from up to six recent notes by relevance instead of checking only the newest note.
+
+### Phase 3 — Personal memory center and private dream universe
+
+- `我的资料` is now a personal memory center. `profileMemory` stores versioned AI portrait drafts in `profile_snapshots`; users can view, edit, confirm, reject, pause/resume future use, and see version history. User-confirmed real-life fragments can also be viewed, edited, or deleted; portrait invalidation must succeed before a source fragment is removed.
+- User facts remain in `users` / `life_notes`; AI observations remain in profile snapshots. Only the user-editable confirmed summary with future use enabled enters later interpretation context, preventing uneditable AI traits/themes or drafts from silently becoming user facts. Atomic `profile_memory_state` updates maintain version numbers and the single current pointer.
+- Profile drafts refresh after effective changes: profile saves, confirmed real-life notes, the first three dreams, and every two additional dreams. Deleted or corrected evidence marks derived portraits stale and disables future use.
+- The private archive is now a dream deck with deterministic cross-dream people, symbols, emotions and places; evidence-based stage observations; monthly primary cards; recurring-symbol milestones; and three-dream archetype artifacts.
+- The archive now reads the latest 30 owner-scoped CloudBase dream records and merges pending local drafts, so the visible deck can recover across devices instead of depending only on local storage.
+
+### Verification
+
+- `npm run check:mini-release` includes AI readiness, CloudBase readiness, mocked Mini Program flows, Phase 3 CloudBase state/cascade contracts, deletion-race, image-authorization/race-cleanup, private-share-cover regressions, dream contracts, and TypeScript checks.
+- `npm run build` verifies the legacy Vite acceptance harness.
+- `git diff --check` verifies patch formatting.
+- Final high-severity review found no remaining P0/P1 after the deletion-race, image ownership/race cleanup, public-title isolation, portrait-save failure, and life-note consistency fixes.
+- Real CloudBase deployment and WeChat DevTools preview are complete. Physical-device acceptance remains pending because microphone, album, and WeChat forwarding require the user to scan the generated QR.
+
+The sections below are historical handoff notes. Where they conflict with this section, this V0.4 status is authoritative.
 
 ## Product Correction: Metaphysical Lens Default-On (2026-07-15)
 
@@ -284,3 +510,62 @@ npx vercel env ls
 npx vercel logs https://oneiro-psi.vercel.app --no-follow --limit 20 --expand
 npx vercel --prod --yes
 ```
+
+## 2026-07-23 Nano 内测画风三轮迭代
+
+- 固定使用 `nano-banana-fast`，以 9 个不同梦境进行三轮全局 Prompt 迭代；没有针对单张图追加专用补丁。
+- Round 1 / v1.3 验证叙事层级，2 张有效输出独立评分为 10/14、12/14；第三个样例连续四次供应商超时。主要问题是白边、干净矢量感和人物不够匿名。
+- Round 2 / v1.4 强化零白边、不规整轮廓和匿名人物，3 张独立评分为 10/14、12/14、10/14。白边完全消失，但渐变/辉光、重复网格和矢量规整仍不稳定。
+- Round 3 / v1.5 强化离散平涂、扁平空间和禁复制，3 张均为 9/14；复杂空间诱发凭空复制人物和立体透明盒，因此判定回退并撤回。
+- 当前云端已恢复为 `production = oneiro-riso-dream-v1.3`、`internal_test = oneiro-internal-test-style-v1.4`；健康检查确认模型为 `nano-banana-fast`。正式画风未改动。
+- 新增串行真实测试工具 `scripts/run-nano-internal-style-round.cjs` 和 9 个固定梦境 fixture。工具会保存最终 Prompt/耗时/结果，校验线上模型及 styleVersion，预写当前 dreamId，并通过正常删除链路清理合成数据。
+- `scripts/test-generate-dream-image.cjs` 增加 production Prompt SHA-256 golden，防止后续 internal_test 调整误改正式 Prompt。
+- 完整图片、manifest、逐轮评分和结论见 `docs/design/nano-internal-style-3round-2026-07-23/README.md`。
+- 验证通过：`node --check`（测试工具与 fixtures）、`node scripts/test-generate-dream-image.cjs`、`npm run check:mini-release`、`git diff --check`。
+- 追加完成参考图 A/B 测试：GrsAI nano `urls` 参考图入口已作为 `referenceTest` 实验分支接入，只在显式 `internal_test` 下启用；普通生成路径和 production 不变。两张“内测画风”参考图测试了黄伞、珊瑚窗两个梦境，人物匿名性和安静感略有改善，但重复图案/块状纹理仍在；紫岸样例两次超时。完整结果见 `docs/design/nano-internal-style-reference-test-2026-07-23/README.md`。参考图上传后会在生成结束清理，且使用独立缓存键。
+
+## 2026-07-24 解读 grounding 与八字结构扩展
+
+- 修复梦象词误配：`雨/暴雨` 不再被规则映射为“清水”；新增“暴雨”“沙漠”字面梦象，AI 返回的 symbols、人物、地点、物件会按原梦过滤，文本中的“清水/另一个细节”等幻觉也会被修正或回退。
+- 强化文化象征与心理视角的分工：文化象征解释共同文化语境，心理视角只引用当次梦的具体细节；只有一个细节时不再硬凑第二个场景。
+- 八字计算版本已升级为 `bazi-v0.6-engine`：在保留真太阳时、四柱、天干十神的基础上，新增可选藏干、藏干十神、支十神、纳音、十二长生、旬空、胎元/胎息/命宫/身宫、五行扶助/消耗证据，以及干支合冲害破关系；填写性别后再计算大运方向、起运时间和周期，未填写则不猜测。
+- 结果页不再展示“排盘依据”明细；完整排盘结构保留在结果数据中供后续画像和阶段解读使用。
+- 回归用例覆盖“我梦见沙漠里开始下暴雨”，并覆盖图片 visual plan 不得带入“清水、鱼、积水荒原”等未出现元素。
+- 本轮本地验证：`npm run check:mini-release`、`node scripts/test-generate-dream-image.cjs`、`git diff --check` 均通过。待部署 `interpretDream` 与 `generateDreamImage` 后再生成最新预览二维码。
+
+## 2026-07-24 性别接入与结果页收敛
+
+- 资料页新增“性别 / 可选”，值会随档案保存并随新梦请求传入云函数。
+- `interpretDream` 已接入性别到八字大运计算：男/女分别决定大运顺逆与起运周期；未填写性别时只保留四柱与静态结构，不猜大运。
+- 结果页仅展示“这次被调动的底色”与梦境呼应，不再展示排盘依据、四柱明细或固定命盘摘要；完整结构仍保留在结果数据中。
+- 已部署 `interpretDream`（32.1 KB）与 `saveProfile`；最新内测二维码为 `/private/tmp/oneiro-preview-bazi-gender-v1.png`。
+- `npm run check:mini-release`、`git diff --check` 与 `node --check` 均通过。
+
+## 2026-07-24 现实关联表达重写
+
+- 根据内测反馈，问题从“是否先给结论”重新定义为“每句话是否能回答它和用户生活有什么关系”。
+- 心理视角现在要求：原梦证据 + 具体关系/工作/项目/等待/边界等现实议题 + 一个可被用户否定的关联假设；不满足证据密度时回退到结构化文案。
+- “与你有关”不再使用固定的压力/选择/安全感句式；针对“沙漠下暴雨”会明确指出“长期没动静的事项突然需要承接”，并给出承接/拒绝的验证动作。
+- 出生节律现在把静态结构信号翻译成用户可感知的应对倾向，再连接到梦中具体细节和当天的可执行动作；不再只复述“环境变化”。
+- 本地兜底 `localDreamOracle` 同步修正雨/暴雨与清水的区分，并加入同样的现实关联表达，避免云端失败后体验回退。
+- 新增语义回归断言，拦截只有“沙漠、暴雨象征变化”或“留意感受”而没有现实关联的文本。
+- 验证通过：`npm run check:mini-release`、`node --check miniprogram/utils/localDreamOracle.js`、`git diff --check`。`interpretDream` 已重新部署，最新预览二维码为 `/private/tmp/oneiro-preview-qr-relevance-v1.png`。
+
+## 2026-07-24 阶段画像与长期记忆语义调整
+
+- 明确“梦境生成即存档，用户主动删除才移除”的记忆语义；阶段画像读取全部已存档梦境、梦后讨论、回访回答、确认现实片段和基础身份/出生资料。
+- 阶段画像改为一段精炼的整体理解，基础资料作为底座，新增信息后后台非阻塞重写；用户仍可编辑、确认、忽略和暂停用于后续解读。
+- 自动更新接入新梦保存、梦后讨论、确认现实片段、回访回答、资料变更、现实片段编辑/删除；旧待确认版本会标记为“已被新版本替代”。
+- 修复当前画像指针与失效画像状态不一致的问题；后续解读按当前画像指针读取，不再展示已失效画像。
+- 已部署 `profileMemory`（7.0 KB）、`saveDream`（5.5 KB）、`interpretDream`（32.2 KB）。最新预览二维码：`/private/tmp/oneiro-preview-memory-v3.png`。
+- `npm run check:mini-release`、`git diff --check` 与 TypeScript 检查均通过。
+
+## 2026-07-26 梦境牌库时间线 MVP
+
+- 牌库由普通列表改为按月份分组的竖向时间线，节点展示完整日期与时分，点击仍进入原有梦卡详情。
+- 时间线加入主题色缩略图、无图时的稳定占位、重复主梦象的“第 N 次”标记，以及第三次重复/里程碑的轻强调节点。
+- 保留阶段观察、本月主牌、阶段梦境原型、象征筛选和新梦入口；当前仍读取最近 30 个梦，后续可再加分页与阶段转折点。
+- 详情页重新打开已有生图时会主动按 `image_file_id` 回载本地临时图片；只有成功回载才隐藏底层卡面，避免短期 URL 过期造成空卡。高清替换结果也会同步保存 `image_file_id`。
+- 牌库缩略图同样先回载本地路径，回载失败显示主题占位，不直接依赖过期的云端临时 URL。
+- 本地验证通过：`npm run check:miniprogram`、`npm run check:phase3`、`npm run check:mini-release`、`npm run typecheck`、`git diff --check`。
+- 最新微信开发者工具预览二维码：`/private/tmp/oneiro-preview-timeline-v1.png`，预览包 175.6 KB。

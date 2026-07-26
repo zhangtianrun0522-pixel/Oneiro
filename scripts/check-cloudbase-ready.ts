@@ -33,6 +33,8 @@ const requiredFunctions = [
   'trackEvent',
   'createShareCard',
   'getShareCard',
+  'speechRecognize',
+  'profileMemory',
 ];
 
 const projectConfig = readJson<{
@@ -68,26 +70,33 @@ assertIncludes('miniprogram/utils/cloudBase.js', 'wx.cloud.callFunction');
 assertIncludes('miniprogram/utils/cloudBase.js', 'cloudHealth');
 assertIncludes('miniprogram/utils/cloudBase.js', 'generateDreamImage');
 assertIncludes('miniprogram/utils/cloudBase.js', 'imageHealth');
-assertIncludes('miniprogram/utils/cloudBase.js', 'wx.cloud.uploadFile');
-assertIncludes('miniprogram/utils/cloudBase.js', 'share-cards/');
+assertIncludes('miniprogram/utils/cloudBase.js', 'startDreamImageQuality');
+assertIncludes('miniprogram/utils/cloudBase.js', 'pollDreamImageQuality');
+assertIncludes('miniprogram/utils/cloudBase.js', 'getProfileMemory');
+assertIncludes('miniprogram/utils/cloudBase.js', 'generateProfilePortrait');
 
 assertIncludes('miniprogram/pages/new-dream/index.js', "cloudBase.interpretDream");
 assertIncludes('miniprogram/pages/new-dream/index.js', "cloudBase.saveDream");
 assertIncludes('miniprogram/pages/new-dream/index.js', "dream_saved_before_interpretation");
 assertIncludes('miniprogram/utils/cloudBase.js', "deleteDream");
+assertIncludes('miniprogram/utils/cloudBase.js', "getDreamArchive");
 assertIncludes('miniprogram/pages/dream-chat/index.js', "cloudBase.chatAboutDream");
 assertIncludes('miniprogram/pages/dream-chat/index.js', "cloudBase.saveDream");
 assertIncludes('miniprogram/pages/profile/index.js', "cloudBase.saveProfile");
-assertIncludes('miniprogram/pages/result/index.js', "cloudBase.uploadShareCard");
 assertIncludes('miniprogram/pages/result/index.js', "cloudBase.generateDreamImage");
 assertIncludes('miniprogram/pages/result/index.js', "cloudBase.createShareCard");
 assertIncludes('miniprogram/pages/share/index.js', "cloudBase.getShareCard");
 
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'users');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'dream_entries');
+assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'life_notes');
+assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'profile_snapshots');
+assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'profile_memory_state');
+assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'deletion_jobs');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'events');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'share_pages');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'generated_assets');
+assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'image_generation_jobs');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'INTERPRET_PROVIDER');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'DEEPSEEK_API_KEY');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'OPENAI_COMPATIBLE_API_KEY');
@@ -96,5 +105,6 @@ assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'healthCheck');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'providerConfigured');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'OPENAI_IMAGE_API_KEY');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'generateDreamImage');
+assertIncludes('miniprogram/cloudfunctions/generateDreamImage/index.js', 'qualityChannel');
 
 console.log('CloudBase deployment readiness checks passed.');

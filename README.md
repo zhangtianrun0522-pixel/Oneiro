@@ -1,17 +1,18 @@
 # Oneiro
 
-Oneiro is a private dream-memory product for WeChat Mini Program. It saves the raw dream first, extracts verifiable dream facts, offers bounded interpretations the user can reject, and gradually builds user-controlled cross-dream memory. The current source of truth is [`V0_2_DEVELOPMENT_PLAN.md`](V0_2_DEVELOPMENT_PLAN.md).
+Oneiro is a private dream-memory product for WeChat Mini Program. It saves the raw dream first, offers cultural-symbolic, psychological, personal and optional birth-rhythm perspectives, and gradually builds a user-controlled personal dream universe. Current implementation status is maintained in [`PROJECT_PROGRESS.md`](PROJECT_PROGRESS.md).
 
-## V0.2 Direction
+## Current Direction
 
 The current product promise is: "It does not predict your fate, but it will increasingly understand your dreams."
 
-- A dream can be written before opening the profile page, but interpretation requires birth date and birth time because the metaphysical lens is enabled by default.
+- A dream can be written and interpreted without profile data. Birth details are optional and add a separate birth-rhythm perspective when available.
 - Raw dreams are saved before AI runs, so provider failure does not lose the record.
-- Results lead with the dream image/card, then grounded facts and possible real-life connections, followed by a bounded `聊聊这个梦` conversation.
+- Results separate dream narrative, cultural symbolism, psychological perspective and personal connection. The user may answer one question to generate a refined final card, or continue in bounded `聊聊这个梦` conversation.
 - Dream cards and generated art remain as private collectibles and privacy-safe sharing artifacts; exports use image-led 3:4 composition.
-- Birth details live under `我的资料`; missing date/time/city pauses interpretation and preserves the draft until the profile is completed. The city is converted to coordinates for true-solar-time correction.
-- A deterministic bazi chart is shown as a bounded cultural lens. Astrology, daily fortune, fate prediction, public community, subscriptions, and coins are outside V0.2.
+- `我的资料` is now a personal memory center. The system quietly extracts high-confidence reality signals and automatically publishes an editable current portrait; users can correct it, pause future use, or restore an earlier version. Extracted real-life fragments remain viewable, correctable, and deletable.
+- The private deck shows recurring people, symbols, emotions and places, plus stage observations, a monthly primary card and evidence-based archetype artifacts.
+- A deterministic birth-rhythm calculation remains available as an optional cultural lens. It is not a prerequisite for the basic flow.
 
 ## WeChat Mini Program Direction
 
@@ -19,11 +20,11 @@ Oneiro is WeChat Mini Program-first. The Vite web app remains a legacy prototype
 
 Current Mini Program scope:
 
-- Dream writing before profile completion, followed by profile-gated interpretation and raw-first persistence.
+- Dream writing and raw-first interpretation without a profile gate.
 - CloudBase interpretation, storage, analytics, deletion, image generation, and card-only sharing.
 - Grounded single-dream result with structured facts and bounded dream chat.
-- Private profile with required birth date/time/city for interpretation and true-solar-time correction.
-- Private local/cloud archive with collectible card and full-reading exports.
+- Personal memory center with optional birth data, an automatically published editable portrait, pause controls, source correction, and version history.
+- Private dream deck with cross-dream pattern summaries, monthly primary card, collectible card and full-reading exports.
 
 Open `miniprogram/` in WeChat Developer Tools to preview the Mini Program. Deployment and release details are under `docs/`.
 
@@ -117,13 +118,15 @@ DEEPSEEK_MODEL=deepseek-chat
 3. The frontend calls `POST /api/interpret` with `dreamText` and `userInfo`.
 4. The backend calls the configured interpretation provider and returns a `DreamResult`.
 5. The frontend renders the text result immediately and stores it locally.
-6. The frontend calls `POST /api/generate-image` with `DreamResult.image_prompt` in the background.
+6. The frontend calls `POST /api/generate-image` with the condensed event, emotion-led palette, and asymmetric composition plan in `DreamResult.image_prompt`.
 7. The backend returns an image URL, or falls back when configured.
 8. The frontend updates the dream card image and supports 9:16 PNG export.
 
 ## Image Generation
 
 Image generation is now routed through the backend API instead of being hardcoded in the frontend.
+
+The shared visual contract is documented in [`docs/design/ONEIRO_DREAM_IMAGE_SYSTEM_V1.md`](docs/design/ONEIRO_DREAM_IMAGE_SYSTEM_V1.md): high-saturation rough screenprint/Risograph artwork, dynamic emotion palettes, simplified figures, one dominant event, asymmetric composition, and text-free `3:4` inner art. The Mini Program uses the full structured `visual_plan`; the legacy web endpoint applies the same default style to its condensed prompt.
 
 Current provider:
 
@@ -187,7 +190,7 @@ Response:
   "mirror": "现实映射",
   "integration_question": "醒后整合问题",
   "one_small_act": "今日小行动",
-  "image_prompt": "English visual prompt",
+  "image_prompt": "English visual plan: main event, emotion, selected elements, asymmetric composition and dynamic 4-6 ink palette",
   "omens": {
     "lucky_color": "#aabbcc",
     "lucky_color_name": "颜色名",

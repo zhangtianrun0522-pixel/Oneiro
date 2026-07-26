@@ -38,6 +38,10 @@ function assertIncludes(path: string, expected: string): void {
   assert.ok(read(path).includes(expected), `${path} should include ${expected}`);
 }
 
+function assertNotIncludes(path: string, unexpected: string): void {
+  assert.ok(!read(path).includes(unexpected), `${path} should not include ${unexpected}`);
+}
+
 function assertJson(path: string): void {
   JSON.parse(read(path));
 }
@@ -89,6 +93,16 @@ type DreamArtifactsModule = {
     headline: string;
     prompt: string;
   };
+};
+
+type DreamMemoryModule = {
+  buildInsights: (archive: unknown[]) => Record<string, any>;
+  buildProfileDraft: (
+    profile: Record<string, unknown>,
+    archive: unknown[],
+    nextVersion: number,
+    changeReason: string
+  ) => Record<string, any>;
 };
 
 type CanvasFrameModule = {
@@ -148,9 +162,19 @@ type CloudBaseModule = {
   initCloud: (callback?: Function) => boolean;
   getIdentity: (callback?: Function) => void;
   saveProfile: (profile: Record<string, unknown>, callback?: Function) => boolean;
+  getProfileMemory: (callback?: Function) => boolean;
+  generateProfilePortrait: (changeReason: string, callback?: Function) => boolean;
+  saveProfilePortrait: (snapshotId: string, snapshot: Record<string, unknown>, callback?: Function) => boolean;
+  confirmProfilePortrait: (snapshotId: string, callback?: Function) => boolean;
+  rejectProfilePortrait: (snapshotId: string, callback?: Function) => boolean;
+  toggleProfilePortrait: (snapshotId: string, useInFutureReadings: boolean, callback?: Function) => boolean;
   saveDream: (dream: Record<string, unknown>, callback?: Function) => boolean;
+  getDreamArchive: (callback?: Function) => boolean;
   deleteDream: (dreamId: string, callback?: Function) => boolean;
-  createShareCard: (dream: Record<string, unknown>, imageFileId: string, callback?: Function) => boolean;
+  getLifeNotes: (callback?: Function) => boolean;
+  editLifeNote: (noteId: string, text: string, callback?: Function) => boolean;
+  deleteLifeNote: (noteId: string, callback?: Function) => boolean;
+  createShareCard: (dream: Record<string, unknown>, callback?: Function) => boolean;
   getShareCard: (shareId: string, callback?: Function) => boolean;
   generateDreamImage: (prompt: string, dreamId: string, theme: string | Function, callback?: Function) => boolean;
   resolveCloudImage: (fileId: string, imageUrl: string, callback?: Function) => boolean;
@@ -169,11 +193,16 @@ type CloudBaseModule = {
     userMessage: string,
     callback?: Function
   ) => boolean;
+  refineDream: (
+    dreamText: string,
+    dreamResult: Record<string, unknown>,
+    answer: string,
+    callback?: Function
+  ) => boolean;
   aiHealth: (callback?: Function) => boolean;
   aiSmokeTest: (callback?: Function) => boolean;
   trackEvent: (event: Record<string, unknown>, callback?: Function) => boolean;
   flushEvents: (events: Array<Record<string, unknown>>, callback?: Function) => boolean;
-  uploadShareCard: (dreamId: string, filePath: string, callback?: Function) => boolean;
 };
 
 type MiniProgramPage = {
@@ -193,10 +222,15 @@ type WxMock = {
   cloudCalls: Array<Record<string, any>>;
   cloudUploads: Array<Record<string, any>>;
   blockNextInterpret: boolean;
+  failNextPortraitToggle: boolean;
+  failNextPortraitSave: boolean;
+  profilePortraitSummary: string;
+  canvasTexts: string[][];
   cloud?: Record<string, any>;
   getStorageSync: (key: string) => any;
   setStorageSync: (key: string, value: any) => void;
   navigateTo: (options: { url: string }) => void;
+  reLaunch: (options: { url: string }) => void;
   showToast: (options: { title: string }) => void;
   showModal: (options: Record<string, any>) => void;
   showLoading: (options: { title: string }) => void;
@@ -211,7 +245,7 @@ type WxMock = {
   getFileSystemManager: () => Record<string, any>;
 };
 
-function createCanvasContext(): Record<string, any> {
+function createCanvasContext(texts: string[] = []): Record<string, any> {
   const ctx: Record<string, any> = {
     arc() {},
     beginPath() {},
@@ -224,7 +258,7 @@ function createCanvasContext(): Record<string, any> {
     drawImage() {},
     fill() {},
     fillRect() {},
-    fillText() {},
+    fillText(text: string) { texts.push(String(text || '')); },
     lineTo() {},
     measureText(text: string) {
       return { width: String(text || '').length * 13 };
@@ -255,6 +289,10 @@ function createWxMock(): WxMock {
     cloudCalls: [],
     cloudUploads: [],
     blockNextInterpret: false,
+    failNextPortraitToggle: false,
+    failNextPortraitSave: false,
+    profilePortraitSummary: '近期梦境反复出现学校、追逐与期限感。',
+    canvasTexts: [],
     getStorageSync(key) {
       return this.storage[key];
     },
@@ -286,6 +324,9 @@ function createWxMock(): WxMock {
     navigateTo(options) {
       this.navigations.push(options.url);
     },
+    reLaunch(options) {
+      this.navigations.push(options.url);
+    },
     showToast(options) {
       this.toasts.push(options.title);
     },
@@ -302,6 +343,8 @@ function createWxMock(): WxMock {
       this.loading.push('hide');
     },
     createSelectorQuery() {
+      const texts: string[] = [];
+      this.canvasTexts.push(texts);
       const canvas = {
         height: 0,
         width: 0,
@@ -317,7 +360,7 @@ function createWxMock(): WxMock {
           return image;
         },
         getContext() {
-          return createCanvasContext();
+          return createCanvasContext(texts);
         },
       };
 
@@ -363,6 +406,19 @@ function createWxMock(): WxMock {
         return;
       }
       if (options.name === 'interpretDream') {
+        if (options.data?.refineDream) {
+          options.success({
+            result: {
+              ok: true,
+              provider: 'mock-cloud',
+              fallback: false,
+              final_title: '期限门',
+              final_card_insight: '你的回答让学校与追逐落在了现实期限上。',
+              personal_connection: '这次梦更像在整理你对截止时间与被评价的感受。',
+            },
+          });
+          return;
+        }
         if (options.data?.chatAboutDream) {
           options.success({
             result: {
@@ -398,7 +454,7 @@ function createWxMock(): WxMock {
               hasApiKey: true,
               model: 'mock-model',
               baseUrlHost: 'mock.example.com',
-              requestTimeoutMs: 18000,
+              requestTimeoutMs: 30000,
               strictAi: false,
               fallbackProvider: 'cloudbase-static-fallback',
             },
@@ -422,7 +478,7 @@ function createWxMock(): WxMock {
             ok: true,
             provider: 'mock-cloud',
             model: 'mock-grounded-model',
-            promptVersion: 'oneiro-grounded-reading-v0.2.2',
+            promptVersion: 'oneiro-grounded-reading-v0.5.0',
             schemaVersion: 'dream-entry-v0.2',
             result: {
               title: '云影',
@@ -449,6 +505,7 @@ function createWxMock(): WxMock {
               card_insight: '这张云端梦卡提醒你先看见追逐背后的真实需要。',
               dream_translation: '云端解读：学校考试迟到和追逐构成主要梦象。',
               underneath: '追逐和学校共同指向压力、标准和旧身份。',
+              cultural_symbolism: '传统梦文化会把学校与追逐视作考验和寻找出口的象征。',
               mirror: '现实里可能有一个期限或评价正在逼近。',
               possible_connections: [
                 '学校与迟到可能和近期的截止时间有关。',
@@ -458,12 +515,119 @@ function createWxMock(): WxMock {
               integration_question: '如果追逐会替你说一句真话，它想提醒什么？',
               one_small_act: '写下正在追你的事。',
               image: '云端梦卡画面以追逐、学校为核心。',
-              image_prompt: 'surreal symbolic dream card, chase, school',
+              image_prompt: 'a person runs through an empty school while an examination room recedes',
+              visual_plan: {
+                version: 'oneiro-visual-plan-v1',
+                raw_text: '我梦到考试迟到，被人在学校里追赶。',
+                main_event: '梦者在学校里被追赶并错过考试',
+                emotion: ['紧张'],
+                emotion_intensity: 0.82,
+                setting: '空荡的学校走廊',
+                characters: [{ role: '主体', description: '奔跑的学生背影', importance: 1 }],
+                objects: [{ name: '越来越远的考试教室', importance: 0.9, visualizable: true }],
+                anomalies: ['走廊不断变长'],
+                symbols: ['学校', '追逐'],
+                memory_elements: [],
+                preserve_elements: ['奔跑的学生', '学校走廊', '考试教室'],
+                hidden_symbol: '停住的钟',
+                composition: {
+                  template: 'threshold_depth',
+                  subject_position: '人物位于左下并朝远处奔跑',
+                  visual_flow: '从奔跑背影通向远处教室',
+                  spatial_layers: '前景人物，中景走廊，远景教室',
+                  negative_space: '上方保留约40%空墙'
+                }
+              },
               echo: '给压力一个出口。',
               omens: { lucky_color_name: '云影色', reason: '云端返回的测试色。' },
             },
           },
         });
+        return;
+      }
+      if (options.name === 'profileMemory') {
+        if (options.data?.action === 'generate') {
+          options.success({
+            result: {
+              ok: true,
+              snapshot: {
+                _id: 'portrait-v1',
+                version: 1,
+                status: 'draft',
+                summary: wx.profilePortraitSummary,
+                traits: ['会留意期限与评价感'],
+                themes: ['学校', '追逐'],
+                realLifeContext: [],
+                changeReason: '根据近期梦境生成',
+                useInFutureReadings: true,
+              },
+            },
+          });
+          return;
+        }
+        if (options.data?.action === 'save') {
+          if (wx.failNextPortraitSave) {
+            wx.failNextPortraitSave = false;
+            options.success({ result: { ok: false, reason: 'mock_save_failed' } });
+            return;
+          }
+          wx.profilePortraitSummary = options.data.snapshot?.summary || wx.profilePortraitSummary;
+          options.success({
+            result: {
+              ok: true,
+              snapshot: {
+                _id: 'portrait-v2',
+                version: 2,
+                status: 'confirmed',
+                summary: wx.profilePortraitSummary,
+                themes: ['学校', '追逐'],
+                useInFutureReadings: true,
+                userEdited: true,
+              },
+            },
+          });
+          return;
+        }
+        if (options.data?.action === 'confirm') {
+          options.success({
+            result: {
+              ok: true,
+              snapshot: {
+                _id: options.data.snapshotId,
+                version: 1,
+                status: 'confirmed',
+                isCurrent: true,
+                summary: wx.profilePortraitSummary,
+                themes: ['学校', '追逐'],
+                useInFutureReadings: true,
+              },
+            },
+          });
+          return;
+        }
+        if (options.data?.action === 'toggleUse') {
+          if (wx.failNextPortraitToggle) {
+            wx.failNextPortraitToggle = false;
+            options.success({ result: { ok: false, reason: 'mock_sync_failed' } });
+            return;
+          }
+          options.success({
+            result: {
+              ok: true,
+              snapshot: {
+                _id: options.data.snapshotId,
+                version: 1,
+                status: 'confirmed',
+                isCurrent: true,
+                summary: '近期梦境反复出现学校、追逐与期限感。',
+                themes: ['学校', '追逐'],
+                useInFutureReadings: options.data.useInFutureReadings,
+              },
+            },
+          });
+          return;
+        }
+        options.success({ result: { ok: true, current: null, latestDraft: null, history: [] } });
         return;
       }
       if (options.name === 'generateDreamImage') {
@@ -492,7 +656,9 @@ function createWxMock(): WxMock {
             imageUrl: 'https://mock-image.example.com/oneiro.png',
             cloudPath: 'generated-dream-images/mock.png',
             cacheHit: true,
-            styleVersion: 'oneiro-etched-dream-v2',
+            styleVersion: 'oneiro-riso-dream-v1.3',
+            visualPlan: options.data?.visualPlan,
+            qualityCheck: { version: 'oneiro-image-quality-v1', passed: true },
             latencyMs: 32,
           },
         });
@@ -593,6 +759,7 @@ const contentSafety = loadCommonJS<ContentSafetyModule>('miniprogram/utils/conte
 const localOracle = loadCommonJS<LocalOracleModule>('miniprogram/utils/localDreamOracle.js');
 const profileOracle = loadCommonJS<ProfileOracleModule>('miniprogram/utils/profileOracle.js');
 const dreamArtifacts = loadCommonJS<DreamArtifactsModule>('miniprogram/utils/dreamArtifacts.js');
+const dreamMemory = loadCommonJS<DreamMemoryModule>('miniprogram/utils/dreamMemory.js');
 const canvasFrame = loadCommonJS<CanvasFrameModule>('miniprogram/utils/canvasFrame.js');
 
 for (const path of [
@@ -613,8 +780,9 @@ for (const path of [
 }
 
 assertIncludes('miniprogram/project.config.json', '"cloudfunctionRoot"');
-assertIncludes('miniprogram/project.config.json', 'AI 诊断页');
-assertIncludes('miniprogram/project.config.json', 'pages/diagnostics/index');
+const projectConfig = JSON.parse(read('miniprogram/project.config.json')) as Record<string, any>;
+assert.equal(projectConfig.setting.condition, false);
+assert.equal(Object.prototype.hasOwnProperty.call(projectConfig, 'condition'), false);
 for (const path of [
   'miniprogram/cloudfunctions/login/package.json',
   'miniprogram/cloudfunctions/createShareCard/package.json',
@@ -624,31 +792,36 @@ for (const path of [
   'miniprogram/cloudfunctions/saveProfile/package.json',
   'miniprogram/cloudfunctions/saveDream/package.json',
   'miniprogram/cloudfunctions/trackEvent/package.json',
+  'miniprogram/cloudfunctions/speechRecognize/package.json',
+  'miniprogram/cloudfunctions/profileMemory/package.json',
 ]) {
   assertJson(path);
 }
 
 for (const [path, expected] of [
-  ['miniprogram/pages/home/index.wxml', '记下刚才的梦'],
+  ['miniprogram/pages/home/index.wxml', '保存并解读'],
+  ['miniprogram/pages/home/index.wxml', 'bindtap="generateDreamCard"'],
+  ['miniprogram/pages/home/index.wxml', 'bindtouchstart="onVoiceTouchStart"'],
   ['miniprogram/pages/home/index.wxml', '打开梦境档案'],
   ['miniprogram/pages/home/index.wxml', '我的资料'],
   ['miniprogram/pages/home/index.wxml', 'fromShare'],
   ['miniprogram/pages/new-dream/index.wxml', 'bindtap="generateDreamCard"'],
-  ['miniprogram/pages/new-dream/index.wxml', 'bindtap="useSample"'],
   ['miniprogram/pages/result/index.wxml', 'theme-{{dream.result.card_theme}}'],
   ['miniprogram/pages/result/index.wxml', 'dream-ai-image'],
   ['miniprogram/pages/result/index.wxml', '画面生成中'],
   ['miniprogram/pages/result/index.wxml', '你记下的原梦'],
   ['miniprogram/pages/result/index.wxml', '梦里发生了什么'],
-  ['miniprogram/pages/result/index.wxml', '可能触及的现实'],
+  ['miniprogram/pages/result/index.wxml', '与你有关'],
+  ['miniprogram/pages/result/index.wxml', '文化象征'],
+  ['miniprogram/pages/result/index.wxml', '心理视角'],
   ['miniprogram/pages/result/index.wxml', '聊聊这个梦'],
-  ['miniprogram/pages/result/index.wxml', '这个梦的张力'],
+  ['miniprogram/pages/result/index.wxml', '梦的叙事与张力'],
   ['miniprogram/pages/result/index.wxml', '另一种可能'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="saveCard"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="saveFullReading"'],
   ['miniprogram/pages/result/index.wxml', '保存收藏梦卡'],
   ['miniprogram/pages/result/index.wxml', '保存完整解读'],
-  ['miniprogram/pages/result/index.wxml', 'open-type="share"'],
+  ['miniprogram/pages/result/index.wxml', '分享这张梦卡'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="newDream"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="openArchive"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="deleteDream"'],
@@ -656,7 +829,10 @@ for (const [path, expected] of [
   ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="sendMessage"'],
   ['miniprogram/pages/dream-chat/index.wxml', '{{turnCount}} / {{maxTurns}}'],
   ['miniprogram/pages/profile/index.wxml', 'bindtap="saveProfile"'],
-  ['miniprogram/pages/profile/index.wxml', '可随时清空'],
+  ['miniprogram/pages/profile/index.wxml', '可随时修改或清空'],
+  ['miniprogram/pages/profile/index.wxml', '我的阶段画像'],
+  ['miniprogram/pages/profile/index.wxml', '系统提取的现实线索'],
+  ['miniprogram/pages/profile/index.wxml', '修改这段理解'],
   ['miniprogram/pages/share/index.wxml', '记下我的梦'],
   ['miniprogram/pages/share/index.wxml', 'theme-{{payload.cardTheme}}'],
   ['miniprogram/pages/diagnostics/index.wxml', '运行诊断'],
@@ -665,10 +841,21 @@ for (const [path, expected] of [
   ['miniprogram/pages/diagnostics/index.wxml', 'bindtap="refresh"'],
   ['miniprogram/pages/diagnostics/index.wxml', 'AI SMOKE TEST'],
   ['miniprogram/pages/diagnostics/index.wxml', 'bindtap="runSmokeTest"'],
-  ['miniprogram/pages/archive/index.wxml', '梦境档案'],
-  ['miniprogram/pages/archive/index.wxml', 'wx:for="{{archive}}"'],
+  ['miniprogram/pages/archive/index.wxml', '私人梦境牌组'],
+  ['miniprogram/pages/archive/index.wxml', '本月主牌'],
+  ['miniprogram/pages/archive/index.wxml', 'wx:for="{{timelineGroups}}"'],
+  ['miniprogram/pages/archive/index.wxml', 'timelineTimestamp'],
+  ['miniprogram/pages/archive/index.wxml', 'archive-thumb-placeholder'],
 ] as const) {
   assertIncludes(path, expected);
+}
+
+for (const [path, unexpected] of [
+  ['miniprogram/pages/result/index.wxml', '把这张梦卡变成你的'],
+  ['miniprogram/pages/result/index.wxml', 'class="refine-card"'],
+  ['miniprogram/pages/result/index.wxml', '生成分享话题卡'],
+] as const) {
+  assertNotIncludes(path, unexpected);
 }
 
 for (const [path, expected] of [
@@ -690,9 +877,14 @@ for (const [path, expected] of [
   ['miniprogram/utils/cloudBase.js', "wx.cloud.downloadFile"],
   ['miniprogram/utils/cloudBase.js', "healthCheck"],
   ['miniprogram/utils/cloudBase.js', "smokeTest"],
-  ['miniprogram/utils/cloudBase.js', "uploadShareCard"],
   ['miniprogram/utils/cloudBase.js', "deleteDream"],
+  ['miniprogram/utils/cloudBase.js', "getDreamArchive"],
+  ['miniprogram/utils/cloudBase.js', "getLifeNotes"],
+  ['miniprogram/utils/cloudBase.js', "editLifeNote"],
   ['miniprogram/utils/cloudBase.js', "chatAboutDream"],
+  ['miniprogram/utils/cloudBase.js', "refineDream"],
+  ['miniprogram/utils/cloudBase.js', "getProfileMemory"],
+  ['miniprogram/utils/cloudBase.js', "generateProfilePortrait"],
   ['miniprogram/pages/new-dream/index.js', "validateDreamText"],
   ['miniprogram/pages/new-dream/index.js', "interpretDream"],
   ['miniprogram/pages/new-dream/index.js', "cloudResult.blocked"],
@@ -719,12 +911,12 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.js', "imageErrorMessage"],
   ['miniprogram/pages/result/index.js', "retryDreamImage"],
   ['miniprogram/pages/result/index.js', "dream_chat_open"],
+  ['miniprogram/pages/result/index.js', "dream_refine_success"],
   ['miniprogram/pages/result/index.js', "dream_deleted"],
   ['miniprogram/pages/result/index.wxml', "重新生成画面"],
   ['miniprogram/pages/result/index.js', "result_view"],
   ['miniprogram/pages/result/index.js', "image_success"],
   ['miniprogram/pages/result/index.js', "export_success"],
-  ['miniprogram/pages/result/index.js', "uploadShareCard"],
   ['miniprogram/pages/result/index.js', "createShareCard"],
   ['miniprogram/pages/result/index.js', "sharePath"],
   ['miniprogram/pages/result/index.js', "share"],
@@ -757,12 +949,17 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.js', "collection_card"],
   ['miniprogram/pages/archive/index.js', "pages/result/index?id="],
   ['miniprogram/pages/archive/index.js', "archive_view"],
+  ['miniprogram/pages/archive/index.js', "archive_cloud_synced"],
   ['miniprogram/pages/archive/index.js', "archive_revisit"],
   ['miniprogram/pages/archive/index.js', "!item.id"],
   ['miniprogram/pages/archive/index.js', "isNaN(date.getTime())"],
   ['miniprogram/pages/dream-chat/index.js', "MAX_USER_TURNS"],
   ['miniprogram/pages/dream-chat/index.js', "chatAboutDream"],
   ['miniprogram/pages/profile/index.js', "cloudBase.saveProfile"],
+  ['miniprogram/pages/profile/index.js', "saveProfilePortrait"],
+  ['miniprogram/pages/profile/index.js', "refreshPortraitInBackground"],
+  ['miniprogram/pages/profile/index.js', "deleteLifeNote"],
+  ['miniprogram/cloudfunctions/profileMemory/index.js', "profile_snapshots"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "INTERPRET_PROVIDER"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "DEEPSEEK_API_KEY"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "OPENAI_COMPATIBLE_API_KEY"],
@@ -781,6 +978,8 @@ for (const [path, expected] of [
   ['miniprogram/cloudfunctions/interpretDream/index.js', "alternative_reading"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "loadDreamMemory"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "memory_reflection"],
+  ['miniprogram/cloudfunctions/interpretDream/index.js', "cultural_symbolism"],
+  ['miniprogram/cloudfunctions/interpretDream/index.js', "loadConfirmedPortrait"],
   ['miniprogram/cloudfunctions/interpretDream/package.json', "lunar-javascript"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "OPENAI_IMAGE_API_KEY"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "OPENAI_IMAGE_ENDPOINT_URL"],
@@ -788,15 +987,17 @@ for (const [path, expected] of [
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "replyType"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "/v1/draw/nano-banana"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "/v1/draw/result"],
-  ['miniprogram/cloudfunctions/generateDreamImage/index.js', "vertical 3:4 tarot-inspired"],
+  ['miniprogram/cloudfunctions/generateDreamImage/visualPlan.js', "rough screenprint and risograph texture"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "aspect_ratio: '3:4'"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "/result"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "generated-dream-images/"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "getTempFileURL"],
-  ['miniprogram/cloudfunctions/generateDreamImage/index.js', "Oneiro signature style"],
+  ['miniprogram/cloudfunctions/generateDreamImage/visualPlan.js', "high-saturation flat color blocks"],
+  ['miniprogram/cloudfunctions/generateDreamImage/visualPlan.js', "EMOTION_PALETTES"],
+  ['miniprogram/cloudfunctions/generateDreamImage/visualPlan.js', "COMPOSITIONS"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "STYLE_VERSION"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "cache_key"],
-  ['miniprogram/cloudfunctions/generateDreamImage/index.js', "THEME_ACCENTS"],
+  ['miniprogram/cloudfunctions/generateDreamImage/index.js', "LEGACY_THEMES"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "detectImageFormat"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "imageBytes"],
 ] as const) {
@@ -808,6 +1009,8 @@ assert.equal(contentSafety.validateDreamText('').safe, false);
 assert.equal(contentSafety.validateDreamText('水').safe, false);
 assert.equal(contentSafety.validateDreamText('我梦见自己不想活了').safe, false);
 assert.equal(contentSafety.validateDreamText('我梦见医生给我诊断癌症').safe, false);
+assert.equal(read('miniprogram/cloudfunctions/interpretDream/index.js').includes('profile.confirmedPortrait.themes'), false);
+assert.equal(read('miniprogram/cloudfunctions/interpretDream/index.js').includes('profile.confirmedPortrait.traits'), false);
 
 const chaseDream = localOracle.buildLocalDreamResult(
   acceptance.acceptanceDreamResult,
@@ -818,6 +1021,30 @@ const homeDream = localOracle.buildLocalDreamResult(
   '我回到老家的厨房，外面一直下雨，妈妈站在门口等我。'
 );
 
+const memoryFixture = [1, 2, 3].map((index) => ({
+  id: `memory-${index}`,
+  status: 'ready',
+  createdAt: new Date().toISOString(),
+  result: { symbols: ['学校', index === 3 ? '门' : '追逐'] },
+  dreamFacts: {
+    people: ['老师'],
+    places: ['学校'],
+    emotions: ['紧张'],
+    actions: ['寻找出口'],
+  },
+}));
+const crossDreamInsights = dreamMemory.buildInsights(memoryFixture);
+assert.equal(crossDreamInsights.eligible, true);
+assert.equal(crossDreamInsights.recurringSymbols[0].label, '学校');
+assert.equal(crossDreamInsights.recurringSymbols[0].count, 3);
+assert.equal(crossDreamInsights.recurringPeople[0].label, '老师');
+assert.equal(crossDreamInsights.monthlyCard.eligible, true);
+const portraitDraft = dreamMemory.buildProfileDraft({ nickname: 'Runtu' }, memoryFixture, 2, '三条新梦');
+assert.equal(portraitDraft.status, 'draft');
+assert.equal(portraitDraft.version, 2);
+assert.ok(portraitDraft.summary.includes('学校'));
+assert.equal(portraitDraft.sourceRefs.length, 3);
+
 assert.notEqual(chaseDream.title, acceptance.acceptanceDreamResult.title);
 assert.notEqual(homeDream.title, acceptance.acceptanceDreamResult.title);
 assert.notDeepEqual(chaseDream.symbols, homeDream.symbols);
@@ -827,7 +1054,8 @@ assert.equal(homeDream.card_theme, 'tide');
 assert.equal(chaseDream.card_theme_label, '追逐');
 assert.ok(chaseDream.symbols.includes('追逐'));
 assert.ok(chaseDream.symbols.includes('学校'));
-assert.ok(homeDream.symbols.includes('清水'));
+assert.ok(homeDream.symbols.includes('暴雨'));
+assert.ok(!homeDream.symbols.includes('清水'));
 assert.ok(homeDream.symbols.includes('家屋'));
 assert.ok(chaseDream.dream_translation.includes('学校考试迟到'));
 assert.ok(homeDream.dream_translation.includes('老家的厨房'));
@@ -895,6 +1123,7 @@ const app = {
       birthDate: '',
       birthTime: '',
       birthPlace: '',
+      gender: '',
     },
   },
 };
@@ -906,6 +1135,7 @@ const pageModules = {
   '../../utils/localDreamOracle': localOracle,
   '../../utils/profileOracle': profileOracle,
   '../../utils/dreamArtifacts': dreamArtifacts,
+  '../../utils/dreamMemory': dreamMemory,
   '../../utils/canvasFrame': canvasFrame,
 };
 
@@ -919,11 +1149,30 @@ profilePage.onLoad();
 profilePage.onInput({ currentTarget: { dataset: { key: 'nickname' } }, detail: { value: ' Runtu ' } });
 profilePage.onBirthDateChange({ detail: { value: '1998-01-01' } });
 profilePage.onBirthTimeChange({ detail: { value: '08:30' } });
+profilePage.onGenderChange({ detail: { value: 1 } });
 profilePage.onInput({ currentTarget: { dataset: { key: 'birthPlace' } }, detail: { value: ' Shanghai ' } });
 profilePage.saveProfile();
 assert.equal(wx.storage['oneiro:lastProfile'].nickname, 'Runtu');
 assert.equal(wx.storage['oneiro:lastProfile'].birthPlace, 'Shanghai');
+assert.equal(wx.storage['oneiro:lastProfile'].gender, 'male');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveProfile'));
+assert.equal(profilePage.data.memoryState.current.version, 1);
+const originalPortraitSummary = profilePage.data.memoryState.current.summary;
+profilePage.startPortraitEdit();
+profilePage.onPortraitSummaryInput({ detail: { value: '这是我确认过措辞的阶段画像。' } });
+wx.failNextPortraitSave = true;
+profilePage.savePortraitEdit();
+assert.equal(profilePage.data.memoryState.current.summary, originalPortraitSummary);
+assert.equal(profilePage.data.portraitEditing, true);
+assert.equal(profilePage.data.portraitEditSummary, '这是我确认过措辞的阶段画像。');
+profilePage.savePortraitEdit();
+assert.equal(profilePage.data.memoryState.current.summary, '这是我确认过措辞的阶段画像。');
+assert.equal(profilePage.data.portraitEditing, false);
+assert.equal(profilePage.data.memoryState.current.status, 'confirmed');
+assert.equal(profilePage.data.memoryState.current.version, 2);
+assert.equal(profilePage.data.memoryState.pastHistory.some((item: Record<string, any>) => item.version === 1 && item.status === 'superseded'), true);
+assert.equal(profilePage.data.memoryState.current.summary, '这是我确认过措辞的阶段画像。');
+assert.ok(wx.cloudCalls.some((call) => call.name === 'profileMemory' && call.data.action === 'save'));
 homePage.startDream();
 assert.equal(last(wx.navigations), '/pages/new-dream/index');
 
@@ -956,27 +1205,80 @@ assert.equal(archiveAfterDream[0].interpretationProvider, 'mock-cloud');
 assert.equal(archiveAfterDream[0].status, 'ready');
 assert.equal(archiveAfterDream[0].dreamFacts.places[0], '学校');
 assert.equal(archiveAfterDream[0].interpretationMeta.schemaVersion, 'dream-entry-v0.2');
-assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-grounded-reading-v0.2.2');
+assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-grounded-reading-v0.5.0');
 assert.equal(archiveAfterDream[0].result.title, '云影');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream'));
 assert.equal(
   wx.cloudCalls.find((call) => call.name === 'interpretDream' && call.data?.dreamText && !call.data?.chatAboutDream)?.data?.profile?.birthTime,
   '08:30'
 );
+assert.equal(
+  wx.cloudCalls.find((call) => call.name === 'interpretDream' && call.data?.dreamText && !call.data?.chatAboutDream)?.data?.profile?.gender,
+  'male'
+);
 
 const resultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 resultPage.onLoad({ id: archiveAfterDream[0].id });
 assert.equal(resultPage.data.dream.id, archiveAfterDream[0].id);
+assert.equal(resultPage.data.entryReady, true);
 resultPage.requestDreamImage();
 assert.equal(resultPage.data.imageStatus, 'ready');
 assert.equal(resultPage.data.dream.result.imageUrl, 'https://mock-image.example.com/oneiro.png');
 assert.equal(resultPage.data.dream.result.image_cache_hit, true);
-assert.equal(resultPage.data.dream.result.image_style_version, 'oneiro-etched-dream-v2');
+assert.equal(resultPage.data.dream.result.image_style_version, 'oneiro-riso-dream-v1.3');
+assert.equal(resultPage.data.dream.result.image_visual_plan.composition.template, 'threshold_depth');
+assert.equal(resultPage.data.dream.result.image_quality_check.passed, true);
 assert.equal(resultPage.data.aiImageLocalPath, '/tmp/oneiro-ai-image.png');
+assert.match(resultPage.data.displayTimestamp, /^\d{4}\.\d{2}\.\d{2} · \d{2}:\d{2}$/);
+assert.equal(resultPage.data.cardFlipped, false);
+const reopenedResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+reopenedResultPage.onLoad({ id: archiveAfterDream[0].id });
+assert.equal(reopenedResultPage.data.aiImageLocalPath, '/tmp/oneiro-ai-image.png');
+assert.equal(reopenedResultPage.data.imageStatus, 'ready');
+const activeDream = app.globalData.currentDream as any;
+const currentDreamResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+currentDreamResultPage.onLoad({});
+assert.equal(currentDreamResultPage.data.dream.id, activeDream.id);
+assert.equal(currentDreamResultPage.data.entryReady, true);
+app.globalData.currentDream = Object.assign({}, activeDream, { id: 'different-current-dream' });
+const mismatchedRouteResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+mismatchedRouteResultPage.onLoad({ id: 'missing-dream-id' });
+assert.equal(last(wx.navigations), '/pages/home/index');
+assert.equal(mismatchedRouteResultPage.data.entryReady, false);
+const cloudCallCountBeforeMismatchedReady = wx.cloudCalls.length;
+mismatchedRouteResultPage.onReady();
+assert.equal(wx.cloudCalls.length, cloudCallCountBeforeMismatchedReady);
+app.globalData.currentDream = activeDream;
+const unguardedFixtureWithCurrentPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+unguardedFixtureWithCurrentPage.onLoad({ fixture: '1' });
+assert.equal(last(wx.navigations), '/pages/home/index');
+app.globalData.currentDream = null;
+const emptyResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+emptyResultPage.onLoad({});
+assert.equal(last(wx.navigations), '/pages/home/index');
+assert.equal(emptyResultPage.data.dream.dreamText, '');
+const cloudCallCountBeforeInvalidReady = wx.cloudCalls.length;
+emptyResultPage.onReady();
+assert.equal(wx.cloudCalls.length, cloudCallCountBeforeInvalidReady);
+const unguardedFixturePage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+unguardedFixturePage.onLoad({ fixture: '1' });
+assert.equal(last(wx.navigations), '/pages/home/index');
+const guardedFixturePage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+guardedFixturePage.onLoad({ fixture: '1', devPreview: '1' });
+assert.equal(guardedFixturePage.data.dream.dreamText, acceptance.acceptanceDreamText);
+app.globalData.currentDream = activeDream;
+resultPage.toggleDreamCard();
+assert.equal(resultPage.data.cardFlipped, true);
+resultPage.toggleDreamCard();
+assert.equal(resultPage.data.cardFlipped, false);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'generateDreamImage'));
 assert.equal(
   wx.cloudCalls.find((call) => call.name === 'generateDreamImage')?.data?.theme,
   'shadow'
+);
+assert.equal(
+  wx.cloudCalls.find((call) => call.name === 'generateDreamImage')?.data?.visualPlan?.main_event,
+  '梦者在学校里被追赶并错过考试'
 );
 const sharePayload = resultPage.onShareAppMessage();
 assert.equal(sharePayload.path, '/pages/home/index?fromShare=1');
@@ -991,13 +1293,46 @@ resultPage.renderShareCard({
 });
 assert.equal(renderedPath, '/tmp/oneiro-card.png');
 assert.equal(resultPage.data.shareImagePath, '/tmp/oneiro-card.png');
+assert.equal(resultPage.data.sharePath, '');
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('ONEIRO'), true);
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('NO. 001'), true);
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('2026.'), true);
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('云影'), false);
+resultPage.prepareShareCard();
 assert.equal(resultPage.data.sharePath, '/pages/share/index?id=card-mock');
+assert.equal(resultPage.data.publicShareImagePath, '/tmp/oneiro-card.png');
 const readySharePayload = resultPage.onShareAppMessage();
 assert.equal(readySharePayload.path, '/pages/share/index?id=card-mock');
+assert.equal(readySharePayload.imageUrl, '/tmp/oneiro-card.png');
 resultPage.saveCard();
 assert.equal(last(wx.savedImages), '/tmp/oneiro-card.png');
-assert.ok(wx.cloudUploads.some((upload) => upload.filePath === '/tmp/oneiro-card.png'));
+assert.equal(resultPage.data.cardSaved, true);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'createShareCard'));
+resultPage.onRefineAnswerInput({ detail: { value: '我最近确实很怕赶不上期限。' } });
+resultPage.refineDreamCard();
+assert.equal(resultPage.data.dream.result.title, '期限门');
+assert.equal(resultPage.data.dream.result.public_title, '云影');
+assert.ok(resultPage.data.dream.result.personal_connection.includes('截止时间'));
+assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.refineDream));
+resultPage.prepareShareCard();
+assert.equal(
+  wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('你的回答让学校与追逐落在了现实期限上'),
+  false
+);
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('期限门'), false);
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('云影'), false);
+assert.equal(
+  wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('写下正在追你的事'),
+  false
+);
+assert.ok(resultPage.onShareAppMessage().title.includes('云影'));
+assert.equal(resultPage.onShareAppMessage().title.includes('期限门'), false);
+const refinedPublicTitle = resultPage.data.dream.result.public_title;
+delete resultPage.data.dream.result.public_title;
+resultPage.prepareShareCard();
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('期限门'), false);
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('梦卡'), false);
+resultPage.data.dream.result.public_title = refinedPublicTitle;
 resultPage.saveFullReading();
 assert.equal(last(wx.savedImages), '/tmp/oneiro-card.png');
 assert.equal(resultPage.data.shareImagePath, '/tmp/oneiro-card.png');
@@ -1039,6 +1374,8 @@ archivePage.onShow();
 assert.equal(archivePage.data.archiveCount, 1);
 assert.ok(archivePage.data.archive[0].id);
 assert.ok(archivePage.data.archive[0].createdAt);
+assert.equal(archivePage.data.timelineGroups.length, 1);
+assert.match(archivePage.data.timelineGroups[0].dreams[0].timelineTimestamp, /^\d{4}\.\d{2}\.\d{2}\s{2}\d{2}:\d{2}$/);
 archivePage.openDream({ currentTarget: { dataset: { index: 0 } } });
 assert.ok(last(wx.navigations).startsWith('/pages/result/index?id='));
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream'));
