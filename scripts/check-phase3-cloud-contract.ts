@@ -28,6 +28,7 @@ function matches(row: Row, query: Row): boolean {
 function fakeDatabase(seed: Record<string, Row[]>): any {
   let idCounter = 100;
   const failNextUpdates = new Set<string>();
+  let beforeNextTransaction: (() => void) | null = null;
   const collections: Record<string, Row[]> = {};
   Object.entries(seed).forEach(([name, rows]) => { collections[name] = rows.map((row) => ({ ...row })); });
 
@@ -99,7 +100,11 @@ function fakeDatabase(seed: Record<string, Row[]>): any {
     collection,
     rows: collections,
     failNextUpdate(name: string, id: string) { failNextUpdates.add(`${name}:${id}`); },
+    beforeTransaction(work: () => void) { beforeNextTransaction = work; },
     async runTransaction(work: (transaction: { collection: typeof collection }) => Promise<any>) {
+      const before = beforeNextTransaction;
+      beforeNextTransaction = null;
+      if (before) before();
       return work({ collection });
     },
   };
@@ -260,6 +265,27 @@ const crossUser = await profileMain({ action: 'save', snapshotId: secondDraft.sn
 assert.equal(crossUser.reason, 'snapshot_not_found');
 currentOpenId = 'user-a';
 
+const portraitsBeforeConcurrentDelete = database.rows.profile_snapshots.length;
+database.beforeTransaction(() => {
+  database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => item.localId !== 'dream-3');
+  database.rows.deletion_jobs.push({
+    _id: 'job-profile-generate-race', openid: 'user-a', sourceDreamId: 'dream-3', resourceType: 'dream', status: 'pending', attempts: 1,
+  });
+  database.rows.profile_snapshots.forEach((item: Row) => {
+    if ((item.sourceRefs || []).some((ref: Row) => ref.sourceLocalId === 'dream-3')) {
+      item.stale = true;
+      item.isCurrent = false;
+    }
+  });
+  database.rows.profile_memory_state[0].currentSnapshotId = '';
+});
+const concurrentDeletePortrait = await profileMain({ action: 'generate', changeReason: '删除竞争回归' });
+assert.equal(concurrentDeletePortrait.ok, false);
+assert.equal(concurrentDeletePortrait.reason, 'sources_changed');
+assert.equal(database.rows.profile_snapshots.length, portraitsBeforeConcurrentDelete);
+assert.equal(database.rows.profile_memory_state[0].currentSnapshotId, '');
+assert.equal(database.rows.profile_snapshots.some((item: Row) => item.isCurrent && (item.sourceRefs || []).some((ref: Row) => ref.sourceLocalId === 'dream-3')), false);
+
 database.rows.share_pages.push({ _id: 'share-1', openid: 'user-a', slug: 'card-delete', sourceDreamId: 'dream-1', payload: { title: '梦卡' }, revokedAt: null });
 database.rows.generated_assets.push({ _id: 'asset-1', openid: 'user-a', sourceDreamId: 'dream-1', fileId: 'cloud://share-card-1.png' });
 database.rows.generated_assets.push({
@@ -280,7 +306,7 @@ database.rows.profile_snapshots.push({
 const saveDreamMain = loadCloudFunction('miniprogram/cloudfunctions/saveDream/index.js', cloud);
 const archiveList = await saveDreamMain({ action: 'list' });
 assert.equal(archiveList.ok, true);
-assert.equal(archiveList.dreams.length, 3);
+assert.equal(archiveList.dreams.length, 2);
 assert.equal(archiveList.dreams.some((item: Row) => item.localId === 'private-other'), false);
 assert.equal(Object.prototype.hasOwnProperty.call(archiveList.dreams[0], 'openid'), false);
 const recoveredDream = archiveList.dreams.find((item: Row) => item.localId === 'dream-1');

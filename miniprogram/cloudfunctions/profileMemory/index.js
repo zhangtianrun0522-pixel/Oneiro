@@ -183,16 +183,77 @@ function promptEvidence(sources) {
 }
 
 async function loadAllByOpenid(collectionName, openid) {
+  return loadAllByOpenidFrom(db, collectionName, openid);
+}
+
+async function loadAllByOpenidFrom(database, collectionName, openid) {
   const items = [];
   let offset = 0;
   while (true) {
-    const response = await db.collection(collectionName).where({ openid: openid })
+    const response = await database.collection(collectionName).where({ openid: openid })
       .orderBy('createdAt', 'desc').skip(offset).limit(SOURCE_PAGE_SIZE).get();
     const page = response && response.data ? response.data : [];
     items.push.apply(items, page);
     if (page.length < SOURCE_PAGE_SIZE) return items;
     offset += page.length;
   }
+}
+
+function sourceManifest(sources) {
+  function dateKey(value) {
+    const time = new Date(value || 0).getTime();
+    return Number.isFinite(time) ? new Date(time).toISOString() : '';
+  }
+  return {
+    profile: baseProfile(sources && sources.user),
+    dreams: (sources && sources.dreams || []).map(function (dream) {
+      return JSON.stringify({
+        id: text(dream && dream.id, 80), localId: text(dream && dream.localId, 80),
+        text: text(dream && dream.text, 360), symbols: cleanStrings(dream && dream.symbols, 5, 30),
+        emotion: text(dream && dream.emotion, 100), discussion: cleanStrings(dream && dream.discussion, 4, 220),
+        createdAt: dateKey(dream && dream.createdAt)
+      });
+    }).sort(),
+    notes: (sources && sources.notes || []).map(function (note) {
+      return JSON.stringify({ id: text(note && note.id, 80), text: text(note && note.text, 220), createdAt: dateKey(note && note.createdAt) });
+    }).sort()
+  };
+}
+
+function sameManifest(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function sourcesStillCurrent(transaction, openid, expected) {
+  const results = await Promise.all([
+    transaction.collection('users').where({ openid: openid }).limit(1).get(),
+    loadAllByOpenidFrom(transaction, 'dream_entries', openid),
+    loadAllByOpenidFrom(transaction, 'life_notes', openid)
+  ]);
+  const user = results[0].data && results[0].data[0] ? results[0].data[0] : null;
+  const dreams = results[1] || [];
+  const notes = results[2] || [];
+  const current = sourceManifest({
+    user: user,
+    dreams: dreams.map(function (dream) {
+      const result = dream.result || {};
+      return {
+        id: text(dream._id || dream.localId, 80), localId: text(dream.localId, 80), text: text(dream.dreamText, 360),
+        symbols: cleanStrings(dream.symbols || result.symbols, 5, 30), emotion: text(dream.emotionalWeather || result.emotional_weather, 100),
+        discussion: discussionTexts(dream), createdAt: dream.createdAt || null
+      };
+    }),
+    notes: notes.map(function (note) { return { id: text(note._id, 80), text: text(note.text, 220), createdAt: note.createdAt || null }; })
+  });
+  if (!sameManifest(expected, current) || dreams.some(function (dream) { return dream.deletionPending === true; })) return false;
+
+  const sourceDreamIds = expected.dreams.map(function (entry) {
+    try { return text(JSON.parse(entry).localId, 80); } catch (error) { return ''; }
+  }).filter(Boolean);
+  const deletionChecks = await Promise.all(sourceDreamIds.map(function (localId) {
+    return transaction.collection('deletion_jobs').where({ openid: openid, sourceDreamId: localId }).limit(1).get();
+  }));
+  return !deletionChecks.some(function (result) { return result.data && result.data.length; });
 }
 
 async function loadSources(openid) {
@@ -433,11 +494,15 @@ exports.main = async function (event) {
 
     if (action === 'generate') {
       const sources = await loadSources(openid);
+      const expectedSources = sourceManifest(sources);
       const generated = await generateObservation(sources);
       const now = new Date();
       const observation = generated.observation;
       const requestedReason = text(event && event.changeReason, 220);
       const created = await runAtomic(async function (transaction) {
+        if (!await sourcesStillCurrent(transaction, openid, expectedSources)) {
+          return { sourceChanged: true };
+        }
         const states = await transaction.collection('profile_memory_state').where({ openid: openid }).limit(1).get();
         const state = states.data && states.data[0];
         let version = state ? Number(state.nextVersion || 1) : 1;
@@ -481,6 +546,9 @@ exports.main = async function (event) {
         }
         return snapshot;
       });
+      if (created && created.sourceChanged) {
+        return { ok: false, reason: 'sources_changed', retryable: true };
+      }
       const snapshot = await findOwned(openid, created._id);
       return { ok: true, snapshot: await decorateSnapshot(openid, snapshot), provider: generated.provider, fallback: generated.fallback, providerError: generated.error || '' };
     }
