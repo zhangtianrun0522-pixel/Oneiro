@@ -5,7 +5,7 @@
   border-top: 1rpx solid rgba(255, 255, 255, 0.07);
   border-bottom: 1rpx solid rgba(255, 255, 255, 0.07);
   color: rgba(255, 255, 255, 0.42);
-  font-size: 24rpx;
+  font-size: var(--fs-aux);
   line-height: 1.75;
 }
 
@@ -28,11 +28,11 @@
 
 .supporting-section .memory-summary {
   margin-top: 14rpx;
-  font-size: 22rpx;
+  font-size: var(--fs-aux);
 }
 
 .supporting-section .memory-kicker {
-  font-size: 15rpx;
+  font-size: var(--fs-label);
 }
 
 .fact-item {
@@ -48,16 +48,16 @@
   flex: 1;
   min-width: 0;
   color: rgba(255, 255, 255, 0.58);
-  font-size: 23rpx;
+  font-size: var(--fs-aux);
   line-height: 1.7;
 }
 
 .fact-actions {
   display: flex;
   flex: 0 0 auto;
-  gap: 18rpx;
+  gap: 26rpx;
   color: rgba(202, 177, 117, 0.58);
-  font-size: 19rpx;
+  font-size: var(--fs-label);
   line-height: 1.7;
 }
 
@@ -85,7 +85,7 @@
 
 .memory-kicker {
   color: rgba(159, 183, 201, 0.42);
-  font-size: 17rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 4rpx;
 }
@@ -100,14 +100,14 @@
 .memory-count,
 .portrait-version {
   color: rgba(202, 177, 117, 0.72);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 2rpx;
 }
 
 .portrait-focus-label {
   color: rgba(202, 177, 117, 0.72);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
 }
 
@@ -118,11 +118,9 @@
   line-height: 1.75;
 }
 
-.monthly-label,
-.portrait-status,
-.history-title {
+.portrait-status {
   color: rgba(202, 177, 117, 0.58);
-  font-size: 18rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 2rpx;
 }
@@ -156,7 +154,7 @@
   display: block;
   margin-top: 12rpx;
   color: rgba(255, 255, 255, 0.42);
-  font-size: 22rpx;
+  font-size: var(--fs-aux);
   line-height: 1.7;
 }
 
@@ -171,7 +169,7 @@
 .portrait-note {
   margin-top: 16rpx;
   color: rgba(255, 255, 255, 0.32);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   line-height: 1.65;
 }
 
@@ -196,35 +194,36 @@
   margin-top: 22rpx;
 }
 
+/* 方正、克制的纸本语言：内容区按钮不用胶囊圆角 */
 .portrait-primary,
 .portrait-secondary,
-.portrait-link,
 .portrait-generate {
-  width: auto;
+  width: auto !important;
+  min-height: var(--tap-min);
   margin: 0;
-  padding: 12rpx 18rpx;
-  border-radius: 999rpx;
-  font-size: 19rpx;
-  line-height: 1.5;
+  padding: 0 26rpx;
+  border-radius: 2rpx;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
 }
 
-.portrait-secondary,
+/* 暂停用于解读：降为文字操作，不再是一颗按钮 */
 .portrait-link {
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
-  background: transparent;
-  color: rgba(255, 255, 255, 0.56);
+  width: auto !important;
+  min-height: var(--tap-min);
+  margin: 0;
+  padding: 0 4rpx;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  font-size: var(--fs-label);
+  line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
-.portrait-link {
-  margin-top: 22rpx;
-}
-
-.portrait-generate {
-  margin-top: 24rpx;
-  border: 1rpx solid rgba(159, 183, 201, 0.22);
-  background: rgba(159, 183, 201, 0.1);
-  color: rgba(255, 255, 255, 0.7);
-}
+.portrait-generate { margin-top: 24rpx; }
 
 .portrait-primary::after,
 .portrait-secondary::after,
@@ -241,12 +240,14 @@
 
 .portrait-history-toggle {
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  min-height: var(--tap-min);
   margin-top: 26rpx;
   padding-top: 22rpx;
   border-top: 1rpx solid rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.38);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
 }
 
 .history-item {
@@ -256,7 +257,7 @@
   gap: 16rpx;
   margin-top: 14rpx;
   color: rgba(255, 255, 255, 0.34);
-  font-size: 19rpx;
+  font-size: var(--fs-label);
 }
 
 .history-copy {
@@ -266,40 +267,41 @@
   gap: 14rpx;
 }
 
+/* 历史版本回溯：同样降为文字操作 */
 .history-restore {
   flex: 0 0 auto;
+  width: auto !important;
+  min-height: var(--tap-min);
   margin: 0;
-  padding: 4rpx 14rpx;
-  border: 1rpx solid rgba(202, 177, 117, 0.18);
-  border-radius: 999rpx;
+  padding: 0 4rpx;
+  border: 0;
+  border-radius: 0;
   background: transparent;
-  color: rgba(202, 177, 117, 0.62);
-  font-size: 18rpx;
-  line-height: 1.5;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
 .history-restore::after {
   border: 0;
 }
 
-.form-section-title {
-  margin-top: 44rpx;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 30rpx;
-  font-weight: 650;
-}
-
+/* .clear-field 提到最小触控高度后，flex-end 会让它比标签高出一截，
+   改为居中对齐 */
 .field-heading {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
 }
 
 .clear-field {
-  height: 54rpx;
-  color: rgba(219, 132, 124, 0.62);
-  font-size: 20rpx;
-  line-height: 54rpx;
+  width: auto !important;
+  min-height: var(--tap-min);
+  color: var(--cinnabar-ink);
+  font-size: var(--fs-label);
+  line-height: var(--tap-min);
 }
 
 .picker-field {
@@ -311,7 +313,7 @@
   display: block;
   margin-top: 22rpx;
   color: rgba(255, 255, 255, 0.28);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   line-height: 1.6;
   text-align: center;
 }
@@ -321,13 +323,13 @@
 .memory-section { border: 0; border-radius: 0; background: #fbf6ec; }
 .portrait-section { border-top: 2rpx solid rgba(184, 134, 59, 0.62); background: #fbf6ec; }
 .facts-section { background: transparent; }
-.memory-kicker { color: rgba(33, 29, 23, 0.45); }
+.memory-kicker { color: var(--ink-55); }
 .memory-title { color: #211d17; }
-.memory-count, .portrait-version, .portrait-focus-label { color: #b8863b; }
+.memory-count, .portrait-version, .portrait-focus-label { color: var(--gold-ink); }
 .memory-summary { color: rgba(33, 29, 23, 0.68); }
 .fact-item { border-top-color: rgba(33, 29, 23, 0.1); }
 .fact-copy { color: rgba(33, 29, 23, 0.72); }
-.fact-actions { color: #b8863b; }
+.fact-actions { color: var(--gold-ink); }
 .portrait-card { border-color: rgba(33, 29, 23, 0.13); border-radius: 0; background: transparent; }
 .portrait-feature { border-color: rgba(184, 134, 59, 0.42); background: rgba(242, 236, 223, 0.52); }
 .portrait-empty-title { color: rgba(33, 29, 23, 0.74); }
@@ -335,17 +337,17 @@
 .portrait-summary { color: #211d17; }
 .portrait-reason, .portrait-note { color: rgba(33, 29, 23, 0.44); }
 .portrait-editor { border-color: rgba(33, 29, 23, 0.2); border-radius: 0; background: #fdfaf2; color: #211d17; }
-.portrait-primary { background: #c1443b; color: #fbf6ec; }
-.portrait-secondary, .portrait-link { border-color: rgba(33, 29, 23, 0.18); background: transparent; color: rgba(33, 29, 23, 0.66); }
+.portrait-primary { border: 1rpx solid var(--ink); background: var(--ink); color: var(--paper); }
+.portrait-secondary { border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
+.portrait-link { color: var(--ink-55); }
 .portrait-secondary.quiet, .portrait-link { color: rgba(33, 29, 23, 0.54); }
-.portrait-generate { border-color: rgba(33, 29, 23, 0.2); background: transparent; color: rgba(33, 29, 23, 0.72); }
+.portrait-generate { border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
 .portrait-history, .portrait-history-toggle { border-top-color: rgba(33, 29, 23, 0.1); }
 .portrait-history-toggle, .history-item { color: rgba(33, 29, 23, 0.48); }
 .history-restore { border-color: rgba(184, 134, 59, 0.36); border-radius: 0; color: #b8863b; }
-.form-section-title { color: #211d17; }
 .clear-field { color: #c1443b; }
 .privacy-copy { color: rgba(33, 29, 23, 0.42); }
-.profile-screen { padding-bottom: 148rpx; }
+.profile-screen { padding-bottom: calc(168rpx + env(safe-area-inset-bottom)); }
 
 .profile-revisit {
   margin-top: 32rpx;
@@ -450,4 +452,25 @@
 .profile-revisit-skip::after,
 .profile-revisit-send::after {
   border: 0;
+}
+
+/* ── 页面分为两个明确分区 ── */
+.zone-title {
+  display: block;
+  margin: 56rpx 0 0;
+  padding-bottom: 16rpx;
+  border-bottom: 2rpx solid var(--ink);
+  color: var(--ink);
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 34rpx;
+  font-weight: 600;
+  letter-spacing: 2rpx;
+}
+
+.zone-note {
+  display: block;
+  margin-top: 14rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
+  line-height: 1.6;
 }

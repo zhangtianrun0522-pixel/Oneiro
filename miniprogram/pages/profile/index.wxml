@@ -8,6 +8,8 @@
   <text class="title">我的资料</text>
   <text class="profile-intro">Oneiro 会跟着你的梦、对话和补充慢慢更新这段理解。它是可修改的当下观察，不是对你的定义。</text>
 
+  <text class="zone-title">Oneiro 对我的理解</text>
+
   <view wx:if="{{revisit}}" class="profile-revisit">
     <text class="profile-revisit-kicker">YESTERDAY'S DREAM</text>
     <text class="profile-revisit-title">昨天的梦「{{revisit.title}}」</text>
@@ -116,7 +118,8 @@
     </view>
   </view>
 
-  <text class="form-section-title">基础资料 · 可选</text>
+  <text class="zone-title">我的基础资料</text>
+  <text class="zone-note">全部可选，随时可以修改或清空。</text>
 
   <text class="field-label">称呼 / 可选</text>
   <input class="field" value="{{profile.nickname}}" data-key="nickname" bindinput="onInput" maxlength="30" placeholder="怎么称呼你" placeholder-class="muted" />
