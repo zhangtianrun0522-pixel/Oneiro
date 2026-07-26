@@ -1,5 +1,6 @@
 var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
+var tabNav = require('../../utils/tabNav');
 
 function fallbackPayload() {
   return {
@@ -45,6 +46,6 @@ Page({
 
   startDream: function () {
     analytics.trackEvent('dream_start', { source: 'share_card' });
-    wx.navigateTo({ url: '/pages/home/index?fromShare=1' });
+    tabNav.switchTab('pages/home/index', { fromShare: true });
   }
 });

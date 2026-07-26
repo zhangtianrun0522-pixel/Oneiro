@@ -72,8 +72,3 @@
   <button class="primary-button" bindtap="newDream">记下新的梦</button>
 </view>
 
-<view class="bottom-nav">
-  <button class="bottom-nav-item" bindtap="newDream">写梦</button>
-  <button class="bottom-nav-item active">梦册</button>
-  <button class="bottom-nav-item" bindtap="openProfile">我</button>
-</view>

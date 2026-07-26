@@ -152,8 +152,3 @@
   <text class="privacy-copy">出生资料完全自愿，可随时修改或清空；命理视角会保留，但不会成为记录和基础解读的门槛。</text>
 </view>
 
-<view class="bottom-nav">
-  <button class="bottom-nav-item" bindtap="newDream">写梦</button>
-  <button class="bottom-nav-item" bindtap="openArchive">梦册</button>
-  <button class="bottom-nav-item active">我</button>
-</view>

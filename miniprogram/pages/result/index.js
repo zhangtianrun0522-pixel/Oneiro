@@ -2,6 +2,7 @@ const { acceptanceDreamResult, acceptanceDreamText } = require('../../utils/acce
 const analytics = require('../../utils/analytics');
 const cloudBase = require('../../utils/cloudBase');
 const { buildLocalDreamResult } = require('../../utils/localDreamOracle');
+var tabNav = require('../../utils/tabNav');
 
 var CARD_WIDTH = 900;
 var CARD_HEIGHT = 1200;
@@ -629,7 +630,7 @@ Page({
     if (this.redirectingHome) return;
     this.redirectingHome = true;
     this.setData({ entryReady: false });
-    wx.reLaunch({ url: '/pages/home/index' });
+    tabNav.switchTab('pages/home/index');
   },
 
   restoreSavedDreamImage: function (dream) {
@@ -1026,7 +1027,7 @@ Page({
   openMilestoneArchive: function () {
     var milestone = this.data.dream.result.symbol_milestones && this.data.dream.result.symbol_milestones[0];
     if (!milestone) return;
-    wx.navigateTo({ url: '/pages/archive/index?symbolFilter=' + encodeURIComponent(milestone.symbol) });
+    tabNav.switchTab('pages/archive/index', { symbolFilter: milestone.symbol });
   },
 
   correctMilestoneSymbol: function () {
@@ -1094,7 +1095,7 @@ Page({
           }
           analytics.trackEvent('dream_deleted', { dreamId: dream.id, cloudDeleted: canDeleteLocally });
           that.setData({ dreamDeleted: true });
-          wx.navigateTo({ url: '/pages/archive/index' });
+          tabNav.switchTab('pages/archive/index');
         });
       }
     });
@@ -1346,6 +1347,6 @@ Page({
 
   openArchive: function () {
     analytics.trackEvent('archive_open', { source: 'result' });
-    wx.navigateTo({ url: '/pages/archive/index' });
+    tabNav.switchTab('pages/archive/index');
   }
 });

@@ -1,5 +1,6 @@
 var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
+var tabNav = require('../../utils/tabNav');
 var recorderManager = wx.getRecorderManager();
 var recorderListenersBound = false;
 var activeRecorderPage = null;
@@ -27,7 +28,8 @@ Page({
   },
 
   onLoad: function (options) {
-    var fromShare = options && options.fromShare === '1';
+    // 从分享页进来时走的是 switchTab，参数经 tabNav 暂存，这里兼容两种入口
+    var fromShare = !!(options && options.fromShare === '1');
     this.setData({ fromShare: fromShare });
     analytics.trackEvent(fromShare ? 'share_landing_view' : 'home_view', {});
     activeRecorderPage = this;
@@ -57,6 +59,11 @@ Page({
   },
 
   onShow: function () {
+    var tabParams = tabNav.takeParams('pages/home/index');
+    if (tabParams.fromShare) {
+      this.setData({ fromShare: true });
+      analytics.trackEvent('share_landing_view', {});
+    }
     var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
     this.setData({ recentDreams: archive.slice().sort(function (left, right) {
       return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
@@ -243,12 +250,12 @@ Page({
 
   openArchive: function () {
     analytics.trackEvent('archive_open', { source: 'home' });
-    wx.navigateTo({ url: '/pages/archive/index' });
+    tabNav.switchTab('pages/archive/index');
   },
 
   openProfile: function () {
     analytics.trackEvent('profile_open', { source: 'home' });
-    wx.navigateTo({ url: '/pages/profile/index' });
+    tabNav.switchTab('pages/profile/index');
   },
 
   openRecentDream: function (event) {
@@ -258,9 +265,6 @@ Page({
     if (!dream) return;
     getApp().globalData.currentDream = dream;
     wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(id) });
-  },
-
-  goHome: function () {
-    wx.reLaunch({ url: '/pages/home/index' });
   }
+
 });

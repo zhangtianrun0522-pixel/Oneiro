@@ -68,8 +68,3 @@
   </view>
 </view>
 
-<view class="bottom-nav">
-  <button class="bottom-nav-item active" bindtap="goHome">写梦</button>
-  <button class="bottom-nav-item" bindtap="openArchive">梦册</button>
-  <button class="bottom-nav-item" bindtap="openProfile">我</button>
-</view>

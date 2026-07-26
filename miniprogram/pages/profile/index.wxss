@@ -347,7 +347,7 @@
 .history-restore { border-color: rgba(184, 134, 59, 0.36); border-radius: 0; color: #b8863b; }
 .clear-field { color: #c1443b; }
 .privacy-copy { color: rgba(33, 29, 23, 0.42); }
-.profile-screen { padding-bottom: calc(168rpx + env(safe-area-inset-bottom)); }
+.profile-screen { padding-bottom: calc(64rpx + env(safe-area-inset-bottom)); }
 
 .profile-revisit {
   margin-top: 32rpx;

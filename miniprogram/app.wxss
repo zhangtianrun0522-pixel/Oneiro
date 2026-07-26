@@ -53,16 +53,12 @@ button::after {
   border: 0;
 }
 
-/* 底部固定导航高度 ≈ 82rpx + 安全区，这里统一预留，页面不要再单独覆写 */
+/* 底部导航已改用微信原生 tabBar，由框架自行预留高度与安全区，
+   页面只需留常规的收尾留白 */
 .screen {
   min-height: 100vh;
-  padding: 56rpx 40rpx calc(168rpx + env(safe-area-inset-bottom));
+  padding: 56rpx 40rpx calc(64rpx + env(safe-area-inset-bottom));
   background: var(--paper);
-}
-
-/* 没有底部导航的页面用这个，省掉多余留白 */
-.screen.no-nav {
-  padding-bottom: calc(64rpx + env(safe-area-inset-bottom));
 }
 
 .brand {
@@ -156,45 +152,5 @@ button::after {
   color: rgba(33, 29, 23, 0.46);
 }
 
-.bottom-nav {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 20;
-  display: flex;
-  justify-content: space-around;
-  padding: 18rpx 36rpx calc(18rpx + env(safe-area-inset-bottom));
-  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
-  background: rgba(242, 236, 223, 0.96);
-  backdrop-filter: blur(12px);
-}
 
-/* 主导航：整块达到最小触控高度，文字提到 22rpx 并加深 */
-.bottom-nav-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 140rpx;
-  min-height: var(--tap-min);
-  padding: 0;
-  color: var(--ink-55);
-  font-size: var(--fs-label);
-  letter-spacing: 1rpx;
-}
 
-.bottom-nav-item.active {
-  color: var(--ink);
-  font-weight: 700;
-}
-
-.bottom-nav-item.active::after {
-  position: absolute;
-  right: 34rpx;
-  bottom: 12rpx;
-  left: 34rpx;
-  height: 3rpx;
-  background: var(--cinnabar);
-  content: "";
-}

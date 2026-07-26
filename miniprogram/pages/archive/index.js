@@ -2,6 +2,7 @@ var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
 var dreamArtifacts = require('../../utils/dreamArtifacts');
 var dreamMemory = require('../../utils/dreamMemory');
+var tabNav = require('../../utils/tabNav');
 
 function dateLabel(value) {
   var date = new Date(value);
@@ -118,6 +119,13 @@ Page({
 
   onShow: function () {
     var that = this;
+    // switchTab 不能带查询串，筛选条件经 tabNav 暂存传入
+    var tabParams = tabNav.takeParams('pages/archive/index');
+    if (tabParams.symbolFilter) {
+      this.options = Object.assign({}, this.options, {
+        symbolFilter: encodeURIComponent(tabParams.symbolFilter)
+      });
+    }
     this._archiveLoadToken = (this._archiveLoadToken || 0) + 1;
     var loadToken = this._archiveLoadToken;
     var savedArchive = wx.getStorageSync('oneiro:dreamArchive') || [];
@@ -254,13 +262,7 @@ Page({
   newDream: function () {
     analytics.trackEvent('dream_start', { source: 'archive' });
     wx.navigateTo({ url: '/pages/new-dream/index' });
-  },
-
-  goHome: function () {
-    wx.reLaunch({ url: '/pages/home/index' });
-  },
-
-  openProfile: function () {
-    wx.navigateTo({ url: '/pages/profile/index' });
   }
+
+
 });

@@ -1,6 +1,7 @@
 var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
 var dreamMemory = require('../../utils/dreamMemory');
+var tabNav = require('../../utils/tabNav');
 
 var PROFILE_MEMORY_KEY = 'oneiro:profileMemory';
 
@@ -521,15 +522,9 @@ Page({
     });
   },
 
-  goHome: function () {
-    wx.reLaunch({ url: '/pages/home/index' });
-  },
 
   newDream: function () {
     wx.navigateTo({ url: '/pages/new-dream/index' });
-  },
-
-  openArchive: function () {
-    wx.navigateTo({ url: '/pages/archive/index' });
   }
+
 });

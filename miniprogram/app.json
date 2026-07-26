@@ -18,6 +18,17 @@
     "navigationBarTitleText": "ONEIRO"
   },
   "style": "v2",
+  "tabBar": {
+    "color": "#8a8378",
+    "selectedColor": "#211d17",
+    "backgroundColor": "#f2ecdf",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "写梦" },
+      { "pagePath": "pages/archive/index", "text": "梦册" },
+      { "pagePath": "pages/profile/index", "text": "我" }
+    ]
+  },
   "permission": {
     "scope.record": {
       "desc": "用于语音记梦"
