@@ -942,20 +942,44 @@
 .result-screen { padding: 36rpx 40rpx 84rpx; background: #f2ecdf; }
 .dream-card-stage { height: 840rpx; }
 .dream-card-face { border-radius: 4rpx; box-shadow: 0 24rpx 56rpx rgba(33, 29, 23, 0.14); }
-.dream-card-back { padding: 42rpx 38rpx; background-color: #211d17; background-image: repeating-linear-gradient(135deg, rgba(184, 134, 59, 0.06) 0, rgba(184, 134, 59, 0.06) 1rpx, transparent 1rpx, transparent 13rpx); color: #f2ecdf; }
-.dream-card-back::before { position: absolute; inset: 16rpx; border: 1rpx solid rgba(184, 134, 59, 0.32); content: ''; }
-.back-title, .back-insight, .back-label, .back-symbols, .back-question { position: relative; z-index: 1; text-align: center; }
-.back-title { margin-top: 116rpx; color: #f2ecdf; font-size: 42rpx; font-weight: 500; letter-spacing: 2rpx; }
-.back-insight { margin-top: 22rpx; color: rgba(242, 236, 223, 0.66); font-size: 25rpx; line-height: 1.75; }
-.back-divider { position: relative; z-index: 1; margin-top: 36rpx; }
+/* 卡背：稳定的纵向结构，不再用绝对定位。
+   标题 → 核心观察 → 分隔线 → 梦中线索 → 留给用户的问题。
+   内容短时问题被 margin-top:auto 推到底部，内容长时自然向下增长并内部滚动。
+   （旧实现把 .back-question 设成 absolute + bottom，而覆盖块又统一改成
+     relative，导致 bottom 变成"上移 24pt"，把问题压在梦中线索上。） */
+.dream-card-back {
+  display: flex;
+  flex-direction: column;
+  padding: 44rpx 38rpx;
+  overflow-y: auto;
+  background-color: #211d17;
+  background-image: repeating-linear-gradient(135deg, rgba(184, 134, 59, 0.06) 0, rgba(184, 134, 59, 0.06) 1rpx, transparent 1rpx, transparent 13rpx);
+  color: #f2ecdf;
+}
+.dream-card-back::before { position: absolute; inset: 16rpx; border: 1rpx solid rgba(184, 134, 59, 0.32); content: ''; pointer-events: none; }
+.back-title, .back-insight, .back-label, .back-symbols, .back-question { position: relative; z-index: 1; flex: 0 0 auto; text-align: center; }
+/* 与 .back-question 各取一个 auto，剩余空间在"上方留白"和"问题之前"平均分配，
+   避免上半拥挤、下半一大片空的失衡 */
+.back-title { margin-top: auto; padding-top: 20rpx; color: #f2ecdf; font-size: 42rpx; font-weight: 500; letter-spacing: 2rpx; }
+.back-insight { margin-top: 24rpx; color: rgba(242, 236, 223, 0.78); font-size: 26rpx; line-height: 1.75; }
+.back-divider { position: relative; z-index: 1; flex: 0 0 auto; margin-top: 32rpx; }
 .back-divider::before, .back-divider::after { flex: 1; height: 1rpx; background: rgba(184, 134, 59, 0.34); content: ''; }
 .back-divider::after { width: auto; height: 1rpx; margin-left: 0; }
 .back-divider > view { width: 9rpx; height: 9rpx; margin: 0 18rpx; flex: 0 0 9rpx; transform: rotate(45deg); background: #b8863b; }
-.back-label { margin-top: 30rpx; color: #b8863b; font-size: 18rpx; letter-spacing: 4rpx; }
-.back-symbols { justify-content: center; gap: 12rpx; margin-top: 18rpx; color: rgba(242, 236, 223, 0.84); font-size: 22rpx; }
+.back-label { margin-top: 28rpx; color: #d2a459; font-size: var(--fs-label); letter-spacing: 4rpx; }
+/* margin-bottom 保证内容再长也有呼吸区（flex 子项之间外边距不合并） */
+.back-symbols { justify-content: center; gap: 12rpx; margin-top: 18rpx; margin-bottom: 34rpx; color: rgba(242, 236, 223, 0.9); font-size: var(--fs-aux); }
 .back-symbols text { padding: 8rpx 14rpx; border: 1rpx solid rgba(184, 134, 59, 0.4); }
 .back-symbols text:not(:last-child)::after { display: none; }
-.back-question { right: 38rpx; bottom: 48rpx; left: 38rpx; padding-top: 22rpx; border-top: 1rpx solid rgba(184, 134, 59, 0.24); color: rgba(242, 236, 223, 0.64); font-size: 24rpx; font-style: italic; line-height: 1.7; }
+.back-question {
+  margin-top: auto;          /* 有余量时贴底，内容长时自然接在线索之后 */
+  padding-top: 24rpx;
+  border-top: 1rpx solid rgba(184, 134, 59, 0.24);
+  color: rgba(242, 236, 223, 0.74);
+  font-size: var(--fs-aux);
+  font-style: italic;
+  line-height: 1.7;
+}
 .card-flip-hint, .card-image-notice, .share-ready { color: rgba(33, 29, 23, 0.42); }
 .image-retry { color: #b8863b; }
 .milestone-pill { border-color: rgba(184, 134, 59, 0.34); border-radius: 2rpx; background: #fbf6ec; }
