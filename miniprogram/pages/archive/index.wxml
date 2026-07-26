@@ -11,31 +11,33 @@
     <text class="filter-clear" bindtap="clearFilter">清除筛选</text>
   </view>
   <text wx:if="{{hasArchive}}" class="deck-count">已记下 {{archiveCount}} 个梦</text>
-  <view wx:if="{{insights.eligible}}" class="insight-panel">
-    <text class="insight-label">阶段观察</text>
-    <text class="insight-summary">{{insights.stageSummary}}</text>
-    <view wx:if="{{insights.recurringPeople.length}}" class="insight-row">
-      <text class="insight-key">人物</text>
-      <text wx:for="{{insights.recurringPeople}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+
+  <!-- 阶段观察 / 本月主牌 / 阶段原型合并为一张「本月观察」，
+       让梦境时间轴尽早出现，而不是被三张卡连续推到屏幕外 -->
+  <view wx:if="{{insights.eligible || insights.monthlyCard.eligible || archetypeEligible}}" class="month-observation">
+    <text class="mo-label">本月观察{{insights.monthlyCard.eligible ? ' · ' + insights.monthlyCard.month : ''}}</text>
+    <text wx:if="{{insights.monthlyCard.eligible}}" class="mo-title">{{insights.monthlyCard.title}}</text>
+    <text class="mo-copy">{{insights.monthlyCard.eligible ? insights.monthlyCard.insight : insights.stageSummary}}</text>
+
+    <view wx:if="{{insights.eligible}}" class="mo-tags">
+      <view wx:if="{{insights.recurringEmotions.length}}" class="insight-row">
+        <text class="insight-key">情绪</text>
+        <text wx:for="{{insights.recurringEmotions}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+      </view>
+      <view wx:if="{{insights.recurringPlaces.length}}" class="insight-row">
+        <text class="insight-key">场景</text>
+        <text wx:for="{{insights.recurringPlaces}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+      </view>
+      <view wx:if="{{insights.recurringPeople.length}}" class="insight-row">
+        <text class="insight-key">人物</text>
+        <text wx:for="{{insights.recurringPeople}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+      </view>
     </view>
-    <view wx:if="{{insights.recurringEmotions.length}}" class="insight-row">
-      <text class="insight-key">情绪</text>
-      <text wx:for="{{insights.recurringEmotions}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+
+    <view wx:if="{{archetypeEligible}}" class="mo-archetype" bindtap="openArchetypeCard">
+      <text class="mo-archetype-copy">阶段梦境原型 · {{archetype.label}}</text>
+      <text class="mo-archetype-arrow">解锁分享卡 →</text>
     </view>
-    <view wx:if="{{insights.recurringPlaces.length}}" class="insight-row">
-      <text class="insight-key">场景</text>
-      <text wx:for="{{insights.recurringPlaces}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
-    </view>
-  </view>
-  <view wx:if="{{insights.monthlyCard.eligible}}" class="month-main-card">
-    <text class="month-card-label">本月主牌 · {{insights.monthlyCard.month}}</text>
-    <text class="month-card-title">{{insights.monthlyCard.title}}</text>
-    <text class="month-card-copy">{{insights.monthlyCard.insight}}</text>
-  </view>
-  <view wx:if="{{archetypeEligible}}" class="archetype-banner" bindtap="openArchetypeCard">
-    <text class="archetype-banner-label">阶段梦境原型</text>
-    <text class="archetype-banner-title">{{archetype.label}}</text>
-    <text class="archetype-banner-arrow">解锁分享卡 →</text>
   </view>
 
   <view wx:if="{{!hasArchive}}" class="empty">

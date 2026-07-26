@@ -143,37 +143,6 @@
   letter-spacing: 5rpx;
 }
 
-.insight-panel {
-  margin-top: 24rpx;
-  padding: 28rpx;
-  border: 1rpx solid rgba(159, 183, 201, 0.12);
-  border-radius: 24rpx;
-  background: rgba(159, 183, 201, 0.055);
-}
-
-.insight-label,
-.insight-summary,
-.month-card-label,
-.month-card-title,
-.month-card-copy {
-  display: block;
-}
-
-.insight-label,
-.month-card-label {
-  color: rgba(159, 183, 201, 0.48);
-  font-size: 17rpx;
-  font-weight: 800;
-  letter-spacing: 4rpx;
-}
-
-.insight-summary {
-  margin-top: 14rpx;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 24rpx;
-  line-height: 1.75;
-}
-
 .insight-row {
   display: flex;
   flex-wrap: wrap;
@@ -196,28 +165,6 @@
   font-size: 18rpx;
 }
 
-.month-main-card {
-  margin-top: 24rpx;
-  padding: 30rpx;
-  border-left: 4rpx solid rgba(202, 177, 117, 0.64);
-  background: linear-gradient(135deg, rgba(202, 177, 117, 0.11), rgba(39, 48, 73, 0.2));
-}
-
-.month-card-title {
-  margin-top: 12rpx;
-  color: rgba(239, 228, 200, 0.9);
-  font-size: 36rpx;
-  font-weight: 650;
-  letter-spacing: 7rpx;
-}
-
-.month-card-copy {
-  margin-top: 14rpx;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 22rpx;
-  line-height: 1.7;
-}
-
 .filter-banner {
   display: flex;
   align-items: center;
@@ -235,38 +182,6 @@
   flex: 0 0 auto;
   color: rgba(202, 177, 117, 0.8);
   font-size: 20rpx;
-}
-
-.archetype-banner {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  margin-top: 24rpx;
-  padding: 24rpx 22rpx;
-  border-left: 4rpx solid rgba(202, 177, 117, 0.62);
-  background: linear-gradient(90deg, rgba(39, 48, 73, 0.34), rgba(202, 177, 117, 0.05));
-  box-shadow: inset 0 0 0 1rpx rgba(202, 177, 117, 0.08);
-}
-
-.archetype-banner-label {
-  flex: 0 0 auto;
-  color: rgba(159, 183, 201, 0.54);
-  font-size: 19rpx;
-  letter-spacing: 2rpx;
-}
-
-.archetype-banner-title {
-  color: rgba(239, 228, 200, 0.9);
-  font-size: 31rpx;
-  font-weight: 700;
-  letter-spacing: 5rpx;
-}
-
-.archetype-banner-arrow {
-  margin-left: auto;
-  color: rgba(202, 177, 117, 0.58);
-  font-size: 19rpx;
-  white-space: nowrap;
 }
 
 .archive-title {
@@ -320,20 +235,61 @@
 .timeline-node.is-key-node { border-color: #b8863b; background: #b8863b; box-shadow: 0 0 0 5rpx rgba(184, 134, 59, 0.12); }
 .archive-thumb { border: 0; border-radius: 0; }
 .timeline-entry.is-key-moment .archive-title, .archive-title { color: #211d17; font-size: 28rpx; font-weight: 600; letter-spacing: 1rpx; }
-.archive-weather { color: rgba(33, 29, 23, 0.52); }
-.archive-date, .timeline-copy .archive-date { color: rgba(33, 29, 23, 0.4); }
+.archive-weather { color: var(--ink-70); }
+.archive-date, .timeline-copy .archive-date { color: var(--ink-55); font-size: var(--fs-label); }
 .timeline-repeat { color: rgba(184, 134, 59, 0.86); }
-.deck-count { color: rgba(33, 29, 23, 0.48); }
-.insight-panel { border: 0; border-radius: 0; background: #fbf6ec; }
-.insight-label, .month-card-label { color: rgba(33, 29, 23, 0.46); }
-.insight-summary { color: rgba(33, 29, 23, 0.7); }
-.insight-key { color: rgba(184, 134, 59, 0.9); }
-.insight-value { border: 1rpx solid rgba(33, 29, 23, 0.14); border-radius: 0; background: transparent; color: rgba(33, 29, 23, 0.62); }
-.month-main-card { border: 1rpx solid rgba(184, 134, 59, 0.48); border-left-width: 1rpx; background: transparent; }
-.month-card-title { color: #211d17; }
-.month-card-copy { color: rgba(33, 29, 23, 0.62); }
+.deck-count { color: var(--ink-55); font-size: var(--fs-label); }
+.insight-key { color: var(--gold-ink); font-size: var(--fs-label); }
+.insight-value { border: 1rpx solid rgba(33, 29, 23, 0.14); border-radius: 0; background: transparent; color: var(--ink-70); font-size: var(--fs-label); }
 .filter-banner { border-left-color: rgba(184, 134, 59, 0.54); background: #fbf6ec; color: rgba(33, 29, 23, 0.62); }
 .filter-clear, .archetype-banner-arrow { color: #b8863b; }
-.archetype-banner { border: 1rpx solid rgba(184, 134, 59, 0.42); background: transparent; box-shadow: none; }
-.archetype-banner-label { color: rgba(33, 29, 23, 0.48); }
-.archetype-banner-title { color: #211d17; }
+
+/* ── 本月观察：合并原「阶段观察 / 本月主牌 / 阶段原型」三张卡 ── */
+.month-observation {
+  margin-top: 28rpx;
+  padding: 30rpx 28rpx;
+  border-left: 3rpx solid var(--gold-line);
+  background: var(--paper-raised);
+}
+
+.mo-label {
+  display: block;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  font-weight: 800;
+  letter-spacing: 3rpx;
+}
+
+.mo-title {
+  display: block;
+  margin-top: 14rpx;
+  color: var(--ink);
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 40rpx;
+  font-weight: 600;
+  letter-spacing: 2rpx;
+}
+
+.mo-copy {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--ink-70);
+  font-size: 26rpx;
+  line-height: 1.72;
+}
+
+.mo-tags { margin-top: 20rpx; }
+
+.mo-archetype {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  min-height: var(--tap-min);
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
+}
+
+.mo-archetype-copy { color: var(--ink-70); font-size: var(--fs-aux); font-weight: 700; }
+.mo-archetype-arrow { flex: 0 0 auto; color: var(--gold-ink); font-size: var(--fs-label); font-weight: 700; }
