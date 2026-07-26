@@ -1,28 +1,109 @@
+.screen {
+  min-height: 100vh;
+  padding: 60rpx 48rpx 70rpx;
+  background: #f2ecdf;
+  color: #211d17;
+}
+
+.brand {
+  margin-bottom: 78rpx;
+  color: #211d17;
+  font-size: 24rpx;
+  font-weight: 800;
+  letter-spacing: 7rpx;
+}
+
+.eyebrow {
+  color: #b8863b;
+  font-size: 18rpx;
+  font-weight: 800;
+  letter-spacing: 4rpx;
+}
+
+.title {
+  display: block;
+  margin-top: 22rpx;
+  color: #211d17;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 50rpx;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
+.copy {
+  margin-top: 24rpx;
+  color: rgba(33, 29, 23, 0.6);
+  font-size: 25rpx;
+  line-height: 1.8;
+}
+
+.capture-surface {
+  margin-top: 42rpx;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.capture-surface.has-draft {
+  background: transparent;
+}
+
+.capture-surface.is-recording {
+  background: transparent;
+}
+
+.capture-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18rpx;
+}
+
+.capture-label {
+  color: #b8863b;
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+}
+
+.capture-prompt {
+  color: rgba(33, 29, 23, 0.36);
+  font-size: 19rpx;
+}
+
 .dream-input {
   width: 100%;
-  min-height: 360rpx;
-  margin: 52rpx 0 26rpx;
-  padding: 34rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.08);
-  border-radius: 36rpx;
-  background: rgba(255, 255, 255, 0.035);
-  color: rgba(255, 255, 255, 0.76);
+  min-height: 300rpx;
+  padding: 20rpx 4rpx 12rpx;
+  border: 0;
+  background: transparent;
+  color: #211d17;
   font-size: 28rpx;
-  letter-spacing: 4rpx;
+  letter-spacing: 0;
   line-height: 1.8;
+}
+
+.capture-divider {
+  height: 1rpx;
+  margin: 4rpx 0 18rpx;
+  background: rgba(33, 29, 23, 0.1);
 }
 
 .voice-button {
   width: 100%;
-  height: 84rpx;
-  margin: 0 0 24rpx;
-  border: 1rpx solid rgba(183, 164, 255, 0.28);
-  border-radius: 42rpx;
-  background: rgba(111, 91, 157, 0.2);
-  color: rgba(238, 232, 255, 0.82);
-  font-size: 27rpx;
-  letter-spacing: 3rpx;
-  line-height: 84rpx;
+  height: 76rpx;
+  margin: 0;
+  padding: 0;
+  border: 1rpx solid rgba(184, 134, 59, 0.62);
+  border-radius: 0;
+  background: transparent;
+  color: rgba(33, 29, 23, 0.78);
+  font-size: 25rpx;
+  letter-spacing: 0;
+  line-height: 76rpx;
 }
 
 .voice-button::after {
@@ -30,9 +111,9 @@
 }
 
 .voice-button.recording {
-  border-color: rgba(226, 143, 166, 0.72);
-  background: rgba(126, 65, 91, 0.42);
-  color: rgba(255, 224, 231, 0.95);
+  border-color: #c1443b;
+  background: #c1443b;
+  color: #fbf6ec;
   animation: voice-breathing 1.5s ease-in-out infinite;
 }
 
@@ -40,34 +121,279 @@
   opacity: 0.55;
 }
 
+.voice-hint {
+  display: block;
+  margin: 12rpx 0 0;
+  color: rgba(33, 29, 23, 0.42);
+  font-size: 20rpx;
+  letter-spacing: 0;
+  text-align: center;
+}
+
 .recognizing-note {
   display: block;
-  margin: -8rpx 0 22rpx;
-  color: rgba(220, 210, 248, 0.65);
+  margin: 12rpx 0 0;
+  color: #b8863b;
   font-size: 23rpx;
-  letter-spacing: 2rpx;
+  letter-spacing: 0;
   text-align: center;
 }
 
 @keyframes voice-breathing {
   0% {
-    box-shadow: 0 0 0 0 rgba(226, 143, 166, 0.28);
+    box-shadow: 0 0 0 0 rgba(193, 68, 59, 0.22);
   }
 
   70% {
-    box-shadow: 0 0 0 18rpx rgba(226, 143, 166, 0);
+    box-shadow: 0 0 0 18rpx rgba(193, 68, 59, 0);
   }
 
   100% {
-    box-shadow: 0 0 0 0 rgba(226, 143, 166, 0);
+    box-shadow: 0 0 0 0 rgba(193, 68, 59, 0);
   }
 }
 
 .privacy-note {
   display: block;
-  margin-top: 22rpx;
-  color: rgba(255, 255, 255, 0.34);
+  margin-top: 18rpx;
+  color: rgba(33, 29, 23, 0.36);
   font-size: 20rpx;
   line-height: 1.6;
   text-align: center;
+}
+
+.analysis-overlay {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 40rpx 34rpx;
+  background: rgba(33, 29, 23, 0.58);
+}
+
+.analysis-sheet {
+  width: 100%;
+  padding: 52rpx 38rpx 42rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.14);
+  border-radius: 0;
+  background: #f2ecdf;
+  box-shadow: 0 28rpx 80rpx rgba(33, 29, 23, 0.28);
+}
+
+.analysis-orbit {
+  position: relative;
+  width: 64rpx;
+  height: 64rpx;
+  margin: 0 auto 30rpx;
+  border: 1rpx solid rgba(184, 134, 59, 0.52);
+  border-radius: 50%;
+  animation: analysis-spin 3s linear infinite;
+}
+
+.analysis-orbit::after {
+  position: absolute;
+  top: 8rpx;
+  left: 8rpx;
+  width: 46rpx;
+  height: 46rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.18);
+  border-radius: 50%;
+  content: '';
+}
+
+.analysis-orbit-dot {
+  position: absolute;
+  top: -5rpx;
+  left: 28rpx;
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 50%;
+  background: #c1443b;
+  box-shadow: 0 0 18rpx rgba(193, 68, 59, 0.42);
+}
+
+@keyframes analysis-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.analysis-eyebrow {
+  display: block;
+  color: #b8863b;
+  font-size: 17rpx;
+  font-weight: 800;
+  letter-spacing: 4rpx;
+  text-align: center;
+}
+
+.analysis-title {
+  display: block;
+  margin-top: 18rpx;
+  color: #211d17;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 38rpx;
+  letter-spacing: 1rpx;
+  text-align: center;
+}
+
+.analysis-preview {
+  display: block;
+  margin-top: 20rpx;
+  overflow: hidden;
+  color: rgba(33, 29, 23, 0.42);
+  font-size: 23rpx;
+  letter-spacing: 0;
+  line-height: 1.7;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-current {
+  margin-top: 46rpx;
+  padding: 28rpx 30rpx;
+  border-left: 3rpx solid #c1443b;
+  background: #fbf6ec;
+}
+
+.analysis-current-title {
+  display: block;
+  color: #211d17;
+  font-size: 27rpx;
+  letter-spacing: 0;
+}
+
+.analysis-current-detail {
+  display: block;
+  margin-top: 10rpx;
+  color: rgba(33, 29, 23, 0.56);
+  font-size: 22rpx;
+  line-height: 1.65;
+}
+
+.analysis-elapsed {
+  display: block;
+  margin-top: 14rpx;
+  color: rgba(184, 134, 59, 0.84);
+  font-size: 19rpx;
+  letter-spacing: 0;
+}
+
+.analysis-timeline {
+  margin-top: 34rpx;
+}
+
+.analysis-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 52rpx;
+  color: rgba(33, 29, 23, 0.3);
+}
+
+.analysis-step:not(:last-child)::before {
+  position: absolute;
+  top: 35rpx;
+  bottom: -17rpx;
+  left: 9rpx;
+  width: 1rpx;
+  background: rgba(33, 29, 23, 0.12);
+  content: '';
+}
+
+.analysis-step-dot {
+  z-index: 1;
+  width: 19rpx;
+  height: 19rpx;
+  margin-right: 24rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.24);
+  border-radius: 50%;
+  background: #f2ecdf;
+}
+
+.analysis-step-title {
+  font-size: 22rpx;
+  letter-spacing: 0;
+}
+
+.analysis-step.is-done,
+.analysis-step.is-active {
+  color: rgba(33, 29, 23, 0.72);
+}
+
+.analysis-step.is-done .analysis-step-dot {
+  border-color: rgba(184, 134, 59, 0.8);
+  background: rgba(184, 134, 59, 0.8);
+}
+
+.analysis-step.is-active .analysis-step-dot {
+  border-color: #c1443b;
+  box-shadow: 0 0 0 7rpx rgba(193, 68, 59, 0.11);
+}
+
+.analysis-note {
+  display: block;
+  margin-top: 38rpx;
+  color: rgba(33, 29, 23, 0.36);
+  font-size: 20rpx;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.primary-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 112rpx;
+  margin-top: 30rpx;
+  padding: 0 28rpx;
+  border: 0;
+  border-radius: 0;
+  background: #211d17;
+  color: #f2ecdf;
+  text-align: left;
+}
+
+.primary-button[disabled] {
+  opacity: 0.45;
+}
+
+.primary-button-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.primary-button-en {
+  color: rgba(242, 236, 223, 0.52);
+  font-size: 16rpx;
+  font-weight: 800;
+  letter-spacing: 3rpx;
+}
+
+.primary-button-cn {
+  margin-top: 7rpx;
+  color: #f2ecdf;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.primary-button-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54rpx;
+  height: 54rpx;
+  border: 1rpx solid rgba(242, 236, 223, 0.36);
+  border-radius: 50%;
+  color: #f2ecdf;
+  font-size: 28rpx;
+  line-height: 1;
 }

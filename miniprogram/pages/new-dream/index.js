@@ -2,10 +2,39 @@ var acceptance = require('../../utils/acceptanceDream');
 var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
 var contentSafety = require('../../utils/contentSafety');
+var dreamMemory = require('../../utils/dreamMemory');
 var localDreamOracle = require('../../utils/localDreamOracle');
-var acceptanceDreamText = acceptance.acceptanceDreamText;
 var acceptanceDreamResult = acceptance.acceptanceDreamResult;
 var recorderManager = wx.getRecorderManager();
+var recorderListenersBound = false;
+var activeRecorderPage = null;
+var ANALYSIS_STAGES = [
+  { title: '先读梦里的画面', detail: '找出人物、场景、动作和真正发生的变化' },
+  { title: '把梦中线索排好', detail: '保留你的原话，不替梦补上没有发生的情节' },
+  { title: '对照你的长期记录', detail: '只在有具体呼应时，连接你曾经确认过的内容' },
+  { title: '结合出生节律', detail: '从另一条线索看这场梦里的气质和行动节奏' },
+  { title: '收束成完整解读', detail: '把梦境、个人关联和不同视角整理成一份结果' }
+];
+
+function voiceFailureMessage(result) {
+  var reason = result && result.reason ? String(result.reason) : '';
+  if (reason === 'not_configured') return '语音服务未配置，请先用文字记录';
+  if (reason === 'cloud_unavailable' || reason === 'cloud_call_failed' || reason === 'cloud_result_expired') {
+    return '语音服务暂不可用，请检查网络或先用文字记录';
+  }
+  if (reason === 'empty_result') return '没有听清，再试一次或直接输入文字';
+  if (reason === 'too_long') return '这段语音太长，请控制在 60 秒内';
+  if (reason === 'record_permission_denied') return '未获得麦克风权限，请在设置中开启';
+  return '语音识别暂不可用，请先用文字记录';
+}
+
+function analysisStageForElapsed(elapsedMs) {
+  if (elapsedMs < 3200) return 0;
+  if (elapsedMs < 8200) return 1;
+  if (elapsedMs < 14500) return 2;
+  if (elapsedMs < 22500) return 3;
+  return 4;
+}
 
 function createLocalResult(dreamText, profile, cardIndex) {
   var localResult = localDreamOracle.buildLocalDreamResult(acceptanceDreamResult, dreamText);
@@ -42,6 +71,7 @@ function normalizeDreamFacts(result, dreamText) {
   var places = normalizeFactList(facts.places);
   var objects = normalizeFactList(facts.objects);
   var actions = normalizeFactList(facts.actions);
+  var transitions = normalizeFactList(facts.transitions || facts.events);
   var emotions = normalizeFactList(facts.emotions);
   var timeSense = normalizeFactList(facts.time_sense || facts.timeSense);
 
@@ -81,6 +111,7 @@ function normalizeDreamFacts(result, dreamText) {
     places: places,
     objects: objects,
     actions: actions,
+    transitions: transitions,
     emotions: emotions,
     time_sense: timeSense
   };
@@ -96,6 +127,18 @@ function upsertLocalDream(dream) {
   wx.setStorageSync('oneiro:dreamArchive', next.slice(0, 30));
 }
 
+function nextCardIndex(archive) {
+  var storedNext = Number(wx.getStorageSync('oneiro:nextCardNumber') || 1);
+  var maxExisting = (Array.isArray(archive) ? archive : []).reduce(function (max, item) {
+    var cardNo = item && item.result ? String(item.result.card_no || '') : '';
+    var matched = cardNo.match(/(\d+)/);
+    return matched ? Math.max(max, Number(matched[1])) : max;
+  }, 0);
+  var next = Math.max(storedNext, maxExisting + 1, 1);
+  wx.setStorageSync('oneiro:nextCardNumber', next + 1);
+  return next;
+}
+
 function readProfile() {
   var app = getApp();
   var stored = wx.getStorageSync('oneiro:lastProfile') || {};
@@ -105,8 +148,25 @@ function readProfile() {
     nickname: String(stored.nickname || globalProfile.nickname || '').trim(),
     birthDate: String(stored.birthDate || globalProfile.birthDate || '').trim(),
     birthTime: String(stored.birthTime || globalProfile.birthTime || '').trim(),
-    birthPlace: String(stored.birthPlace || globalProfile.birthPlace || '').trim()
+    birthPlace: String(stored.birthPlace || globalProfile.birthPlace || '').trim(),
+    gender: String(stored.gender || globalProfile.gender || '').trim().toLowerCase()
   };
+}
+
+function refreshPortraitAfterDream(dream) {
+  var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
+  if (!dream || !dream.id) return;
+  dreamMemory.refreshPortraitInBackground({
+    cloudBase: cloudBase,
+    reason: '新增梦境后重新理解你',
+    refreshKey: 'dream:' + String(dream.id),
+    archive: archive,
+    onComplete: function (result) {
+      if (result && result.ok) {
+        analytics.trackEvent('profile_portrait_auto_draft', { dreamId: dream.id });
+      }
+    }
+  });
 }
 
 Page({
@@ -114,37 +174,93 @@ Page({
     dreamText: '',
     recording: false,
     recordingSeconds: 0,
-    recognizing: false
+    recognizing: false,
+    analysisActive: false,
+    analysisPreview: '',
+    analysisStageIndex: 0,
+    analysisStageTitle: '',
+    analysisStageDetail: '',
+    analysisElapsedSeconds: 0,
+    analysisStages: ANALYSIS_STAGES
   },
 
-  onLoad: function () {
-    var self = this;
+  onLoad: function (options) {
     var pendingDreamText = wx.getStorageSync('oneiro:pendingDreamText') || '';
+    activeRecorderPage = this;
 
-    recorderManager.onStop(function (result) {
-      self.onRecorderStop(result);
-    });
-
-    recorderManager.onError(function () {
-      self.stopRecordingTimer();
-      self.setData({
-        recording: false,
-        recordingSeconds: 0
+    if (!recorderListenersBound) {
+      recorderManager.onStop(function (result) {
+        if (activeRecorderPage) activeRecorderPage.onRecorderStop(result);
       });
-      wx.showToast({
-        title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
-        icon: 'none',
-        duration: 2500
+      recorderManager.onError(function () {
+        if (!activeRecorderPage) return;
+        activeRecorderPage.stopRecordingTimer();
+        activeRecorderPage.setData({ recording: false, recordingSeconds: 0 });
+        analytics.trackEvent('voice_record_error', {});
+        wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none', duration: 2500 });
       });
-    });
+      recorderListenersBound = true;
+    }
 
     if (pendingDreamText) {
       this.setData({ dreamText: pendingDreamText });
     }
+
+    if (options && options.autoSubmit && pendingDreamText) {
+      var that = this;
+      setTimeout(function () { that.generateDreamCard(); }, 0);
+    }
   },
 
   onUnload: function () {
+    this.stopAnalysisProgress();
+    this.clearVoiceStartTimer();
+    this.voiceTouching = false;
     this.stopRecordingTimer();
+    if (this.data.recording) {
+      try { recorderManager.stop(); } catch (error) {}
+    }
+    if (activeRecorderPage === this) activeRecorderPage = null;
+  },
+
+  startAnalysisProgress: function (dreamText) {
+    var that = this;
+
+    this.stopAnalysisProgress();
+    this.analysisStartedAt = Date.now();
+    this.setData({
+      analysisActive: true,
+      analysisPreview: String(dreamText || '').trim().slice(0, 72),
+      analysisStageIndex: 0,
+      analysisStageTitle: ANALYSIS_STAGES[0].title,
+      analysisStageDetail: ANALYSIS_STAGES[0].detail,
+      analysisElapsedSeconds: 0
+    });
+    // The mini-program runtime provides setInterval. The lightweight release
+    // contract harness does not, so the initial visible stage remains enough
+    // for that synchronous test path.
+    if (typeof setInterval !== 'function') return;
+    this.analysisProgressTimer = setInterval(function () {
+      var elapsedMs = Date.now() - that.analysisStartedAt;
+      var index = analysisStageForElapsed(elapsedMs);
+      var stage = ANALYSIS_STAGES[index];
+      that.setData({
+        analysisStageIndex: index,
+        analysisStageTitle: stage.title,
+        analysisStageDetail: stage.detail,
+        analysisElapsedSeconds: Math.floor(elapsedMs / 1000)
+      });
+    }, 700);
+  },
+
+  stopAnalysisProgress: function () {
+    if (this.analysisProgressTimer && typeof clearInterval === 'function') {
+      clearInterval(this.analysisProgressTimer);
+      this.analysisProgressTimer = null;
+    }
+    if (this.data && this.data.analysisActive) {
+      this.setData({ analysisActive: false });
+    }
   },
 
   startRecordingTimer: function () {
@@ -165,12 +281,13 @@ Page({
     }
   },
 
-  beginRecording: function () {
+  beginRecording: function (mode) {
     if (this.data.recording || this.data.recognizing) {
       return;
     }
 
     var self = this;
+    this.voiceStartMode = mode || 'tap';
     wx.authorize({
       scope: 'scope.record',
       success: function () {
@@ -181,7 +298,10 @@ Page({
           success: function (setting) {
             if (setting.authSetting && setting.authSetting['scope.record']) {
               self.startRecorder();
-            }
+            } else wx.showToast({ title: voiceFailureMessage({ reason: 'record_permission_denied' }), icon: 'none' });
+          },
+          fail: function () {
+            wx.showToast({ title: voiceFailureMessage({ reason: 'record_permission_denied' }), icon: 'none' });
           }
         });
       }
@@ -189,12 +309,21 @@ Page({
   },
 
   startRecorder: function () {
+    var self = this;
     this.recordingStartedAt = Date.now();
     this.setData({
       recording: true,
       recordingSeconds: 0
     });
     this.startRecordingTimer();
+    analytics.trackEvent('voice_record_start', { mode: this.voiceStartMode || 'tap' });
+
+    if (this.voiceStopAfterAuthorization) {
+      this.voiceStopAfterAuthorization = false;
+      setTimeout(function () {
+        self.stopRecorder();
+      }, 0);
+    }
 
     try {
       recorderManager.start({
@@ -210,11 +339,7 @@ Page({
         recording: false,
         recordingSeconds: 0
       });
-      wx.showToast({
-        title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
-        icon: 'none',
-        duration: 2500
-      });
+      wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none', duration: 2500 });
     }
   },
 
@@ -224,6 +349,7 @@ Page({
     }
 
     this.stopRecordingTimer();
+    analytics.trackEvent('voice_record_stop', { seconds: this.data.recordingSeconds });
     try {
       recorderManager.stop();
     } catch (error) {
@@ -238,8 +364,77 @@ Page({
     if (this.data.recording) {
       this.stopRecorder();
     } else {
-      this.beginRecording();
+      this.beginRecording('tap');
     }
+  },
+
+  clearVoiceStartTimer: function () {
+    if (this.voiceStartTimer) {
+      clearTimeout(this.voiceStartTimer);
+      this.voiceStartTimer = null;
+    }
+  },
+
+  onVoiceTouchStart: function () {
+    var self = this;
+
+    if (this.data.recognizing) return;
+
+    this.clearVoiceStartTimer();
+    this.voiceTouching = true;
+    this.voiceLongPressStarted = false;
+
+    // A second tap while recording still acts as the explicit stop control.
+    if (this.data.recording) return;
+
+    // Delay the start very slightly so a normal tap can remain the compatible
+    // start/stop interaction while a held press becomes the primary flow.
+    this.voiceStartTimer = setTimeout(function () {
+      self.voiceStartTimer = null;
+      if (!self.voiceTouching || self.data.recording || self.data.recognizing) return;
+      self.voiceLongPressStarted = true;
+      self.beginRecording('long_press');
+    }, 240);
+  },
+
+  onVoiceTouchEnd: function () {
+    this.voiceTouching = false;
+    this.clearVoiceStartTimer();
+
+    if (this.voiceLongPressStarted || this.data.recording) {
+      // touchend is followed by tap for a button. Suppress that tap because
+      // this gesture already completed the recording action.
+      this.voiceSuppressTap = true;
+      if (this.data.recording) {
+        this.stopRecorder();
+      } else {
+        // Permission dialogs can resolve after the finger has been released.
+        this.voiceStopAfterAuthorization = true;
+      }
+    }
+  },
+
+  onVoiceTouchCancel: function () {
+    this.voiceTouching = false;
+    this.clearVoiceStartTimer();
+
+    if (this.voiceLongPressStarted && !this.data.recording) {
+      this.voiceStopAfterAuthorization = true;
+    }
+    if (this.data.recording) {
+      this.stopRecorder();
+    }
+    this.voiceLongPressStarted = false;
+  },
+
+  onVoiceTap: function () {
+    if (this.voiceSuppressTap) {
+      this.voiceSuppressTap = false;
+      this.voiceLongPressStarted = false;
+      return;
+    }
+
+    this.toggleRecording();
   },
 
   onRecorderStop: function (result) {
@@ -257,11 +452,7 @@ Page({
     });
 
     if (!filePath) {
-      wx.showToast({
-        title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
-        icon: 'none',
-        duration: 2500
-      });
+      wx.showToast({ title: voiceFailureMessage({ reason: 'invalid_audio' }), icon: 'none', duration: 2500 });
       return;
     }
 
@@ -278,11 +469,8 @@ Page({
           self.setData({ recognizing: false });
 
           if (!recognizeResult || !recognizeResult.ok || !recognizeResult.text) {
-            wx.showToast({
-              title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
-              icon: 'none',
-              duration: 2500
-            });
+            analytics.trackEvent('voice_recognize_failed', { reason: recognizeResult && recognizeResult.reason ? recognizeResult.reason : 'unknown' });
+            wx.showToast({ title: voiceFailureMessage(recognizeResult), icon: 'none', duration: 2800 });
             return;
           }
 
@@ -291,15 +479,16 @@ Page({
             ? self.data.dreamText + '\n' + text
             : text;
           self.setData({ dreamText: nextText });
+          analytics.trackEvent('voice_recognize_success', {
+            duration: duration,
+            textLength: text.length
+          });
         });
       },
       fail: function () {
         self.setData({ recognizing: false });
-        wx.showToast({
-          title: '语音识别暂不可用，可长按键盘上的麦克风直接说话',
-          icon: 'none',
-          duration: 2500
-        });
+        analytics.trackEvent('voice_recognize_failed', { reason: 'file_read_failed' });
+        wx.showToast({ title: voiceFailureMessage({ reason: 'invalid_audio' }), icon: 'none', duration: 2500 });
       }
     });
   },
@@ -315,12 +504,12 @@ Page({
     this.setData({ dreamText: event.detail.value });
   },
 
-  useSample: function () {
-    this.setData({ dreamText: acceptanceDreamText });
-    analytics.trackEvent('sample_dream_used', {});
-  },
-
   generateDreamCard: function () {
+    var that = this;
+    if (this.data.recording || this.data.recognizing) {
+      wx.showToast({ title: this.data.recording ? '请先停止录音' : '语音正在识别', icon: 'none' });
+      return;
+    }
     var dreamText = this.data.dreamText.trim();
     var profile = readProfile();
     var safety = contentSafety.validateDreamText(dreamText);
@@ -345,12 +534,12 @@ Page({
       return;
     }
 
-    wx.showLoading({ title: '记下这个梦' });
+    this.startAnalysisProgress(dreamText);
 
     setTimeout(function () {
       var app = getApp();
       var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
-      var cardIndex = archive.length + 1;
+      var cardIndex = nextCardIndex(archive);
       var createdAt = new Date().toISOString();
       var dreamId = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
       var pendingDream = {
@@ -359,7 +548,7 @@ Page({
         status: 'pending',
         result: null,
         dreamFacts: {
-          people: [], places: [], objects: [], actions: [], emotions: [], time_sense: []
+          people: [], places: [], objects: [], actions: [], transitions: [], emotions: [], time_sense: []
         },
         interpretationSource: '',
         interpretationProvider: '',
@@ -391,7 +580,7 @@ Page({
           analytics.trackEvent('dream_submit_blocked', {
             reason: cloudResult.reason || 'cloud_safety'
           });
-          wx.hideLoading();
+          that.stopAnalysisProgress();
           wx.showModal({
             title: '暂不生成梦卡',
             content: cloudResult.message || '这个梦暂不适合生成分享梦卡。',
@@ -434,7 +623,9 @@ Page({
 
         app.globalData.currentDream = dream;
         upsertLocalDream(dream);
-        cloudBase.saveDream(dream);
+        cloudBase.saveDream(dream, function () {
+          refreshPortraitAfterDream(dream);
+        });
         analytics.trackEvent('interpretation_success', {
           dreamId: dream.id,
           symbolCount: result.symbols ? result.symbols.length : 0,
@@ -446,7 +637,7 @@ Page({
         if (wx.removeStorageSync) {
           wx.removeStorageSync('oneiro:pendingDreamText');
         }
-        wx.hideLoading();
+        that.stopAnalysisProgress();
         wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dream.id) });
         });
       });

@@ -4,32 +4,73 @@
     <text>DREAM</text>
   </view>
 
-  <text class="eyebrow">Dream Memory</text>
-  <text class="title">记下刚才的梦</text>
+  <text class="eyebrow">PRIVATE DREAM NOTEBOOK</text>
+  <text class="title">把刚才的梦留住</text>
   <view class="copy">
-    <text>一个画面、一句话或一种情绪也足够。原文会先保存，解读失败也不会丢失。</text>
+    <text>醒来时只记得一部分，也足够。</text>
   </view>
 
-  <textarea
-    class="dream-input"
-    value="{{dreamText}}"
-    maxlength="1200"
-    auto-height="{{false}}"
-    bindinput="onDreamInput"
-    placeholder="例如：我在月光下的图书馆里，捡到一把银色钥匙..."
-    placeholder-class="muted"
-  />
+  <view class="capture-surface {{recording ? 'is-recording' : ''}} {{dreamText ? 'has-draft' : ''}}">
+    <view class="capture-header">
+      <text class="capture-label">{{recording ? '正在听你说' : dreamText ? '梦的草稿' : '一段梦的开始'}}</text>
+      <text class="capture-prompt">轻触写梦 · 长按说梦</text>
+    </view>
 
-  <button
-    class="{{recording ? 'voice-button recording' : 'voice-button'}}"
-    bindtap="toggleRecording"
-    disabled="{{recognizing}}"
-  >
-    {{recording ? '停止 · ' + recordingSeconds + 's' : '🎙 语音记梦'}}
+    <textarea
+      class="dream-input"
+      value="{{dreamText}}"
+      maxlength="1200"
+      auto-height="{{false}}"
+      bindinput="onDreamInput"
+      placeholder="例如：我在月光下的图书馆里，捡到一把银色钥匙…"
+      placeholder-class="muted"
+    />
+
+    <view class="capture-divider"></view>
+    <button
+      class="{{recording ? 'voice-button recording' : 'voice-button'}}"
+      bindtap="onVoiceTap"
+      bindtouchstart="onVoiceTouchStart"
+      bindtouchend="onVoiceTouchEnd"
+      bindtouchcancel="onVoiceTouchCancel"
+      disabled="{{recognizing}}"
+    >
+      {{recording ? '松开完成 · ' + recordingSeconds + 's' : '◌  按住说话'}}
+    </button>
+    <text wx:if="{{!recognizing}}" class="voice-hint">{{recording ? '松开后自动转成文字' : '松开识别；也可点击开始 / 停止'}}</text>
+    <text wx:if="{{recognizing}}" class="recognizing-note">正在整理刚才的话…</text>
+  </view>
+
+  <button class="primary-button" disabled="{{recording || recognizing}}" bindtap="generateDreamCard">
+    <view class="primary-button-copy">
+      <text class="primary-button-en">SAVE &amp; INTERPRET</text>
+      <text class="primary-button-cn">保存并解读</text>
+    </view>
+    <text class="primary-button-arrow">→</text>
   </button>
-  <text wx:if="{{recognizing}}" class="recognizing-note">正在识别…</text>
+  <text class="privacy-note">原梦会先保存，出生资料完全自愿。</text>
+</view>
 
-  <button class="ghost-button" bindtap="useSample">试一个示例梦</button>
-  <button class="primary-button" bindtap="generateDreamCard">保存并解读</button>
-  <text class="privacy-note">出生信息完全自愿填写；填写后解读会增加一个“出生节律”视角，也可随时清空。原梦和解读默认仅自己可见，分享时只包含去隐私的梦卡。</text>
+<view wx:if="{{analysisActive}}" class="analysis-overlay">
+  <view class="analysis-sheet">
+    <view class="analysis-orbit"><view class="analysis-orbit-dot"></view></view>
+    <text class="analysis-eyebrow">ONEIRO · DREAM READING</text>
+    <text class="analysis-title">正在展开这场梦</text>
+    <text class="analysis-preview">“{{analysisPreview}}”</text>
+
+    <view class="analysis-current">
+      <text class="analysis-current-title">{{analysisStageTitle}}</text>
+      <text class="analysis-current-detail">{{analysisStageDetail}}</text>
+      <text class="analysis-elapsed">已用时 {{analysisElapsedSeconds}} 秒</text>
+    </view>
+
+    <view class="analysis-timeline">
+      <view wx:for="{{analysisStages}}" wx:key="title" class="analysis-step {{index < analysisStageIndex ? 'is-done' : ''}} {{index === analysisStageIndex ? 'is-active' : ''}}">
+        <view class="analysis-step-dot"></view>
+        <text class="analysis-step-title">{{item.title}}</text>
+      </view>
+    </view>
+
+    <text class="analysis-note">完整解读正在生成中，内容不会因为等待而被缩短。</text>
+  </view>
 </view>

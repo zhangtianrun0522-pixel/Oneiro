@@ -1,8 +1,21 @@
 <view class="chat-screen">
+  <view class="chat-brand">
+    <text>ONEIRO</text>
+    <text>PRIVATE DREAM NOTEBOOK</text>
+  </view>
   <view class="chat-context" wx:if="{{dream}}">
-    <text class="context-label">正在聊</text>
+    <text class="context-label">DREAM CONVERSATION</text>
     <text class="context-title">{{dream.result.title}}</text>
     <text class="context-dream">{{dream.dreamText}}</text>
+  </view>
+
+  <view class="guide-section">
+    <text class="guide-label">从一个具体地方开始</text>
+    <view class="guide-list">
+      <text class="guide-chip" data-prompt="梦里最清楚的画面是：" bindtap="useGuide">梦里最清楚的画面</text>
+      <text class="guide-chip" data-prompt="醒来以后，我最明显的情绪是：" bindtap="useGuide">醒来后的情绪</text>
+      <text class="guide-chip" data-prompt="这让我想到现实里的：" bindtap="useGuide">现实里的对应</text>
+    </view>
   </view>
 
   <scroll-view class="message-list" scroll-y scroll-into-view="{{scrollTarget}}">
@@ -14,10 +27,6 @@
     >
       <text class="message-role">{{item.role === 'user' ? '你' : 'ONEIRO'}}</text>
       <text class="message-copy">{{item.content}}</text>
-      <view wx:if="{{item.role === 'user'}}" class="message-confirm">
-        <text wx:if="{{item.confirmed}}" class="confirmed-label">✓ 已确认为真实情况</text>
-        <text wx:else class="confirm-link" data-index="{{index}}" bindtap="confirmLifeNote">确认这是真实情况 →</text>
-      </view>
     </view>
     <view wx:if="{{sending}}" class="message-row is-assistant is-loading">
       <text class="message-role">ONEIRO</text>
@@ -26,17 +35,29 @@
   </scroll-view>
 
   <view class="chat-composer">
-    <text class="turn-limit">{{turnCount}} / {{maxTurns}}</text>
-    <textarea
-      class="chat-input"
-      value="{{inputValue}}"
-      maxlength="500"
-      auto-height
-      disabled="{{sending || turnCount >= maxTurns}}"
-      bindinput="onInput"
-      placeholder="说说你想到的现实片段…"
-      placeholder-class="muted"
-    />
-    <button class="send-button" disabled="{{sending || turnCount >= maxTurns}}" bindtap="sendMessage">发送</button>
+    <text class="memory-note">系统会从对话中提取有用的现实线索，梦中的猜测不会直接当作事实。</text>
+    <view class="composer-row">
+      <text class="turn-limit">{{turnCount}} / {{maxTurns}}</text>
+      <textarea
+        class="chat-input"
+        value="{{inputValue}}"
+        maxlength="500"
+        auto-height
+        disabled="{{sending || recognizing || turnCount >= maxTurns}}"
+        bindinput="onInput"
+        placeholder="说说梦里的画面或醒来后的感受…"
+        placeholder-class="muted"
+      />
+      <button
+        class="{{recording ? 'voice-button recording' : 'voice-button'}}"
+        disabled="{{sending || recognizing || turnCount >= maxTurns}}"
+        bindtap="onVoiceTap"
+        bindtouchstart="onVoiceTouchStart"
+        bindtouchend="onVoiceTouchEnd"
+        bindtouchcancel="onVoiceTouchCancel"
+      >{{recording ? recordingSeconds + 's' : '说'}}</button>
+      <button class="send-button" disabled="{{sending || recording || recognizing || turnCount >= maxTurns}}" bindtap="sendMessage">发送</button>
+    </view>
+    <text class="voice-note">{{recognizing ? '正在整理刚才的话…' : recording ? '松开后转成文字' : '长按“说”输入，也可文字发送'}}</text>
   </view>
 </view>

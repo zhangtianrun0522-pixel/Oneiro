@@ -21,7 +21,7 @@
     "localPlugins": false,
     "disableUseStrict": false,
     "useCompilerPlugins": false,
-    "condition": true,
+    "condition": false,
     "swc": false,
     "disableSWC": true,
     "babelSetting": {
@@ -36,26 +36,5 @@
     "ignore": [],
     "include": []
   },
-  "editorSetting": {},
-  "condition": {
-    "miniprogram": {
-      "current": 0,
-      "list": [
-        {
-          "id": 0,
-          "name": "MVP 验收结果页",
-          "pathName": "pages/result/index",
-          "query": "fixture=1",
-          "scene": null
-        },
-        {
-          "id": 1,
-          "name": "AI 诊断页",
-          "pathName": "pages/diagnostics/index",
-          "query": "",
-          "scene": null
-        }
-      ]
-    }
-  }
+  "editorSetting": {}
 }

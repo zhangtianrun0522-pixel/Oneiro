@@ -1,44 +1,62 @@
-<view class="result-screen">
+<view wx:if="{{entryReady}}" class="result-screen">
   <block wx:if="{{!interpretationUnavailable}}">
-    <view class="dream-card">
-      <view class="card-header">
-        <text>ONEIRO</text>
-        <text>{{dream.result.card_no}}</text>
-      </view>
+    <view class="dream-card-stage">
+      <view class="dream-card-switcher" bindtap="toggleDreamCard">
+        <view wx:if="{{!cardFlipped}}" class="dream-card-face dream-card-front card-face-fade">
+          <view class="dream-art theme-{{dream.result.card_theme}} {{aiImageLocalPath || dream.result.imageUrl ? 'has-ai-image' : ''}}">
+            <image
+              wx:if="{{aiImageLocalPath || dream.result.imageUrl}}"
+              class="dream-ai-image"
+              src="{{aiImageLocalPath || dream.result.imageUrl}}"
+              mode="aspectFill"
+            ></image>
+            <view class="moon"></view>
+            <view class="shelf shelf-a"></view>
+            <view class="shelf shelf-b"></view>
+            <view class="water"></view>
+            <view class="key"></view>
+            <view class="bird"></view>
+            <view wx:if="{{!cardFlipped}}" class="front-meta">
+              <text class="front-brand">ONEIRO</text>
+              <view class="front-record">
+                <text>{{dream.result.card_no}}</text>
+                <text>{{displayTimestamp}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
 
-      <view class="dream-art theme-{{dream.result.card_theme}} {{dream.result.imageUrl ? 'has-ai-image' : ''}}">
-        <image
-          wx:if="{{aiImageLocalPath || dream.result.imageUrl}}"
-          class="dream-ai-image"
-          src="{{aiImageLocalPath || dream.result.imageUrl}}"
-          mode="aspectFill"
-        ></image>
-        <view class="moon"></view>
-        <view class="shelf shelf-a"></view>
-        <view class="shelf shelf-b"></view>
-        <view class="water"></view>
-        <view class="key"></view>
-        <view class="bird"></view>
-        <view wx:if="{{imageStatus === 'generating'}}" class="image-status">画面生成中 · 可先往下读解读</view>
-        <view wx:if="{{imageStatus === 'failed'}}" class="image-status">使用梦象卡面 · {{imageErrorMessage}}</view>
-        <button wx:if="{{imageStatus === 'failed'}}" class="image-retry" bindtap="retryDreamImage">重新生成画面</button>
+        <view wx:else class="dream-card-face dream-card-back card-face-fade">
+          <text class="back-title">{{dream.result.title}}</text>
+          <text class="back-insight">{{cardBackInsight}}</text>
+          <view class="back-divider"><view></view></view>
+          <text class="back-label">梦中线索</text>
+          <view class="back-symbols">
+            <text wx:for="{{dream.result.symbols}}" wx:key="*this">{{item}}</text>
+          </view>
+          <text wx:if="{{dream.result.integration_question}}" class="back-question">{{dream.result.integration_question}}</text>
+        </view>
       </view>
-
-      <text class="card-title">{{dream.result.title}}</text>
-      <text class="weather">{{dream.result.emotional_weather}}</text>
-      <view class="symbols">
-        <text wx:for="{{dream.result.symbols}}" wx:key="*this" class="symbol">{{item}}</text>
-      </view>
-      <view class="card-footer">
-        <text>Oneiro · {{displayDate}}</text>
-      </view>
+    </view>
+    <text class="card-flip-hint">{{cardFlipped ? '轻触返回画面' : '轻触查看卡背'}}</text>
+    <view wx:if="{{imageStatus === 'generating'}}" class="card-image-notice">
+      <text>完整画面生成中，可先阅读解读</text>
+    </view>
+    <view wx:if="{{imageStatus === 'ready' && (imageQualityStatus === 'queued' || imageQualityStatus === 'polling')}}" class="card-image-notice">
+      <text>快速梦卡已就绪，高清画面后台优化中</text>
+    </view>
+    <view wx:if="{{imageQualityStatus === 'ready'}}" class="card-image-notice quality-ready-notice">
+      <text>高清画面已更新</text>
+    </view>
+    <view wx:if="{{imageStatus === 'failed'}}" class="card-image-notice">
+      <text>当前展示基础梦象</text>
+      <button class="image-retry" bindtap="retryDreamImage">重新生成画面</button>
     </view>
 
     <view wx:if="{{dream.result.symbol_milestones && dream.result.symbol_milestones[0]}}" class="milestone-pill" bindtap="openMilestoneArchive">
       <text class="milestone-copy">{{dream.result.symbol_milestones[0].symbol}} · 第 {{dream.result.symbol_milestones[0].count}} 次出现在你的梦里</text>
       <text class="milestone-edit" catchtap="correctMilestoneSymbol">纠正</text>
     </view>
-    <button wx:if="{{dream.result.symbol_milestones && dream.result.symbol_milestones[0]}}" class="topic-card-button" bindtap="openTopicCard">生成分享话题卡</button>
   </block>
 
   <view class="reading grounded-reading">
@@ -55,14 +73,44 @@
     </view>
 
     <view class="reading-block">
-      <text class="reading-label">这个梦的张力</text>
+      <text class="reading-label">梦的叙事与张力</text>
       <text class="reading-copy reading-hook">{{dream.result.reading_hook}}</text>
     </view>
 
-    <view wx:if="{{dream.result.metaphysical_resonance && dream.result.metaphysical_basis}}" class="reading-block metaphysical-reading">
-      <text class="reading-label">出生节律</text>
-      <text class="reading-copy">{{dream.result.metaphysical_resonance}}</text>
-      <text class="reading-boundary">{{dream.result.metaphysical_basis}}</text>
+    <view wx:if="{{dream.result.cultural_symbolism}}" class="reading-block cultural-reading">
+      <text class="reading-label">文化象征</text>
+      <text class="reading-copy">{{dream.result.cultural_symbolism}}</text>
+    </view>
+
+    <view wx:if="{{dream.result.underneath}}" class="reading-block psychological-reading">
+      <text class="reading-label">心理视角</text>
+      <text class="reading-copy">{{dream.result.underneath}}</text>
+    </view>
+
+    <view wx:if="{{dream.result.metaphysical_resonance || (dream.result.metaphysical_reading && (dream.result.metaphysical_reading.temperament || dream.result.metaphysical_reading.dream_echo || dream.result.metaphysical_reading.tension || dream.result.metaphysical_reading.rhythm))}}" class="reading-block metaphysical-reading">
+      <view class="metaphysical-heading">
+        <text class="reading-label">命理视角</text>
+        <text class="metaphysical-caption">出生节律</text>
+      </view>
+      <block wx:if="{{dream.result.metaphysical_reading}}">
+        <view wx:if="{{dream.result.metaphysical_reading.temperament}}" class="metaphysical-subsection">
+          <text class="metaphysical-subtitle">这次被调动的底色</text>
+          <text class="metaphysical-copy">{{dream.result.metaphysical_reading.temperament}}</text>
+        </view>
+        <view wx:if="{{dream.result.metaphysical_reading.dream_echo}}" class="metaphysical-subsection">
+          <text class="metaphysical-subtitle">与这个梦的呼应</text>
+          <text class="metaphysical-copy">{{dream.result.metaphysical_reading.dream_echo}}</text>
+        </view>
+        <view wx:if="{{dream.result.metaphysical_reading.tension}}" class="metaphysical-subsection">
+          <text class="metaphysical-subtitle">梦里的拉扯</text>
+          <text class="metaphysical-copy">{{dream.result.metaphysical_reading.tension}}</text>
+        </view>
+        <view wx:if="{{dream.result.metaphysical_reading.rhythm}}" class="metaphysical-subsection metaphysical-rhythm">
+          <text class="metaphysical-subtitle">当下的节奏</text>
+          <text class="metaphysical-copy">{{dream.result.metaphysical_reading.rhythm}}</text>
+        </view>
+      </block>
+      <text wx:if="{{dream.result.metaphysical_resonance}}" class="metaphysical-resonance">{{dream.result.metaphysical_resonance}}</text>
     </view>
 
     <view wx:if="{{dream.result.referenced_life_note}}" class="reading-block life-note-reading">
@@ -75,7 +123,7 @@
     </view>
 
     <view class="reading-block">
-      <text class="reading-label">可能触及的现实</text>
+      <text class="reading-label">与你有关</text>
       <view class="connection-list">
         <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{index + 1}}. {{item}}</text>
       </view>
@@ -95,12 +143,14 @@
       </view>
       <text class="chat-entry-arrow">→</text>
     </view>
+
   </view>
 
   <block wx:if="{{!interpretationUnavailable}}">
-  <button class="primary-button" bindtap="saveCard">保存收藏梦卡</button>
+  <button class="primary-button" bindtap="saveCard">{{cardSaved ? '已保存收藏梦卡' : '保存收藏梦卡'}}</button>
   <button class="ghost-button" bindtap="saveFullReading">保存完整解读</button>
-  <button class="ghost-button share-button" open-type="share">分享给朋友</button>
+  <button wx:if="{{!sharePath}}" class="ghost-button share-button" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard">分享这张梦卡</button>
+  <button wx:else class="ghost-button share-button" open-type="share">分享给朋友</button>
   </block>
   <view class="result-actions">
     <button class="text-button" bindtap="newDream">再记一个梦</button>

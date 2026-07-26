@@ -11,10 +11,10 @@
     "pages/diagnostics/index"
   ],
   "window": {
-    "backgroundColor": "#050609",
+    "backgroundColor": "#F2ECDF",
     "backgroundTextStyle": "dark",
-    "navigationBarBackgroundColor": "#050609",
-    "navigationBarTextStyle": "white",
+    "navigationBarBackgroundColor": "#F2ECDF",
+    "navigationBarTextStyle": "black",
     "navigationBarTitleText": "ONEIRO"
   },
   "style": "v2",

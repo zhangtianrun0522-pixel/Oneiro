@@ -6,33 +6,160 @@
     #050609;
 }
 
-.dream-card {
-  padding: 42rpx 36rpx 40rpx;
+.dream-card-stage {
+  height: 893rpx;
+}
+
+.dream-card-switcher {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.dream-card-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
   border-radius: 22rpx;
-  background: #fdfaf5;
-  color: #172033;
   box-shadow: 0 44rpx 140rpx rgba(0, 0, 0, 0.42);
 }
 
-.card-header,
-.card-footer {
+.dream-card-front {
+  background: #0a0c10;
+}
+
+.dream-card-back {
+  box-sizing: border-box;
+  padding: 44rpx 42rpx;
+  background: #f4e7ca;
+  color: #171a20;
+}
+
+.card-face-fade {
+  animation: card-face-fade-in 180ms ease-out both;
+}
+
+@keyframes card-face-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.front-meta {
+  position: absolute;
+  z-index: 5;
+  left: 34rpx;
+  right: 34rpx;
+  top: 32rpx;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  font-size: 17rpx;
+  font-weight: 800;
+  letter-spacing: 5rpx;
+}
+
+.front-meta {
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 2rpx 10rpx rgba(5, 6, 9, 0.72);
+}
+
+.front-record {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8rpx;
+  letter-spacing: 2rpx;
+}
+
+.front-brand {
+  letter-spacing: 7rpx;
+}
+
+.back-title {
+  display: block;
+  margin-top: 26rpx;
+  font-size: 54rpx;
+  font-weight: 600;
+  letter-spacing: 10rpx;
+}
+
+.back-insight {
+  display: block;
+  margin-top: 54rpx;
+  color: rgba(23, 26, 32, 0.86);
+  font-size: 30rpx;
+  line-height: 1.85;
+}
+
+.back-divider {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  color: rgba(23, 32, 51, 0.26);
-  font-size: 18rpx;
+  margin-top: 62rpx;
+}
+
+.back-divider::after {
+  content: "";
+  width: 18rpx;
+  height: 18rpx;
+  margin-left: 18rpx;
+  background: #e43b25;
+}
+
+.back-divider > view {
+  flex: 1;
+  height: 3rpx;
+  background: #1458d4;
+}
+
+.back-label {
+  display: block;
+  margin-top: 42rpx;
+  color: rgba(23, 26, 32, 0.54);
+  font-size: 20rpx;
   font-weight: 800;
-  letter-spacing: 8rpx;
+  letter-spacing: 5rpx;
+}
+
+.back-symbols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18rpx;
+  margin-top: 18rpx;
+  color: #171a20;
+  font-size: 27rpx;
+}
+
+.back-symbols text:not(:last-child)::after {
+  content: "·";
+  margin-left: 18rpx;
+}
+
+.back-question {
+  position: absolute;
+  left: 42rpx;
+  right: 42rpx;
+  bottom: 58rpx;
+  color: rgba(23, 26, 32, 0.86);
+  font-size: 28rpx;
+  line-height: 1.75;
+}
+
+.card-flip-hint {
+  display: block;
+  margin: 24rpx 0 0;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 20rpx;
+  letter-spacing: 3rpx;
 }
 
 .dream-art {
   position: relative;
-  height: 792rpx;
-  margin: 34rpx 0 32rpx;
+  height: 100%;
+  margin: 0;
   overflow: hidden;
-  border-radius: 20rpx;
+  border-radius: 22rpx;
   background: linear-gradient(145deg, #172438 0%, #425d72 62%, #d8e7ef 100%);
-  box-shadow: 0 0 0 2rpx rgba(202, 177, 117, 0.42), 0 0 0 10rpx rgba(202, 177, 117, 0.2);
 }
 
 .dream-ai-image {
@@ -42,6 +169,25 @@
   height: 100%;
   opacity: 0.98;
   background: #172033;
+  animation: dream-image-register 680ms cubic-bezier(0.22, 0.75, 0.24, 1) both;
+}
+
+@keyframes dream-image-register {
+  0% {
+    opacity: 0;
+    transform: scale(1.018) translate(3rpx, -2rpx);
+    filter: saturate(0.45) contrast(0.9);
+  }
+  55% {
+    opacity: 0.86;
+    transform: scale(1.006) translate(-2rpx, 1rpx);
+    filter: saturate(1.18) contrast(1.04);
+  }
+  100% {
+    opacity: 0.98;
+    transform: scale(1) translate(0, 0);
+    filter: saturate(1) contrast(1);
+  }
 }
 
 .has-ai-image .moon,
@@ -52,31 +198,35 @@
   display: none;
 }
 
-.image-status {
-  position: absolute;
-  left: 28rpx;
-  bottom: 24rpx;
-  padding: 10rpx 16rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.18);
-  background: rgba(5, 6, 9, 0.32);
-  color: rgba(255, 255, 255, 0.72);
+.card-image-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18rpx;
+  margin: 18rpx 0 0;
+  color: rgba(255, 255, 255, 0.46);
   font-size: 20rpx;
-  font-weight: 700;
+}
+
+.quality-ready-notice {
+  color: rgba(202, 177, 117, 0.72);
 }
 
 .image-retry {
-  position: absolute;
-  right: 24rpx;
-  bottom: 24rpx;
-  height: 58rpx;
-  padding: 0 20rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.24);
+  width: auto;
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
   border-radius: 0;
-  background: rgba(5, 6, 9, 0.42);
-  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.76);
   font-size: 20rpx;
   font-weight: 800;
-  line-height: 58rpx;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
 .image-retry::after {
@@ -327,6 +477,16 @@
   line-height: 1.8;
 }
 
+.finalized-mark {
+  display: block;
+  margin-top: 14rpx;
+  text-align: center;
+  color: rgba(202, 177, 117, 0.72);
+  font-size: 17rpx;
+  font-weight: 800;
+  letter-spacing: 3rpx;
+}
+
 .symbols {
   display: flex;
   flex-wrap: wrap;
@@ -436,22 +596,6 @@
   font-size: 18rpx;
 }
 
-.topic-card-button {
-  width: auto;
-  margin: 18rpx 0 0;
-  padding: 14rpx 24rpx;
-  border: 1rpx solid rgba(202, 177, 117, 0.28);
-  border-radius: 999rpx;
-  background: rgba(202, 177, 117, 0.05);
-  color: rgba(239, 228, 200, 0.68);
-  font-size: 20rpx;
-  line-height: 1.4;
-}
-
-.topic-card-button::after {
-  border: 0;
-}
-
 .original-dream {
   padding: 26rpx;
   border-left: 4rpx solid rgba(159, 183, 201, 0.34);
@@ -485,6 +629,101 @@
   color: rgba(255, 255, 255, 0.34);
   font-size: 21rpx;
   line-height: 1.65;
+}
+
+.cultural-reading {
+  border-left-color: rgba(202, 177, 117, 0.42);
+}
+
+.psychological-reading {
+  border-left-color: rgba(159, 183, 201, 0.36);
+}
+
+.refine-card {
+  margin-top: 34rpx;
+  padding: 28rpx;
+  border: 1rpx solid rgba(202, 177, 117, 0.18);
+  border-radius: 22rpx;
+  background: linear-gradient(140deg, rgba(202, 177, 117, 0.08), rgba(159, 183, 201, 0.04));
+}
+
+.refine-question,
+.final-label,
+.final-answer,
+.final-insight,
+.refine-skip {
+  display: block;
+}
+
+.refine-question {
+  margin-top: 14rpx;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 26rpx;
+  line-height: 1.7;
+}
+
+.refine-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 130rpx;
+  margin-top: 20rpx;
+  padding: 20rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.1);
+  border-radius: 16rpx;
+  background: rgba(8, 12, 20, 0.34);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 24rpx;
+  line-height: 1.65;
+}
+
+.refine-button {
+  width: auto;
+  margin: 18rpx 0 0;
+  padding: 14rpx 22rpx;
+  border-radius: 999rpx;
+  background: rgba(202, 177, 117, 0.84);
+  color: #111621;
+  font-size: 21rpx;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.refine-button::after {
+  border: 0;
+}
+
+.refine-skip {
+  margin-top: 14rpx;
+  color: rgba(255, 255, 255, 0.28);
+  font-size: 19rpx;
+}
+
+.final-reading {
+  margin-top: 20rpx;
+  padding: 22rpx;
+  border-left: 4rpx solid rgba(202, 177, 117, 0.54);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.final-label {
+  color: rgba(202, 177, 117, 0.58);
+  font-size: 18rpx;
+  font-weight: 800;
+  letter-spacing: 2rpx;
+}
+
+.final-answer {
+  margin-top: 10rpx;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 24rpx;
+  line-height: 1.7;
+}
+
+.final-insight {
+  margin-top: 14rpx;
+  color: rgba(239, 228, 200, 0.72);
+  font-size: 24rpx;
+  line-height: 1.72;
 }
 
 .dream-chat-entry {
@@ -544,6 +783,32 @@
   padding: 26rpx;
   border-left: 4rpx solid rgba(159, 183, 201, 0.72);
   background: rgba(159, 183, 201, 0.1);
+}
+
+.metaphysical-subsection {
+  margin-top: 26rpx;
+  padding-top: 22rpx;
+  border-top: 1rpx solid rgba(159, 183, 201, 0.14);
+}
+
+.metaphysical-subtitle {
+  display: block;
+  color: rgba(202, 177, 117, 0.76);
+  font-size: 20rpx;
+  font-weight: 800;
+  letter-spacing: 4rpx;
+}
+
+.metaphysical-copy {
+  display: block;
+  margin-top: 10rpx;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 25rpx;
+  line-height: 1.82;
+}
+
+.metaphysical-rhythm {
+  padding-bottom: 4rpx;
 }
 
 .life-note-reading {
@@ -671,4 +936,73 @@
   top: -9999px;
   width: 450px;
   height: 600px;
+}
+
+/* Claude Design warm-paper result surface. */
+.result-screen { padding: 36rpx 40rpx 84rpx; background: #f2ecdf; }
+.dream-card-stage { height: 840rpx; }
+.dream-card-face { border-radius: 4rpx; box-shadow: 0 24rpx 56rpx rgba(33, 29, 23, 0.14); }
+.dream-card-back { padding: 42rpx 38rpx; background-color: #211d17; background-image: repeating-linear-gradient(135deg, rgba(184, 134, 59, 0.06) 0, rgba(184, 134, 59, 0.06) 1rpx, transparent 1rpx, transparent 13rpx); color: #f2ecdf; }
+.dream-card-back::before { position: absolute; inset: 16rpx; border: 1rpx solid rgba(184, 134, 59, 0.32); content: ''; }
+.back-title, .back-insight, .back-label, .back-symbols, .back-question { position: relative; z-index: 1; text-align: center; }
+.back-title { margin-top: 116rpx; color: #f2ecdf; font-size: 42rpx; font-weight: 500; letter-spacing: 2rpx; }
+.back-insight { margin-top: 22rpx; color: rgba(242, 236, 223, 0.66); font-size: 25rpx; line-height: 1.75; }
+.back-divider { position: relative; z-index: 1; margin-top: 36rpx; }
+.back-divider::before, .back-divider::after { flex: 1; height: 1rpx; background: rgba(184, 134, 59, 0.34); content: ''; }
+.back-divider::after { width: auto; height: 1rpx; margin-left: 0; }
+.back-divider > view { width: 9rpx; height: 9rpx; margin: 0 18rpx; flex: 0 0 9rpx; transform: rotate(45deg); background: #b8863b; }
+.back-label { margin-top: 30rpx; color: #b8863b; font-size: 18rpx; letter-spacing: 4rpx; }
+.back-symbols { justify-content: center; gap: 12rpx; margin-top: 18rpx; color: rgba(242, 236, 223, 0.84); font-size: 22rpx; }
+.back-symbols text { padding: 8rpx 14rpx; border: 1rpx solid rgba(184, 134, 59, 0.4); }
+.back-symbols text:not(:last-child)::after { display: none; }
+.back-question { right: 38rpx; bottom: 48rpx; left: 38rpx; padding-top: 22rpx; border-top: 1rpx solid rgba(184, 134, 59, 0.24); color: rgba(242, 236, 223, 0.64); font-size: 24rpx; font-style: italic; line-height: 1.7; }
+.card-flip-hint, .card-image-notice, .share-ready { color: rgba(33, 29, 23, 0.42); }
+.image-retry { color: #b8863b; }
+.milestone-pill { border-color: rgba(184, 134, 59, 0.34); border-radius: 2rpx; background: #fbf6ec; }
+.milestone-copy, .milestone-edit { color: rgba(122, 84, 33, 0.8); }
+.reading, .grounded-reading { margin-top: 32rpx; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.section-title { margin-bottom: 26rpx; color: #211d17; font-size: 26rpx; letter-spacing: 1rpx; }
+.original-dream { padding: 28rpx 26rpx; border-left-color: rgba(184, 134, 59, 0.6); background: #fbf6ec; }
+.original-copy, .reading-copy, .connection-item, .chat-entry-question, .metaphysical-copy { color: rgba(33, 29, 23, 0.76); }
+.original-copy, .reading-copy, .connection-item { font-size: 27rpx; line-height: 1.82; }
+.reading-block { margin-top: 34rpx; }
+.reading-label, .metaphysical-subtitle { color: #b8863b; font-size: 19rpx; letter-spacing: 2rpx; }
+.reading-hook { color: #211d17; font-size: 28rpx; }
+.cultural-reading, .psychological-reading { padding: 0; border-left: 0; background: transparent; }
+.metaphysical-reading, .life-note-reading { padding: 26rpx; border-left: 3rpx solid rgba(184, 134, 59, 0.5); background: #fbf6ec; }
+.metaphysical-subsection { border-top-color: rgba(33, 29, 23, 0.1); }
+.reading-boundary, .life-note-date, .reading-basis { color: rgba(33, 29, 23, 0.42); }
+.life-note-link, .chat-entry-arrow { color: #b8863b; }
+.alternative-reading { border-top-color: rgba(33, 29, 23, 0.12); }
+.dream-chat-entry { padding: 28rpx; border-color: rgba(33, 29, 23, 0.16); border-radius: 2rpx; background: transparent; }
+.primary-button { margin-top: 40rpx; border-color: #c1443b; background: #c1443b; color: #fbf6ec; }
+.ghost-button, .text-button { border-color: rgba(33, 29, 23, 0.2); background: transparent; color: rgba(33, 29, 23, 0.68); }
+.text-button { line-height: 82rpx; }
+.delete-button { color: rgba(193, 68, 59, 0.72); }
+
+.metaphysical-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.metaphysical-caption {
+  color: rgba(33, 29, 23, 0.46);
+  font-size: 18rpx;
+  letter-spacing: 2rpx;
+}
+
+.metaphysical-resonance {
+  display: block;
+  margin-top: 22rpx;
+  color: rgba(33, 29, 23, 0.72);
+  font-size: 25rpx;
+  line-height: 1.8;
+}
+
+.result-screen .primary-button {
+  border-color: #211d17;
+  background: #211d17;
+  color: #f2ecdf;
 }

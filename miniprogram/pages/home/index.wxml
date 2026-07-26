@@ -4,35 +4,72 @@
     <button class="profile-link" bindtap="openProfile">我的资料</button>
   </view>
 
-  <view wx:if="{{revisit}}" class="revisit-card">
-    <text class="revisit-title">昨天的梦「{{revisit.title}}」</text>
-    <text class="revisit-question">{{revisit.question}}</text>
-    <view wx:if="{{!revisitAnswering}}" class="revisit-actions">
-      <button class="revisit-answer-button" bindtap="startAnswerRevisit">回答</button>
-      <button class="revisit-skip-button" bindtap="skipRevisitPrompt">跳过</button>
-    </view>
-    <text wx:if="{{!revisitAnswering}}" class="revisit-disable-link" bindtap="disableRevisitPrompts">不再提醒</text>
-    <view wx:else class="revisit-composer">
-      <textarea
-        class="revisit-textarea"
-        bindinput="onRevisitAnswerInput"
-        value="{{revisitAnswerText}}"
-        maxlength="300"
-        auto-height
-      />
-      <button class="revisit-send-button" bindtap="submitRevisitAnswer">发送</button>
-    </view>
-  </view>
-
   <view class="hero">
-    <text class="eyebrow">Private Dream Memory</text>
-    <text class="title">它不替你预测命运，但会越来越理解你的梦</text>
+    <text class="eyebrow">PRIVATE DREAM NOTEBOOK</text>
+    <text class="title">今天醒来，</text>
+    <text class="title title-accent">还记得什么？</text>
     <text wx:if="{{fromShare}}" class="share-note">你刚看到的是一张去隐私的梦卡。你也可以从一个画面开始，私密记下自己的梦。</text>
     <view class="copy">
-      <text>先保留原梦，再从梦中事实出发，给出有边界、可以被你否定的理解。</text>
+      <text>一个画面、一句话，也值得被留下。</text>
     </view>
+    <text class="hero-note">先保留原梦，再慢慢理解它。</text>
   </view>
 
-  <button class="primary-button" bindtap="startDream">记下刚才的梦</button>
-  <button class="ghost-button archive-button" bindtap="openArchive">打开梦境档案</button>
+  <view class="capture-surface {{recording ? 'is-recording' : ''}} {{dreamText ? 'has-draft' : ''}}">
+    <view class="capture-header">
+      <text class="capture-label">{{recording ? '正在听你说' : dreamText ? '梦的草稿' : '一段梦的开始'}}</text>
+      <text class="capture-prompt">轻触写梦 · 长按说梦</text>
+    </view>
+    <textarea
+      class="dream-input"
+      value="{{dreamText}}"
+      maxlength="1200"
+      auto-height="{{false}}"
+      bindinput="onDreamInput"
+      placeholder="例如：我在月光下的图书馆里，捡到一把银色钥匙…"
+      placeholder-class="muted"
+    />
+    <view class="capture-divider"></view>
+    <button
+      class="{{recording ? 'voice-button recording' : 'voice-button'}}"
+      bindtap="onVoiceTap"
+      bindtouchstart="onVoiceTouchStart"
+      bindtouchend="onVoiceTouchEnd"
+      bindtouchcancel="onVoiceTouchCancel"
+      disabled="{{recognizing}}"
+    >
+      <text wx:if="{{recording}}">松开完成 · {{recordingSeconds}}s</text>
+      <block wx:else><text class="voice-button-icon">◌</text><text>按住说话</text></block>
+    </button>
+    <text wx:if="{{!recognizing}}" class="voice-hint">{{recording ? '松开后自动转成文字' : '松开识别；也可点击开始 / 停止'}}</text>
+    <text wx:if="{{recognizing}}" class="recognizing-note">正在整理刚才的话…</text>
+  </view>
+
+  <button class="primary-button" disabled="{{recording || recognizing}}" bindtap="generateDreamCard">
+    <view class="primary-button-copy">
+      <text class="primary-button-en">SAVE &amp; INTERPRET</text>
+      <text class="primary-button-cn">保存并解读</text>
+    </view>
+    <text class="primary-button-arrow">→</text>
+  </button>
+  <text class="privacy-note">原梦会先保存，出生资料完全自愿。</text>
+
+  <view wx:if="{{recentDreams.length}}" class="recent-section">
+    <view class="recent-heading">
+      <text>最近的梦</text>
+      <text bindtap="openArchive">打开梦境档案 →</text>
+    </view>
+    <scroll-view class="recent-scroll" scroll-x="true" enable-flex="true" show-scrollbar="false">
+      <view wx:for="{{recentDreams}}" wx:key="id" class="recent-card theme-{{item.theme}}" data-id="{{item.id}}" bindtap="openRecentDream">
+        <text class="recent-date">{{item.date}}</text>
+        <text class="recent-title">{{item.title}}</text>
+      </view>
+    </scroll-view>
+  </view>
+</view>
+
+<view class="bottom-nav">
+  <button class="bottom-nav-item active" bindtap="goHome">写梦</button>
+  <button class="bottom-nav-item" bindtap="openArchive">梦册</button>
+  <button class="bottom-nav-item" bindtap="openProfile">我</button>
 </view>
