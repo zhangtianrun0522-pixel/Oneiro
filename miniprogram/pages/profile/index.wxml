@@ -118,37 +118,39 @@
     </view>
   </view>
 
-  <text class="zone-title">我的基础资料</text>
-  <text class="zone-note">全部可选，随时可以修改或清空。</text>
+  <view class="basic-info-zone">
+    <text class="zone-title">我的基础资料</text>
+    <text class="zone-note">全部可选，随时可以修改或清空。</text>
 
-  <text class="field-label">称呼 / 可选</text>
-  <input class="field" value="{{profile.nickname}}" data-key="nickname" bindinput="onInput" maxlength="30" placeholder="怎么称呼你" placeholder-class="muted" />
+    <text class="field-label">称呼 / 可选</text>
+    <input class="field" value="{{profile.nickname}}" data-key="nickname" bindinput="onInput" maxlength="30" placeholder="怎么称呼你" placeholder-class="muted" />
 
-  <view class="field-heading">
-    <text class="field-label">出生日期 / 可选</text>
-    <button wx:if="{{profile.birthDate}}" class="clear-field" bindtap="clearBirthDate">清除</button>
+    <view class="field-heading">
+      <text class="field-label">出生日期 / 可选</text>
+      <button wx:if="{{profile.birthDate}}" class="clear-field" bindtap="clearBirthDate">清除</button>
+    </view>
+    <picker mode="date" value="{{profile.birthDate}}" bindchange="onBirthDateChange">
+      <view class="field picker-field {{profile.birthDate ? '' : 'muted'}}">{{profile.birthDate || '选择出生日期'}}</view>
+    </picker>
+
+    <view class="field-heading">
+      <text class="field-label">出生时间 / 可选</text>
+      <button wx:if="{{profile.birthTime}}" class="clear-field" bindtap="clearBirthTime">清除</button>
+    </view>
+    <picker mode="time" value="{{profile.birthTime}}" bindchange="onBirthTimeChange">
+      <view class="field picker-field {{profile.birthTime ? '' : 'muted'}}">{{profile.birthTime || '选择时间'}}</view>
+    </picker>
+
+    <text class="field-label">性别 / 可选</text>
+    <picker mode="selector" range="{{genderOptions}}" value="{{genderIndex}}" bindchange="onGenderChange">
+      <view class="field picker-field {{profile.gender ? '' : 'muted'}}">{{profile.gender === 'male' ? '男' : profile.gender === 'female' ? '女' : '不填写'}}</view>
+    </picker>
+
+    <text class="field-label">出生城市 / 可选</text>
+    <input class="field" value="{{profile.birthPlace}}" data-key="birthPlace" bindinput="onInput" maxlength="60" placeholder="例如：上海" placeholder-class="muted" />
+
+    <button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveProfile">保存资料</button>
+    <text class="privacy-copy">出生资料完全自愿，可随时修改或清空；命理视角会保留，但不会成为记录和基础解读的门槛。</text>
   </view>
-  <picker mode="date" value="{{profile.birthDate}}" bindchange="onBirthDateChange">
-    <view class="field picker-field {{profile.birthDate ? '' : 'muted'}}">{{profile.birthDate || '选择出生日期'}}</view>
-  </picker>
-
-  <view class="field-heading">
-    <text class="field-label">出生时间 / 可选</text>
-    <button wx:if="{{profile.birthTime}}" class="clear-field" bindtap="clearBirthTime">清除</button>
-  </view>
-  <picker mode="time" value="{{profile.birthTime}}" bindchange="onBirthTimeChange">
-    <view class="field picker-field {{profile.birthTime ? '' : 'muted'}}">{{profile.birthTime || '选择时间'}}</view>
-  </picker>
-
-  <text class="field-label">性别 / 可选</text>
-  <picker mode="selector" range="{{genderOptions}}" value="{{genderIndex}}" bindchange="onGenderChange">
-    <view class="field picker-field {{profile.gender ? '' : 'muted'}}">{{profile.gender === 'male' ? '男' : profile.gender === 'female' ? '女' : '不填写'}}</view>
-  </picker>
-
-  <text class="field-label">出生城市 / 可选</text>
-  <input class="field" value="{{profile.birthPlace}}" data-key="birthPlace" bindinput="onInput" maxlength="60" placeholder="例如：上海" placeholder-class="muted" />
-
-  <button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveProfile">保存资料</button>
-  <text class="privacy-copy">出生资料完全自愿，可随时修改或清空；命理视角会保留，但不会成为记录和基础解读的门槛。</text>
 </view>
 

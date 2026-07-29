@@ -52,10 +52,12 @@
           <view class="timeline-rail">
             <view class="timeline-node {{dream.isKeyMoment ? 'is-key-node' : ''}}"></view>
           </view>
-          <view class="archive-thumb theme-{{dream.themeClass}}">
-            <image wx:if="{{dream.thumbnailPath}}" class="archive-thumb-image" src="{{dream.thumbnailPath}}" mode="aspectFill"></image>
-            <view wx:else class="archive-thumb-placeholder">
-              <text>{{dream.result ? dream.result.card_no : '原梦'}}</text>
+          <view class="archive-thumb-frame">
+            <view class="archive-thumb theme-{{dream.themeClass}}">
+              <image wx:if="{{dream.thumbnailPath}}" class="archive-thumb-image" src="{{dream.thumbnailPath}}" mode="aspectFill"></image>
+              <view wx:else class="archive-thumb-placeholder">
+                <text>{{dream.result ? dream.result.card_no : '原梦'}}</text>
+              </view>
             </view>
           </view>
           <view class="timeline-copy">

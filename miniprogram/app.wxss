@@ -226,5 +226,19 @@ button::after {
   z-index: 2;
 }
 
+/* 克制变体：透明底 + 1rpx 旧金描边 + 旧金字色，用于高频重复出现的位置
+   （如聊梦页每一条 AI 消息前的角色印）。朱砂实心印是稀缺的品牌落位，
+   一屏出现多次就从「点睛」变成噪音，因此这类重复位置一律换成 muted。
+   旧金字 #8a5d29 on 暖纸 #f2ecdf ≈ 4.85:1，同 --gold-ink 全局校准值。 */
+.oneiro-seal--muted {
+  border: 1rpx solid var(--gold-line);
+  background: transparent;
+  box-shadow: none;
+}
+
+.oneiro-seal--muted text {
+  color: var(--gold-ink);
+}
+
 
 

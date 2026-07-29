@@ -85,11 +85,12 @@
   max-width: 88%;
   margin-bottom: 24rpx;
   padding: 24rpx 26rpx;
-  border-radius: 0;
 }
 
-.is-assistant { margin-right: auto; border-left: 3rpx solid rgba(184, 134, 59, 0.68); background: #fbf6ec; }
-.is-user { margin-left: auto; border-right: 3rpx solid rgba(33, 29, 23, 0.58); background: rgba(33, 29, 23, 0.055); }
+/* 不对称小圆角给出方向感：AI 消息左上直角贴着旧金强调边，
+   用户消息右上直角贴着深墨强调边，克制不做气泡尾巴 */
+.is-assistant { margin-right: auto; border-left: 3rpx solid rgba(184, 134, 59, 0.68); border-radius: 0 16rpx 16rpx 16rpx; background: #fbf6ec; }
+.is-user { margin-left: auto; border-right: 3rpx solid rgba(33, 29, 23, 0.58); border-radius: 16rpx 0 16rpx 16rpx; background: rgba(33, 29, 23, 0.055); }
 .is-user .message-role { color: rgba(33, 29, 23, 0.52); }
 
 /* 每条 AI 回复不再用「ONEIRO」文字重复标签，换成小印——

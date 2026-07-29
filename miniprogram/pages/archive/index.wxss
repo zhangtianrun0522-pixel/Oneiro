@@ -89,14 +89,36 @@
   box-shadow: 0 0 0 5rpx rgba(184, 134, 59, 0.12);
 }
 
-.archive-thumb {
+/* 「一叠牌」暗示：frame 是不裁切的定位容器，::before 在其身后垫一张
+   偏移的纸色底卡（细描边即可，不需要投影），archive-thumb 本身裁切
+   缩略图并叠一层轻投影，读作最上面那张牌盖住了底下一叠 */
+.archive-thumb-frame {
   position: relative;
   width: 106rpx;
   height: 132rpx;
   flex: 0 0 106rpx;
+}
+
+.archive-thumb-frame::before {
+  content: '';
+  position: absolute;
+  top: 6rpx;
+  left: 6rpx;
+  width: 106rpx;
+  height: 132rpx;
+  border: 1rpx solid rgba(184, 134, 59, 0.3);
+  background: var(--paper-raised);
+}
+
+.archive-thumb {
+  position: relative;
+  z-index: 1;
+  width: 106rpx;
+  height: 132rpx;
   overflow: hidden;
   border: 0;
   border-radius: 0;
+  box-shadow: 0 4rpx 10rpx rgba(33, 29, 23, 0.16);
   background: linear-gradient(145deg, #18202a, #68737c 62%, #e4e4dc);
 }
 
@@ -240,15 +262,19 @@
   margin-top: 8rpx;
 }
 
-/* ── 本月观察：合并原「阶段观察 / 本月主牌 / 阶段原型」三张卡 ── */
+/* ── 本月观察：合并原「阶段观察 / 本月主牌 / 阶段原型」三张卡 ──
+   全页唯一被「装裱」过的块：完整旧金细描边（不再只是左边框）+
+   --space-group 级内边距 + 纸纹底 + 极轻投影，读作被单独框裱的一页，
+   与时间轴上普通条目的时间轴语言区分开 */
 .month-observation {
   margin-top: var(--space-block);
-  padding: 30rpx 28rpx;
-  border-left: 3rpx solid var(--gold-line);
+  padding: var(--space-group);
+  border: 1rpx solid var(--gold-line);
   background-color: var(--paper-raised);
   background-image: var(--paper-noise);
   background-repeat: repeat;
   background-size: 64rpx 64rpx;
+  box-shadow: 0 6rpx 18rpx rgba(33, 29, 23, 0.08);
 }
 
 /* archive 页唯一的朱砂点睛：标题前一枚 8rpx 印章方块，纯 CSS 伪元素，
