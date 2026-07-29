@@ -1,6 +1,14 @@
 # Oneiro Project Progress
 
-Last updated: 2026-07-27
+Last updated: 2026-07-29
+
+## Seedream 5.0 Lite 正式生图接入（2026-07-29）
+
+- 已将 `generateDreamImage` 的正式默认模型切换为 `doubao-seedream-5-0-lite-260128`，默认输出为 `1728x2304`（3:4）；保留旧 `nano-banana-*` 适配器作为显式环境变量回退。
+- 正式风格版本升级为 `oneiro-seedream-dream-v2.0`。正式 prompt 接入本轮验证的关系型配色和构图语法：主导色场、冷暖/互补对撞色、小面积焦点、墨黑/暖纸稳定色、非对称构图、有效负空间和结构性流线。
+- Seedream 专用请求不再假设 `quality` 或 `n` 参数，使用已验证的 URL 响应、`sequential_image_generation=disabled`、`watermark=false` 请求形状。
+- 本地验证通过：`npm run check:mini-release`、`npm run check:image-contract`、`git diff --check`。`generateDreamImage` 已部署到 `cloud1-d9gb0sjvg6a8d9864`，并在 CloudBase 正式环境写入 Seedream endpoint、server-side key、model、`1728x2304` 尺寸配置；质量通道保持关闭且未改动。本地 `key.txt` 未写入仓库。
+- 线上健康检查通过：`providerConfigured=true`、`hasApiKey=true`、endpoint host 为 Ark、模型为 `doubao-seedream-5-0-lite-260128`，正式画风为 `oneiro-seedream-dream-v2.0`；健康检查耗时 11ms，未产生图片调用费用。
 
 ## Git 工作区整理（2026-07-27）
 

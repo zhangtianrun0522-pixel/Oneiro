@@ -18,9 +18,9 @@ const LEGACY_THEMES = {
   mist: true
 };
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-const DEFAULT_MODEL = 'nano-banana-fast';
-const DEFAULT_SIZE = '768x1024';
-const DEFAULT_ASPECT_RATIO = '768x1024';
+const DEFAULT_MODEL = 'doubao-seedream-5-0-lite-260128';
+const DEFAULT_SIZE = '1728x2304';
+const DEFAULT_ASPECT_RATIO = '1728x2304';
 const DEFAULT_QUALITY = 'low';
 const DEFAULT_TIMEOUT_MS = 55000;
 const FUNCTION_BUDGET_MS = 55000;
@@ -259,6 +259,10 @@ function isGrsaiGenerateEndpoint(endpointUrl) {
 
 function isNanoBananaModel(model) {
   return /^nano-banana/.test(String(model || '').toLowerCase());
+}
+
+function isSeedreamModel(model) {
+  return /^doubao-seedream-5-0-lite(?:-|$)/i.test(String(model || '').trim());
 }
 
 function grsaiResultUrl(endpointUrl, id) {
@@ -599,6 +603,10 @@ function normalizeImageModel(model) {
     return 'nano-banana-pro';
   }
 
+  if (normalized === 'seedream-5-0-lite' || normalized === 'seedream-5-lite' || normalized === 'doubao-seedream-5-0-lite') {
+    return DEFAULT_MODEL;
+  }
+
   return value;
 }
 
@@ -609,6 +617,13 @@ function normalizeImageDimension(value, model) {
   if (
     normalizedModel === 'nano-banana-fast' &&
     (!dimension || dimension === '1024x1536' || dimension === '1024x1024')
+  ) {
+    return DEFAULT_SIZE;
+  }
+
+  if (
+    isSeedreamModel(normalizedModel) &&
+    (!dimension || dimension === '768x1024' || dimension === '1024x1024')
   ) {
     return DEFAULT_SIZE;
   }
@@ -1289,6 +1304,16 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
         aspectRatio: config.aspectRatio,
         replyType: 'json'
       }
+      : isSeedreamModel(config.model)
+        ? {
+          model: config.model,
+          prompt: generationPrompt,
+          size: config.size,
+          sequential_image_generation: 'disabled',
+          stream: false,
+          response_format: 'url',
+          watermark: false
+        }
       : {
         model: config.model,
         prompt: generationPrompt,

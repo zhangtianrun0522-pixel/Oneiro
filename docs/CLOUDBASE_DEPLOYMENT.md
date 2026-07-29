@@ -108,7 +108,7 @@ The response intentionally does not expose secrets. It reports `provider`, `prov
 
 ## Real AI Image Provider
 
-`interpretDream` now returns a structured `result.visual_plan`. `generateDreamImage` re-normalizes that plan against the owner-scoped stored dream, selects an emotion palette and non-fixed composition, compiles the final `oneiro-riso-dream-v1.3` prompt, uploads the generated bitmap under `generated-dream-images/`, and stores the full prompt, model, normalized plan, format/dimensions, and quality record in `generated_assets`.
+`interpretDream` now returns a structured `result.visual_plan`. `generateDreamImage` re-normalizes that plan against the owner-scoped stored dream, selects a relationship-based emotion palette and non-fixed composition, compiles the final `oneiro-seedream-dream-v2.0` prompt, uploads the generated bitmap under `generated-dream-images/`, and stores the full prompt, model, normalized plan, format/dimensions, and quality record in `generated_assets`.
 
 Configure these environment variables on the `generateDreamImage` cloud function:
 
@@ -116,14 +116,13 @@ Configure these environment variables on the `generateDreamImage` cloud function
 IMAGE_PROVIDER=openai
 OPENAI_IMAGE_API_KEY=<set-in-cloudbase-only>
 OPENAI_IMAGE_ENDPOINT_URL=<provider-images-endpoint>
-OPENAI_IMAGE_MODEL=nano-banana-fast
-OPENAI_IMAGE_SIZE=768x1024
-OPENAI_IMAGE_ASPECT_RATIO=768x1024
-OPENAI_IMAGE_QUALITY=low
+OPENAI_IMAGE_MODEL=doubao-seedream-5-0-lite-260128
+OPENAI_IMAGE_SIZE=1728x2304
+OPENAI_IMAGE_ASPECT_RATIO=1728x2304
 OPENAI_IMAGE_TIMEOUT_MS=55000
 ```
 
-For the GRSAI image endpoint, use `OPENAI_IMAGE_ENDPOINT_URL=https://grsaiapi.com/v1/api/generate` or the domestic endpoint `https://grsai.dakka.com.cn/v1/api/generate`. The current Mini Program default is `OPENAI_IMAGE_MODEL=nano-banana-fast` with `OPENAI_IMAGE_ASPECT_RATIO=768x1024` for a fast `3:4` inner illustration. For higher quality experiments, change only the model env var to `nano-banana`, `nano-banana-2`, or `nano-banana-pro`. The cloud function maps old `gpt-image-1.5` and `gpt-image-2` env values to `nano-banana-fast` so stale configuration does not keep using the previous slow image model. The cloud function supports the documented `results[0].url` response and can poll `/v1/api/result?id=...` when the first response is asynchronous. If the provider uses the standard OpenAI images endpoint, `OPENAI_IMAGE_ENDPOINT_URL` can be omitted and `OPENAI_IMAGE_BASE_URL` can be used instead. Keep image keys server-side in CloudBase only.
+For the Seedream 5.0 Lite gateway, set its OpenAI-compatible base URL in `OPENAI_IMAGE_BASE_URL` or the full `OPENAI_IMAGE_ENDPOINT_URL`, and keep `OPENAI_IMAGE_MODEL=doubao-seedream-5-0-lite-260128`. The production request uses the verified Seedream payload shape (`1728x2304`, `sequential_image_generation=disabled`, URL response, no `quality` or `n` assumptions). The gateway key stays server-side in CloudBase only. The older `nano-banana-fast` adapter remains available when explicitly selected through the model environment variable.
 
 The new visual system must pass the nine-card stability test before deployment: calm, anxious, and surreal dreams, three independent generations each. Pixel-level semantic checks such as unwanted text, focal clarity, face complexity, actual saturation, and thumbnail readability are currently recorded as `requires_vision_review`; only binary format and output geometry are enforced automatically.
 
@@ -131,7 +130,7 @@ The deployed `generateDreamImage` function now reports the 60-second platform ma
 
 ### Progressive image2 quality route
 
-The Mini Program keeps the existing `nano-banana-fast` call as the immediate image path. After that image is available, the result page submits a short `startQuality` action to `generateDreamImage` and polls `pollQuality` while the user can continue reading. A completed `gpt-image-2` asset replaces the fast image; a failed or unavailable quality job leaves the fast image untouched.
+The Mini Program uses the synchronous Seedream 5.0 Lite call as the immediate image path. The optional progressive quality route remains independent: after the first image is available, the result page can submit `startQuality` and poll `pollQuality` while the user continues reading. A completed quality asset replaces the fast image; a failed or unavailable quality job leaves the Seedream image untouched.
 
 Configure the quality route independently from the fast route on the same CloudBase function. These variables are optional; leaving them unset makes the action return `quality_unavailable` without changing the existing image path:
 
@@ -149,7 +148,7 @@ QUALITY_IMAGE_TIMEOUT_MS=12000
 
 The quality route is disabled unless `QUALITY_IMAGE_ENABLED=1`. The quality job is owner-scoped and idempotent. It stores only the provider task id, prompt metadata, status, and final CloudBase asset reference; it never stores API keys, base64 payloads, or temporary signed URLs.
 
-Rehdasu's `/v1/images/generations` endpoint is synchronous and historically takes longer than the Mini Program request budget. `generateDreamImage` therefore returns `quality_sync_endpoint_unsupported` before making a paid request when that endpoint is configured. Rehdasu's tested `/v1/draw/completions` endpoint returned 404, so keep production on `nano-banana-fast` until a verified asynchronous image endpoint is available.
+Rehdasu's `/v1/images/generations` endpoint is synchronous and historically takes longer than the Mini Program request budget. `generateDreamImage` therefore returns `quality_sync_endpoint_unsupported` before making a paid request when that endpoint is configured. This limitation applies only to the optional quality channel; the verified Seedream 5.0 Lite synchronous path is the current production image channel.
 
 ### AI 阶段画像
 

@@ -194,7 +194,7 @@ async function run() {
   assert.match(compiledPrompt, /rough screenprint and risograph texture/);
   assert.equal(
     crypto.createHash('sha256').update(compiledPrompt).digest('hex'),
-    'cb2c2b16222bd40c5134b4db6aa9d95a024eb60ba0a7c2a6390b3d6007187333',
+    'a654063f41d75140ef2025eeba4bd6571af5f12f6ee16b42eea3a929e70ecdbf',
     'production prompt golden changed unexpectedly'
   );
   assert.match(compiledPrompt, /exactly 4–6 inks/);
@@ -260,10 +260,17 @@ async function run() {
   state.transactionDeletion = false;
   result = await imageFunction.main({ prompt: 'legacy summary', dreamId: 'dream-1', visualPlan: visualPlan });
   assert.equal(result.ok, true);
-  assert.equal(result.styleVersion, 'oneiro-riso-dream-v1.3');
+  assert.equal(result.styleVersion, 'oneiro-seedream-dream-v2.0');
   assert.equal(result.visualPlan.palette.id, 'anxiety');
   assert.equal(result.qualityCheck.checks.output_aspect_ratio_3_4, true);
-  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /high-saturation flat color blocks/);
+  assert.equal(state.requestBodies[state.requestBodies.length - 1].model, 'doubao-seedream-5-0-lite-260128');
+  assert.equal(state.requestBodies[state.requestBodies.length - 1].size, '1728x2304');
+  assert.equal(state.requestBodies[state.requestBodies.length - 1].sequential_image_generation, 'disabled');
+  assert.equal(state.requestBodies[state.requestBodies.length - 1].response_format, 'url');
+  assert.equal(state.requestBodies[state.requestBodies.length - 1].watermark, false);
+  assert.equal(state.requestBodies[state.requestBodies.length - 1].quality, undefined);
+  assert.equal(state.requestBodies[state.requestBodies.length - 1].n, undefined);
+  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /fixed red-and-blue pairing/);
   assert.doesNotMatch(state.requestBodies[state.requestBodies.length - 1].prompt, /tarot-inspired/);
 
   result = await imageFunction.main({
@@ -280,6 +287,7 @@ async function run() {
 
   const deletedBeforeReference = state.deletedFiles.length;
   process.env.OPENAI_IMAGE_ENDPOINT_URL = 'https://grsaiapi.com/v1/api/generate';
+  process.env.OPENAI_IMAGE_MODEL = 'nano-banana-fast';
   result = await imageFunction.main({
     prompt: 'legacy summary',
     dreamId: 'dream-1',
@@ -289,6 +297,7 @@ async function run() {
     referenceImageData: ['data:image/png;base64,' + png.toString('base64')]
   });
   delete process.env.OPENAI_IMAGE_ENDPOINT_URL;
+  delete process.env.OPENAI_IMAGE_MODEL;
   assert.equal(result.ok, true);
   assert.equal(result.referenceImageCount, 1);
   assert.deepEqual(state.requestBodies[state.requestBodies.length - 1].urls, ['https://temp/image']);

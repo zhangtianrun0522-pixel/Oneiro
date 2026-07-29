@@ -660,7 +660,7 @@ function createWxMock(): WxMock {
             imageUrl: 'https://mock-image.example.com/oneiro.png',
             cloudPath: 'generated-dream-images/mock.png',
             cacheHit: true,
-            styleVersion: 'oneiro-riso-dream-v1.3',
+            styleVersion: 'oneiro-seedream-dream-v2.0',
             visualPlan: options.data?.visualPlan,
             qualityCheck: { version: 'oneiro-image-quality-v1', passed: true },
             latencyMs: 32,
@@ -1239,7 +1239,7 @@ resultPage.requestDreamImage();
 assert.equal(resultPage.data.imageStatus, 'ready');
 assert.equal(resultPage.data.dream.result.imageUrl, 'https://mock-image.example.com/oneiro.png');
 assert.equal(resultPage.data.dream.result.image_cache_hit, true);
-assert.equal(resultPage.data.dream.result.image_style_version, 'oneiro-riso-dream-v1.3');
+assert.equal(resultPage.data.dream.result.image_style_version, 'oneiro-seedream-dream-v2.0');
 assert.equal(resultPage.data.dream.result.image_visual_plan.composition.template, 'threshold_depth');
 assert.equal(resultPage.data.dream.result.image_quality_check.passed, true);
 assert.equal(resultPage.data.aiImageLocalPath, '/tmp/oneiro-ai-image.png');

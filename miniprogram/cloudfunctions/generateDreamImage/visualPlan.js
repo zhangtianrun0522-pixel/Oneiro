@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const STYLE_VERSION = 'oneiro-riso-dream-v1.3';
+const STYLE_VERSION = 'oneiro-seedream-dream-v2.0';
 const INTERNAL_TEST_STYLE_VERSION = 'oneiro-internal-test-style-v1.4';
 const STYLE_PRESETS = {
   production: {
@@ -19,63 +19,63 @@ const EMOTION_PALETTES = {
   anxiety: {
     label: '焦虑',
     keywords: ['焦虑', '紧张', '害怕', '恐惧', '不安', '压迫', '窒息', '追赶'],
-    dominant: 'deep navy #15284E',
-    accent: 'fluorescent yellow #F5ED32',
-    auxiliary: ['blood red #D52F3E'],
-    outline: 'blue-black ink #11141B',
-    paper: 'warm ivory #F2E4C4'
+    dominant: 'deep ink green #104A43',
+    accent: 'burnt orange #C9682E',
+    auxiliary: ['pale cyan #9DD7D4'],
+    outline: 'green-black ink #111916',
+    paper: 'warm paper cream #F0DFB8'
   },
   nostalgia: {
     label: '怀旧',
     keywords: ['怀旧', '想念', '童年', '小时候', '故乡', '旧', '回忆', '以前'],
-    dominant: 'burnt orange #D7772A',
-    accent: 'lake blue #3A8C99',
-    auxiliary: ['brick red #A94436', 'grass green #6E8A45'],
+    dominant: 'warm ochre #D9A33A',
+    accent: 'muted teal #4B9290',
+    auxiliary: ['burnt orange #B85A31', 'grass green #6E8A45'],
     outline: 'warm black ink #1C1A18',
     paper: 'aged cream #F1E1BE'
   },
   excitement: {
     label: '兴奋',
     keywords: ['兴奋', '期待', '开心', '快乐', '激动', '自由', '飞翔', '惊喜'],
-    dominant: 'electric blue #1458D4',
-    accent: 'bright orange #F06422',
-    auxiliary: ['sunflower yellow #F3CF32', 'acid green #8DBD39'],
+    dominant: 'terracotta orange #C96532',
+    accent: 'pale cyan #94D0D1',
+    auxiliary: ['lemon yellow #E7C94A', 'deep green #1C4C43'],
     outline: 'near-black indigo #121525',
     paper: 'clean warm cream #F6E8C8'
   },
   sadness: {
     label: '悲伤',
     keywords: ['悲伤', '难过', '失落', '孤独', '哭', '离开', '消失', '告别'],
-    dominant: 'indigo #273B78',
-    accent: 'dark red #9D3038',
-    auxiliary: ['cool blue #6886A7'],
+    dominant: 'deep indigo #2B3D67',
+    accent: 'warm cream #E9D2A4',
+    auxiliary: ['muted coral #B96750', 'ink green #1A4A40'],
     outline: 'near-black blue #151923',
     paper: 'milk cream #EFE3C9'
   },
   anger: {
     label: '愤怒',
     keywords: ['愤怒', '生气', '发火', '争吵', '冲突', '破坏', '攻击'],
-    dominant: 'vermilion #D93624',
-    accent: 'electric blue #1C5CCB',
-    auxiliary: ['hot orange #ED7625', 'bright yellow #F4D33C'],
+    dominant: 'vermilion #D33D29',
+    accent: 'electric blue #2D68C4',
+    auxiliary: ['burnt orange #DA6A2C', 'deep ink #1A1A19'],
     outline: 'charcoal black #151311',
     paper: 'warm paper #F1DFBC'
   },
   mystery: {
     label: '神秘',
     keywords: ['神秘', '未知', '陌生', '奇怪', '诡异', '迷雾', '夜晚', '秘密'],
-    dominant: 'ink green #105B4D',
-    accent: 'golden yellow #F0C232',
-    auxiliary: ['deep violet #553173', 'coral red #E95C45'],
+    dominant: 'deep ink green #164F46',
+    accent: 'golden yellow #D6A62E',
+    auxiliary: ['deep violet #4D4165', 'pale cyan #9CBEC0'],
     outline: 'green-black ink #111916',
     paper: 'antique ivory #EEE0BE'
   },
   healing: {
     label: '治愈',
     keywords: ['治愈', '安心', '平静', '温暖', '轻松', '安全', '拥抱', '回家'],
-    dominant: 'clear sage green #629B69',
-    accent: 'orange red #E85B35',
-    auxiliary: ['clear light blue #58ADC5', 'warm yellow #F0C438'],
+    dominant: 'sage green #6B9A70',
+    accent: 'warm orange #D77540',
+    auxiliary: ['clear light blue #74B9C1', 'warm yellow #E4C25E'],
     outline: 'soft near-black #1B2420',
     paper: 'cream white #F4E8CD'
   }
@@ -452,23 +452,26 @@ function buildGenerationPrompt(plan, stylePreset) {
     : 'do not invent a decorative hidden symbol';
 
   return [
-    'Create an original vertical 3:4 dream illustration with no typography.',
+    'Create one original vertical 3:4 narrative dream illustration with no typography.',
+    'Priority order: preserve the exact main event and impossible rule; condense them into one causal tableau with only 2–3 narrative anchors; use sparse asymmetric staging and a large low-density area. If secondary detail conflicts with these, omit it.',
     'Dream source: ' + clean(plan.raw_text, 700) + '.',
     'Main event: ' + plan.main_event + '.',
-    'Emotional tone: ' + plan.emotion.join(', ') + ', intensity ' + plan.emotion_intensity.toFixed(2) + '.',
-    'Setting: ' + plan.setting + '.',
+    'Emotion: ' + plan.emotion.join(', ') + ', intensity ' + plan.emotion_intensity.toFixed(2) + '. Setting: ' + plan.setting + '.',
     'Visual elements to preserve: ' + (plan.preserve_elements.join(', ') || 'only the main event') + '.',
     'Reality-breaking rule: ' + anomaly + '.',
     'Hidden symbol: ' + hiddenInstruction + '.',
-    'Grounding lock: every recognizable person, place, animal, and object must be grounded in the Dream source, the Visual elements to preserve, or the single Reality-breaking rule above. Do not add a key merely because a door opens. Do not turn rain or wet ground into a pond, river, ocean, or fish unless that water body or animal is explicitly present. Likewise, do not add a moon, clock, eyes, flowers, occult marks, or decorative animals unless explicitly present. Omit uncertain props instead of making the scene look more mystical.',
+    'Story logic: the reality-breaking rule must visibly change the action, distance, or structure of the scene; it cannot be a decorative symbol. Join the 2–3 anchors through one readable cause, exchange, or transformation already present in the dream.',
+    'Grounding lock: every recognizable person, place, animal, object, gesture, and action must come from the Dream source, the Visual elements to preserve, or the single Reality-breaking rule above. Omit uncertain filler. Do not add a moon, clock, eyes, flowers, occult marks, decorative animals, or a second figure unless explicitly present.',
     'Composition: ' + plan.composition.subject_position + '; ' + plan.composition.visual_flow + '; ' +
       plan.composition.spatial_layers + '; ' + plan.composition.negative_space + '.',
-    'Build one unmistakable focal point and one main eye path. Use asymmetric cropping, scale distortion, spatial mismatch, and a large low-density area. Keep 35–50% breathing room; cluster detail locally instead of distributing it evenly.',
-    'Color palette, exactly 4–6 inks: ' + palette.join(', ') + '. Use direct, vivid, fully saturated spot inks and strong emotional contrast; no pastel wash, desaturated filter, or timid grey mixing. The palette must follow this dream rather than defaulting to blue.',
-    'Style: rough screenprint and risograph texture with a handmade press character, high-saturation flat color blocks using vivid spot inks, deep pen-and-ink contours whose pressure visibly changes from thin to blunt within a single stroke, simplified adult figures, faces reduced to 1–3 marks or shown from behind/in profile/as silhouettes, minimal hatching, retro independent-publication character, modern editorial dream-poster composition, original artwork.',
-    'Make the drawing imperfect at the shape-construction level, not by tracing the same edge twice: outlines may bow, corners may miss, circles may be lopsided, limbs and architecture may be gently exaggerated, and adjacent color shapes may fail to align by a few millimetres. Preserve decisive single strokes, dry-brush breaks, uneven ink coverage, paper grain, and small accidental-looking asymmetries. It may feel slightly naive or childlike in spatial logic, but never cute, chibi, comic, or cartoon-faced.',
+    'Framing: use the plan as a loose staging seed, never as a fixed camera template. Keep one focal event, one continuous eye path, asymmetry, locally clustered detail, and 35–50% breathing room. Use scale mismatch, spatial distortion, or a structural crop only when it clarifies the stated event.',
+    'Color system: do not lock the series to a fixed red-and-blue pairing. Use a scene-specific relationship palette with one dominant color field, one clear warm/cool or complementary contrast, one small high-saturation focal accent, and near-black ink or warm paper as stabilizers.',
+    'Color palette, exactly 4–6 inks. Color roles for this dream: dominant field ' + palette[0] + '; contrast/action color ' + palette[1] + '; supporting colors ' + palette.slice(2).join(', ') + '. Use 4–6 major flat matte colors, with the dominant field carrying about 45–60% of the image, the contrast color carrying the action, and the focal accent kept localized. Allow hue rotation across dreams; do not distribute colors evenly or turn the image into a single-color filter.',
+    'Drawing: rough screenprint and risograph texture with a handmade print character, high-saturation flat color blocks, clear pressure-varied ink contours, limited matte flat fills, slight retro print paper grain and dry-brush breaks, high contrast without realism. Make silhouettes and architecture slightly irregular at the construction level: bowed edges, uneven corners, off-register joins, lopsided circles, and small accidental-looking asymmetries. No traced duplicate outlines.',
+    'People: reduce each person to an anonymous cutout figure: one solid garment mass, a head with no face or hair detail, and limbs made from 2–3 simple tapered shapes. Prefer back, side, tiny, or cropped views. No realistic joints, folds, footwear detail, posed anatomy, portrait features, or cartoon expression.',
+    'Surface and detail: use a few broad irregular flat masses with sparse marks. No cast shadows, smooth tonal modelling, tiled grids, glossy highlights, gradients, glow, or repeated tiny texture unless the stated dream action requires it.',
     'Represent about 60–70% remembered dream content, 20–25% emotional translation, and 10–15% artistic breathing room or one hidden symbol. Condense the dream; do not illustrate every noun.',
-    'Avoid: tarot border, title, number, ornate frame, card mockup, text, letters, watermark, photorealism, 3D, glossy gradients, cinematic glow, detailed faces, realistic anatomy, ungrounded props, excessive symbols, clutter, symmetrical composition, centered character template, generic purple fantasy, uniform blue palette, muddy grey-brown filter, pastel wash, rainbow mixing, heavy distressed texture, polished AI stock illustration, smooth vector curves, ruler-straight architecture, perfectly geometric objects, uniform line weight, repeated sketch contours.'
+    'Avoid: tarot border, title, number, ornate frame, card mockup, text, letters, watermark, photorealism, 3D/CAD volume, realistic anatomy, ungrounded props, excessive symbols, clutter, centered character template, generic purple fantasy, uniform blue palette, muddy grey-brown filter, pastel wash, rainbow mixing, heavy distressed texture, polished AI stock illustration, smooth vector curves, ruler-straight architecture, perfectly geometric objects, uniform line weight, or repeated sketch contours.'
   ].join('\n');
 }
 

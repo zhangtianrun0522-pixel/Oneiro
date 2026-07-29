@@ -294,7 +294,7 @@ database.rows.generated_assets.push({
   sourceDreamId: 'dream-1',
   file_id: 'cloud://dream-image-1.png',
   image_format: 'png',
-  style_preset: 'oneiro-riso-dream-v1.3',
+  style_preset: 'oneiro-seedream-dream-v2.0',
   created_at: new Date(now.getTime() + 1000),
 });
 database.rows.profile_snapshots.push({
