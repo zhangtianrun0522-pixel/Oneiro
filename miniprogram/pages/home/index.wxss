@@ -16,12 +16,6 @@
   letter-spacing: 7rpx;
 }
 
-.brand-mark {
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-}
-
 .profile {
   margin-top: var(--space-group);
 }

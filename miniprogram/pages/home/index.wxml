@@ -1,11 +1,5 @@
 <view class="screen">
-  <view class="brand">
-    <view class="brand-mark">
-      <text>ONEIRO</text>
-      <view class="oneiro-seal oneiro-seal--sm"><text>梦</text></view>
-    </view>
-    <button class="profile-link" bindtap="openProfile">我的资料</button>
-  </view>
+  <view class="brand"><text>ONEIRO</text></view>
 
   <view class="capture-stage">
     <text class="capture-eyebrow">{{heroCardNo}} · {{heroDate}}</text>

@@ -44,13 +44,6 @@
 
 .dream-card-back::before { position: absolute; inset: 16rpx; border: 1rpx solid rgba(184, 134, 59, 0.32); content: ''; pointer-events: none; }
 
-/* 卡背角标印：绝对定位落在右下角，不参与 flex 纵向布局，
-   不挤压标题／线索／问题的既有排布 */
-.card-back-seal {
-  right: 30rpx;
-  bottom: 30rpx;
-}
-
 .card-face-fade {
   animation: card-face-fade-in 180ms ease-out both;
 }

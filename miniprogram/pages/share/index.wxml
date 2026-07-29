@@ -1,6 +1,5 @@
 <view class="share-screen">
   <view class="shared-card">
-    <view class="oneiro-seal oneiro-seal--md oneiro-seal--corner shared-card-seal"><text>梦</text></view>
     <view class="card-header">
       <text>ONEIRO</text>
       <text>{{payload.cardNo}}</text>

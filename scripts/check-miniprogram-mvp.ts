@@ -782,6 +782,16 @@ for (const path of [
   assertJson(path);
 }
 
+// 首页按设计稿清空后，「我的资料」「打开梦境档案」两个文字入口从首页移除，
+// 资料页与梦册改由原生 tabBar 到达。原先断言这两个字符串在首页 wxml 里，
+// 现在改为断言真正承担可达性的 tabBar 配置——三个 tab 缺一个都会让对应
+// 页面变成只能靠代码跳转的孤儿页。
+const appConfig = JSON.parse(read('miniprogram/app.json')) as Record<string, any>;
+const tabBarPaths = (appConfig.tabBar?.list ?? []).map((tab: Record<string, string>) => tab.pagePath);
+for (const required of ['pages/home/index', 'pages/archive/index', 'pages/profile/index']) {
+  assert.ok(tabBarPaths.includes(required), `app.json tabBar should expose ${required}`);
+}
+
 assertIncludes('miniprogram/project.config.json', '"cloudfunctionRoot"');
 const projectConfig = JSON.parse(read('miniprogram/project.config.json')) as Record<string, any>;
 assert.equal(projectConfig.setting.condition, false);
@@ -813,8 +823,6 @@ for (const [path, expected] of [
   ['miniprogram/pages/home/index.wxml', 'bindtouchmove="onVoiceTouchMove"'],
   ['miniprogram/pages/home/index.wxml', 'bindtap="onDreamTextTap"'],
   ['miniprogram/pages/home/index.wxml', 'bindtouchstart="onVoiceTouchStart"'],
-  ['miniprogram/pages/home/index.wxml', '打开梦境档案'],
-  ['miniprogram/pages/home/index.wxml', '我的资料'],
   ['miniprogram/pages/home/index.wxml', 'fromShare'],
   ['miniprogram/pages/result/index.wxml', 'theme-{{dream.result.card_theme}}'],
   ['miniprogram/pages/result/index.wxml', 'dream-ai-image'],

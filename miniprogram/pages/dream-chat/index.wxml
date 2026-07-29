@@ -19,11 +19,11 @@
         class="message-row {{item.role === 'user' ? 'is-user' : 'is-assistant'}}"
       >
         <text wx:if="{{item.role === 'user'}}" class="message-role">你</text>
-        <view wx:else class="oneiro-seal oneiro-seal--sm oneiro-seal--muted message-role-seal"><text>梦</text></view>
+        <text wx:else class="message-role">回应</text>
         <text class="message-copy">{{item.content}}</text>
       </view>
       <view wx:if="{{sending}}" class="message-row is-assistant is-loading">
-        <view class="oneiro-seal oneiro-seal--sm oneiro-seal--muted message-role-seal"><text>梦</text></view>
+        <text class="message-role">回应</text>
         <text class="message-copy">正在沿着这个梦继续想…</text>
       </view>
     </view>

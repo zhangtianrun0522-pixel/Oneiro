@@ -95,12 +95,6 @@
 .is-user { margin-left: auto; border-right: 3rpx solid rgba(33, 29, 23, 0.58); border-radius: 16rpx 0 16rpx 16rpx; background: rgba(33, 29, 23, 0.055); }
 .is-user .message-role { color: rgba(33, 29, 23, 0.52); }
 
-/* 每条 AI 回复不再用「ONEIRO」文字重复标签，换成小印——
-   角色标识变成品牌印记，也省下一行大写字母的视觉噪音 */
-.message-role-seal {
-  margin-bottom: 10rpx;
-}
-
 .message-copy {
   display: block;
   margin-top: 12rpx;
