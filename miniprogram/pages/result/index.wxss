@@ -190,7 +190,7 @@
   margin: 24rpx 0 0;
   text-align: center;
   color: rgba(33, 29, 23, 0.42);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   letter-spacing: 3rpx;
 }
 
@@ -260,7 +260,7 @@
   gap: 18rpx;
   margin: 18rpx 0 0;
   color: rgba(33, 29, 23, 0.42);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
 }
 
 .image-retry {
@@ -273,7 +273,7 @@
   border-radius: 0;
   background: transparent;
   color: var(--gold-line);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   line-height: 1.4;
   text-decoration: underline;
@@ -503,20 +503,20 @@
 
 .reading,
 .grounded-reading {
-  margin-top: 32rpx;
+  margin-top: var(--space-block);
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.reading-block { margin-top: 34rpx; }
+.reading-block { margin-top: var(--space-group); }
 
 .milestone-pill {
   display: flex;
   align-items: center;
   gap: 18rpx;
-  margin-top: 24rpx;
+  margin-top: var(--space-tight);
   padding: 18rpx 22rpx;
   border: 1rpx solid rgba(184, 134, 59, 0.34);
   border-radius: 2rpx;
@@ -527,7 +527,7 @@
   flex: 1;
   min-width: 0;
   color: rgba(122, 84, 33, 0.8);
-  font-size: 22rpx;
+  font-size: var(--fs-label);
   font-weight: 700;
   line-height: 1.5;
 }
@@ -536,7 +536,7 @@
   flex: 0 0 auto;
   padding: 8rpx 4rpx;
   color: rgba(122, 84, 33, 0.8);
-  font-size: 18rpx;
+  font-size: var(--fs-label);
 }
 
 .original-dream {
@@ -547,9 +547,9 @@
 
 .original-copy {
   display: block;
-  margin-top: 14rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.76);
-  font-size: 27rpx;
+  font-size: var(--fs-aux);
   line-height: 1.82;
 }
 
@@ -557,20 +557,20 @@
   display: flex;
   flex-direction: column;
   gap: 18rpx;
-  margin-top: 18rpx;
+  margin-top: var(--space-tight);
 }
 
 .connection-item {
   color: rgba(33, 29, 23, 0.76);
-  font-size: 27rpx;
+  font-size: var(--fs-aux);
   line-height: 1.82;
 }
 
 .reading-boundary {
   display: block;
-  margin-top: 20rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.42);
-  font-size: 21rpx;
+  font-size: var(--fs-label);
   line-height: 1.65;
 }
 
@@ -586,7 +586,7 @@
   display: flex;
   align-items: center;
   gap: 22rpx;
-  margin-top: 34rpx;
+  margin-top: var(--space-group);
   padding: 28rpx;
   border: 1rpx solid rgba(33, 29, 23, 0.16);
   border-radius: 2rpx;
@@ -600,9 +600,9 @@
 
 .chat-entry-question {
   display: block;
-  margin-top: 12rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.76);
-  font-size: 25rpx;
+  font-size: var(--fs-aux);
   line-height: 1.65;
 }
 
@@ -613,20 +613,31 @@
   text-align: center;
 }
 
+/* result 页唯一的朱砂点睛：进入解读区第一眼看到的标题，前面落一枚印章方块 */
 .section-title {
   display: block;
-  margin-bottom: 26rpx;
+  margin-bottom: var(--space-tight);
   color: var(--ink);
-  font-size: 26rpx;
+  font-size: var(--fs-aux);
   font-weight: 800;
   letter-spacing: 1rpx;
 }
 
+.section-title::before {
+  content: '';
+  display: inline-block;
+  width: 8rpx;
+  height: 8rpx;
+  margin-right: 10rpx;
+  background: var(--cinnabar);
+  vertical-align: middle;
+}
+
 .reading-copy {
   display: block;
-  margin-top: 12rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.76);
-  font-size: 27rpx;
+  font-size: var(--fs-aux);
   line-height: 1.82;
 }
 
@@ -637,7 +648,7 @@
 }
 
 .metaphysical-subsection {
-  margin-top: 26rpx;
+  margin-top: var(--space-tight);
   padding-top: 22rpx;
   border-top: 1rpx solid rgba(33, 29, 23, 0.1);
 }
@@ -645,7 +656,7 @@
 .metaphysical-subtitle {
   display: block;
   color: var(--gold-line);
-  font-size: 19rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 2rpx;
 }
@@ -654,7 +665,7 @@
   display: block;
   margin-top: 10rpx;
   color: rgba(33, 29, 23, 0.76);
-  font-size: 25rpx;
+  font-size: var(--fs-aux);
   line-height: 1.82;
 }
 
@@ -673,19 +684,19 @@
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
-  margin-top: 20rpx;
+  margin-top: var(--space-tight);
 }
 
 .life-note-date {
   color: rgba(33, 29, 23, 0.42);
-  font-size: 19rpx;
+  font-size: var(--fs-label);
   letter-spacing: 2rpx;
 }
 
 .life-note-link {
   margin-left: auto;
   color: var(--gold-line);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
 }
 
 .life-note-link::after {
@@ -700,13 +711,13 @@
 .reading-label {
   display: block;
   color: var(--gold-line);
-  font-size: 19rpx;
+  font-size: var(--fs-label);
   font-weight: 900;
   letter-spacing: 2rpx;
 }
 
 .primary-button + .ghost-button {
-  margin-top: 20rpx;
+  margin-top: var(--space-tight);
 }
 
 .text-button {
@@ -717,7 +728,7 @@
   border-radius: 0;
   background: transparent;
   color: rgba(33, 29, 23, 0.68);
-  font-size: 24rpx;
+  font-size: var(--fs-aux);
   line-height: 82rpx;
 }
 
@@ -727,22 +738,26 @@
 
 .share-ready {
   display: block;
-  margin-top: 22rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.42);
-  font-size: 22rpx;
+  font-size: var(--fs-label);
   text-align: center;
 }
 
+/* 「删除这个梦」不再用朱砂表达危险，降为深墨文字链，与 profile 的
+   .clear-field 处理保持一致 */
 .delete-button {
   height: 72rpx;
-  margin-top: 24rpx;
+  margin-top: var(--space-tight);
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: rgba(193, 68, 59, 0.72);
-  font-size: 22rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
   line-height: 72rpx;
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
 .delete-button::after {
@@ -766,15 +781,15 @@
 
 .metaphysical-caption {
   color: rgba(33, 29, 23, 0.46);
-  font-size: 18rpx;
+  font-size: var(--fs-label);
   letter-spacing: 2rpx;
 }
 
 .metaphysical-resonance {
   display: block;
-  margin-top: 22rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.72);
-  font-size: 25rpx;
+  font-size: var(--fs-aux);
   line-height: 1.8;
 }
 
@@ -787,20 +802,24 @@
 /* ── 三级阅读结构 ───────────────────────────────────────────────
    第一层 核心观察 → 聊聊这个梦 → 第二层 三个视角 → 第三层 完整展开
    ───────────────────────────────────────────────────────────── */
+/* 「核心观察」是这页最重要的一句结论，改用宋体承接梦卡的书卷气，
+   字号提到与 .zone-title / .mo-title 同级的标题档 */
 .core-observation {
   display: block;
-  margin-bottom: 32rpx;
+  margin-bottom: var(--space-group);
   color: var(--ink);
-  font-size: 32rpx;
+  font-family: var(--font-serif);
+  font-size: var(--fs-title);
   font-weight: 600;
-  line-height: 1.72;
+  line-height: 1.5;
 }
 
+/* 「三个视角」是第二层阅读的入口，前面留出一整块的疏朗，用旧金线收口 */
 .tier-label {
   display: block;
-  margin: 46rpx 0 4rpx;
+  margin: var(--space-block) 0 4rpx;
   padding-bottom: 14rpx;
-  border-bottom: 1rpx solid rgba(33, 29, 23, 0.14);
+  border-bottom: 1rpx solid rgba(184, 134, 59, 0.4);
   color: var(--gold-ink);
   font-size: var(--fs-label);
   font-weight: 800;
@@ -813,7 +832,7 @@
   justify-content: center;
   gap: 10rpx;
   min-height: var(--tap-min);
-  margin-top: 40rpx;
+  margin-top: var(--space-group);
   border: 1rpx solid rgba(33, 29, 23, 0.2);
   color: var(--ink-70);
   font-size: var(--fs-aux);
@@ -821,7 +840,7 @@
 }
 
 .tier-toggle-icon {
-  font-size: 26rpx;
+  font-size: var(--fs-aux);
   line-height: 1;
   transition: transform 200ms ease;
 }
@@ -837,14 +856,14 @@
   justify-content: center;
   gap: 10rpx;
   min-height: var(--tap-min);
-  margin-top: 28rpx;
+  margin-top: var(--space-group);
   color: var(--ink-55);
   font-size: var(--fs-label);
   font-weight: 700;
 }
 
 .more-toggle-icon {
-  font-size: 24rpx;
+  font-size: var(--fs-aux);
   line-height: 1;
   transition: transform 200ms ease;
 }
@@ -854,7 +873,7 @@
 .more-actions {
   display: flex;
   flex-direction: column;
-  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
+  border-top: 1rpx solid rgba(184, 134, 59, 0.4);
 }
 
 .more-actions .text-button {
@@ -868,7 +887,9 @@
 
 .more-actions .delete-button {
   border-bottom: 0;
-  color: var(--cinnabar-ink);
+  color: var(--ink-70);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
-.share-button { margin-top: 20rpx; }
+.share-button { margin-top: var(--space-tight); }

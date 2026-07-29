@@ -1,5 +1,5 @@
 .empty {
-  margin-top: 54rpx;
+  margin-top: var(--space-block);
   padding: 36rpx 0;
   border-top: 1rpx solid rgba(33, 29, 23, 0.12);
   border-right: 0;
@@ -7,16 +7,16 @@
   border-left: 0;
   border-radius: 0;
   color: rgba(33, 29, 23, 0.5);
-  font-size: 26rpx;
+  font-size: var(--fs-aux);
   line-height: 1.8;
 }
 
 .archive-list {
-  margin-top: 54rpx;
+  margin-top: var(--space-block);
 }
 
 .timeline-month {
-  margin-top: 48rpx;
+  margin-top: var(--space-block);
 }
 
 .timeline-month:first-child {
@@ -26,7 +26,7 @@
 .timeline-month-label {
   display: block;
   color: #211d17;
-  font-size: 32rpx;
+  font-size: var(--fs-body);
   font-weight: 500;
   letter-spacing: 1rpx;
 }
@@ -140,12 +140,12 @@
   display: block;
   margin-top: 8rpx;
   color: rgba(184, 134, 59, 0.86);
-  font-size: 19rpx;
+  font-size: var(--fs-label);
 }
 
 .deck-count {
   display: block;
-  margin-top: 28rpx;
+  margin-top: var(--space-tight);
   color: var(--ink-55);
   font-size: var(--fs-label);
   font-weight: 800;
@@ -157,7 +157,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 12rpx;
-  margin-top: 18rpx;
+  margin-top: var(--space-tight);
 }
 
 .insight-key {
@@ -180,18 +180,18 @@
   align-items: center;
   justify-content: space-between;
   gap: 24rpx;
-  margin-top: 24rpx;
+  margin-top: var(--space-tight);
   padding: 18rpx 20rpx;
   border-left: 3rpx solid rgba(184, 134, 59, 0.54);
   background: var(--paper-raised);
   color: rgba(33, 29, 23, 0.62);
-  font-size: 22rpx;
+  font-size: var(--fs-label);
 }
 
 .filter-clear {
   flex: 0 0 auto;
   color: var(--gold-line);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
 }
 
 .archetype-banner-arrow {
@@ -203,7 +203,7 @@
 .archive-title {
   display: block;
   color: #211d17;
-  font-size: 28rpx;
+  font-size: var(--fs-body);
   font-weight: 600;
   letter-spacing: 1rpx;
 }
@@ -214,7 +214,7 @@
   margin-top: 10rpx;
   overflow: hidden;
   color: var(--ink-70);
-  font-size: 22rpx;
+  font-size: var(--fs-label);
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -242,12 +242,14 @@
 
 /* ── 本月观察：合并原「阶段观察 / 本月主牌 / 阶段原型」三张卡 ── */
 .month-observation {
-  margin-top: 28rpx;
+  margin-top: var(--space-block);
   padding: 30rpx 28rpx;
   border-left: 3rpx solid var(--gold-line);
   background: var(--paper-raised);
 }
 
+/* archive 页唯一的朱砂点睛：标题前一枚 8rpx 印章方块，纯 CSS 伪元素，
+   不需要改 WXML */
 .mo-label {
   display: block;
   color: var(--gold-ink);
@@ -256,25 +258,35 @@
   letter-spacing: 3rpx;
 }
 
+.mo-label::before {
+  content: '';
+  display: inline-block;
+  width: 8rpx;
+  height: 8rpx;
+  margin-right: 10rpx;
+  background: var(--cinnabar);
+  vertical-align: middle;
+}
+
 .mo-title {
   display: block;
-  margin-top: 14rpx;
+  margin-top: var(--space-tight);
   color: var(--ink);
-  font-family: "Songti SC", "STSong", serif;
-  font-size: 40rpx;
+  font-family: var(--font-serif);
+  font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: 2rpx;
 }
 
 .mo-copy {
   display: block;
-  margin-top: 12rpx;
+  margin-top: var(--space-tight);
   color: var(--ink-70);
-  font-size: 26rpx;
+  font-size: var(--fs-aux);
   line-height: 1.72;
 }
 
-.mo-tags { margin-top: 20rpx; }
+.mo-tags { margin-top: var(--space-group); }
 
 .mo-archetype {
   display: flex;
@@ -282,8 +294,8 @@
   justify-content: space-between;
   gap: 16rpx;
   min-height: var(--tap-min);
-  margin-top: 18rpx;
-  padding-top: 18rpx;
+  margin-top: var(--space-tight);
+  padding-top: var(--space-tight);
   border-top: 1rpx solid rgba(33, 29, 23, 0.12);
 }
 

@@ -15,10 +15,24 @@ page {
   --gold-line: #b8863b;
   --gold-ink: #8a5d29;
 
-  /* 字号：辅助 ≥22rpx，正文 27–30rpx */
+  /* 字号：五档，从「栏目眉」到「每页至多一处」的大字，拉开梯度而不是
+     挤在 22–28rpx 的窄带里 */
   --fs-label: 22rpx;
-  --fs-aux: 24rpx;
-  --fs-body: 28rpx;
+  --fs-aux: 26rpx;
+  --fs-body: 30rpx;
+  --fs-title: 38rpx;
+  --fs-display: 52rpx;
+
+  /* 字族：日常书写用无衬线，庄重结论/仪式性文字（页面 hero、区块标题、
+     卡名、核心观察、分享卡标题）显式切到宋体 + 600 字重 */
+  --font-sans: "PingFang SC", "Helvetica Neue", sans-serif;
+  --font-serif: "Noto Serif SC", "Songti SC", STSong, serif;
+
+  /* 间距：三档，制造「疏可走马、密不透风」的节奏。
+     block=顶级区块之间，group=区块内分组，tight=标题与紧随正文之间 */
+  --space-block: 72rpx;
+  --space-group: 40rpx;
+  --space-tight: 16rpx;
 
   /* 触控最小尺寸 */
   --tap-min: 88rpx;
@@ -26,7 +40,7 @@ page {
   min-height: 100vh;
   background: var(--paper);
   color: var(--ink);
-  font-family: "Noto Serif SC", "Songti SC", STSong, "PingFang SC", serif;
+  font-family: var(--font-sans);
 }
 
 view,
@@ -65,9 +79,9 @@ button::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 64rpx;
+  margin-bottom: var(--space-block);
   color: rgba(33, 29, 23, 0.64);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   font-weight: 700;
   letter-spacing: 5rpx;
 }
@@ -83,16 +97,17 @@ button::after {
 
 .title {
   display: block;
-  margin-top: 24rpx;
+  margin-top: var(--space-tight);
   color: #211d17;
-  font-size: 44rpx;
-  font-weight: 500;
+  font-family: var(--font-serif);
+  font-size: var(--fs-title);
+  font-weight: 600;
   letter-spacing: 1rpx;
   line-height: 1.35;
 }
 
 .copy {
-  margin-top: 24rpx;
+  margin-top: var(--space-tight);
   color: var(--ink-70);
   font-size: var(--fs-aux);
   letter-spacing: 0;
@@ -106,7 +121,7 @@ button::after {
   justify-content: center;
   width: 100% !important;
   min-height: var(--tap-min);
-  margin-top: 36rpx;
+  margin-top: var(--space-group);
   border: 1rpx solid var(--ink);
   border-radius: 2rpx;
   background: var(--ink);
@@ -132,7 +147,7 @@ button::after {
 
 .field-label {
   display: block;
-  margin: 34rpx 0 16rpx;
+  margin: var(--space-group) 0 var(--space-tight);
   color: var(--gold-ink);
   font-size: var(--fs-label);
   font-weight: 800;
@@ -144,7 +159,7 @@ button::after {
   min-height: 86rpx;
   border-bottom: 1rpx solid rgba(33, 29, 23, 0.22);
   color: rgba(33, 29, 23, 0.82);
-  font-size: 28rpx;
+  font-size: var(--fs-body);
   letter-spacing: 0;
 }
 

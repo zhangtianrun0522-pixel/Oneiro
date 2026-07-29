@@ -17,7 +17,7 @@
   align-items: center;
   justify-content: space-between;
   color: rgba(33, 29, 23, 0.42);
-  font-size: 18rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 8rpx;
 }
@@ -114,32 +114,35 @@
   background: rgba(247, 250, 252, 0.76);
 }
 
+/* 分享卡标题是这张卡最「结论性」的一句，切到宋体并升到 display 档，
+   全页仅此一处大字 */
 .card-title {
   display: block;
   text-align: center;
   color: var(--ink);
-  font-size: 56rpx;
+  font-family: var(--font-serif);
+  font-size: var(--fs-display);
   font-weight: 600;
   letter-spacing: 18rpx;
 }
 
 .profile-summary {
   display: block;
-  margin-top: 18rpx;
+  margin-top: var(--space-tight);
   text-align: center;
   color: rgba(33, 29, 23, 0.4);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 4rpx;
 }
 
 .weather {
   display: block;
-  margin: 18rpx auto 0;
+  margin: var(--space-tight) auto 0;
   width: 86%;
   text-align: center;
   color: var(--ink-70);
-  font-size: 24rpx;
+  font-size: var(--fs-aux);
   line-height: 1.8;
 }
 
@@ -148,7 +151,7 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 14rpx;
-  margin: 28rpx 0;
+  margin: var(--space-group) 0;
 }
 
 .symbol {
@@ -156,12 +159,12 @@
   border: 1rpx solid rgba(33, 29, 23, 0.14);
   border-radius: 999rpx;
   color: var(--ink-70);
-  font-size: 20rpx;
+  font-size: var(--fs-label);
   font-weight: 700;
 }
 
 .ritual {
-  margin-top: 22rpx;
+  margin-top: var(--space-tight);
   padding: 24rpx 26rpx;
   border: 1rpx solid rgba(33, 29, 23, 0.1);
   border-radius: 24rpx;
@@ -169,19 +172,30 @@
   text-align: center;
 }
 
+/* share 页唯一的朱砂点睛：仪式感最强的「今日预兆」标签，前面落一枚印章方块 */
 .ritual-label {
   display: block;
   color: var(--gold-ink);
-  font-size: 16rpx;
+  font-size: var(--fs-label);
   font-weight: 900;
   letter-spacing: 8rpx;
 }
 
+.ritual-label::before {
+  content: '';
+  display: inline-block;
+  width: 8rpx;
+  height: 8rpx;
+  margin-right: 10rpx;
+  background: var(--cinnabar);
+  vertical-align: middle;
+}
+
 .ritual-text {
   display: block;
-  margin-top: 12rpx;
+  margin-top: var(--space-tight);
   color: var(--ink);
-  font-size: 26rpx;
+  font-size: var(--fs-aux);
   font-weight: 800;
   line-height: 1.55;
 }
@@ -189,22 +203,22 @@
 /* .meta-hint / .oracle-line：当前 wxml 未使用（历史遗留), 一并换成纸色
    token 只为消除深色主题残留，不影响任何实际渲染 */
 .meta-hint {
-  margin-top: 18rpx;
+  margin-top: var(--space-tight);
   padding: 22rpx 24rpx;
   border-radius: 22rpx;
   background: var(--paper-raised);
   color: var(--ink-55);
-  font-size: 21rpx;
+  font-size: var(--fs-label);
   line-height: 1.65;
   text-align: center;
 }
 
 .oracle-line {
-  margin-top: 34rpx;
+  margin-top: var(--space-group);
   padding: 34rpx 30rpx;
   border-left: 4rpx solid rgba(184, 134, 59, 0.34);
   color: var(--ink-70);
-  font-size: 31rpx;
+  font-size: var(--fs-body);
   font-weight: 500;
   line-height: 1.8;
 }

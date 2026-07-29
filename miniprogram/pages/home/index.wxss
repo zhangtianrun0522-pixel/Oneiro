@@ -10,9 +10,9 @@
 }
 
 .brand {
-  margin-bottom: 44rpx;
+  margin-bottom: var(--space-block);
   color: var(--ink);
-  font-size: 24rpx;
+  font-size: var(--fs-aux);
   font-weight: 800;
   letter-spacing: 7rpx;
 }
@@ -25,24 +25,24 @@
 }
 
 .title {
-  margin-top: 22rpx;
+  margin-top: var(--space-tight);
   color: #211d17;
-  font-family: "Songti SC", "STSong", serif;
-  font-size: 52rpx;
+  font-family: var(--font-serif);
+  font-size: var(--fs-display);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 1.32;
 }
 
 .copy {
-  margin-top: 20rpx;
+  margin-top: var(--space-tight);
   color: var(--ink-70);
-  font-size: 26rpx;
+  font-size: var(--fs-aux);
   line-height: 1.7;
 }
 
 .hero {
-  margin-bottom: 36rpx;
+  margin-bottom: var(--space-block);
 }
 
 .title-accent {
@@ -52,7 +52,7 @@
 
 .hero-note {
   display: block;
-  margin-top: 14rpx;
+  margin-top: var(--space-tight);
   color: var(--ink-55);
   font-size: var(--fs-label);
   line-height: 1.6;
@@ -89,8 +89,8 @@
 .primary-button-cn {
   margin-top: 7rpx;
   color: #f2ecdf;
-  font-family: "Songti SC", "STSong", serif;
-  font-size: 30rpx;
+  font-family: var(--font-serif);
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
@@ -108,24 +108,26 @@
 }
 
 .profile {
-  margin-top: 40rpx;
+  margin-top: var(--space-group);
 }
 
+/* 朱砂只留给 .title-accent 这一处点睛，分享提示条改用旧金细线，
+   与 .month-observation / .original-dream 等左边框语言保持一致 */
 .share-note {
   display: block;
-  margin-top: 24rpx;
+  margin-top: var(--space-tight);
   padding: 22rpx 24rpx;
-  border-left: 3rpx solid rgba(193, 68, 59, 0.55);
+  border-left: 3rpx solid rgba(184, 134, 59, 0.5);
   color: rgba(33, 29, 23, 0.6);
-  font-size: 24rpx;
+  font-size: var(--fs-aux);
   line-height: 1.7;
 }
 
 .field-help {
   display: block;
-  margin-top: 14rpx;
+  margin-top: var(--space-tight);
   color: rgba(159, 183, 201, 0.44);
-  font-size: 22rpx;
+  font-size: var(--fs-label);
   line-height: 1.6;
 }
 
@@ -163,7 +165,8 @@
 .capture-prompt { color: var(--ink-55); font-size: var(--fs-label); }
 /* textarea 默认 height:150px，min-height 压不下去，必须显式给 height */
 .dream-input { box-sizing: border-box; width: 100%; height: 200rpx; padding: 12rpx 0; background: transparent; color: var(--ink); font-size: var(--fs-body); line-height: 1.8; }
-.capture-divider { height: 1rpx; margin: 4rpx 0 20rpx; background: rgba(33, 29, 23, 0.1); }
+/* 版式节奏用旧金细线，与灰墨分隔线区分开 */
+.capture-divider { height: 1rpx; margin: 4rpx 0 20rpx; background: rgba(184, 134, 59, 0.32); }
 
 /* 正圆语音按钮。width 必须带 !important，否则会被微信 button 的
    内置 184px 压掉，渲染成椭圆（height 不受影响，所以只有宽度会失真）。 */
@@ -189,20 +192,21 @@
 .voice-button-icon { margin: 0 0 6rpx; font-size: 40rpx; font-weight: 400; line-height: 1; }
 .voice-button.recording { border-color: var(--cinnabar-ink); background: var(--cinnabar-ink); color: var(--paper-raised); box-shadow: 0 12rpx 32rpx rgba(169, 86, 75, 0.24), inset 0 0 0 10rpx rgba(251, 246, 236, 0.12); }
 .voice-button[disabled] { opacity: 0.55; }
-.voice-hint, .recognizing-note, .privacy-note { display: block; margin-top: 14rpx; color: var(--ink-55); font-size: var(--fs-label); text-align: center; }
+.voice-hint, .recognizing-note, .privacy-note { display: block; margin-top: var(--space-tight); color: var(--ink-55); font-size: var(--fs-label); text-align: center; }
 .recognizing-note { color: var(--gold-ink); font-size: var(--fs-aux); }
-.privacy-note { margin-top: 14rpx; color: var(--ink-55); line-height: 1.6; }
+.privacy-note { margin-top: var(--space-tight); color: var(--ink-55); line-height: 1.6; }
 
-.recent-section { margin-top: 64rpx; }
+.recent-section { margin-top: var(--space-block); }
 .recent-heading { display: flex; align-items: center; justify-content: space-between; min-height: var(--tap-min); color: var(--ink-70); font-size: var(--fs-label); letter-spacing: 1rpx; }
-.recent-scroll { width: 100%; margin-top: 18rpx; white-space: nowrap; }
+.recent-scroll { width: 100%; margin-top: var(--space-tight); white-space: nowrap; }
 .recent-card { display: inline-flex; flex-direction: column; justify-content: space-between; width: 250rpx; height: 172rpx; margin-right: 16rpx; padding: 20rpx; border: 1rpx solid rgba(33, 29, 23, 0.12); background: #fbf6ec; white-space: normal; }
 .recent-card.theme-tide, .recent-card.theme-moon { border-top: 4rpx solid #607f8b; }
 .recent-card.theme-threshold, .recent-card.theme-hearth { border-top: 4rpx solid #b8863b; }
 .recent-card.theme-shadow, .recent-card.theme-archive { border-top: 4rpx solid #526070; }
 .recent-card.theme-falling { border-top: 4rpx solid #b36c62; }
 .recent-date { color: var(--ink-55); font-size: var(--fs-label); letter-spacing: 2rpx; }
-.recent-title { color: #211d17; font-size: 24rpx; line-height: 1.5; }
+/* 卡名沿用宋体，呼应梦卡本身的书卷气 */
+.recent-title { color: #211d17; font-family: var(--font-serif); font-size: var(--fs-aux); font-weight: 600; line-height: 1.5; }
 
 /* ── 解读进行中的浮层（原 new-dream 页，合并后由首页承载） ── */
 .analysis-overlay {
@@ -249,6 +253,7 @@
   content: '';
 }
 
+/* 解读进行中浮层里唯一的朱砂点睛：轨道上的一粒朱砂，如印泥一点 */
 .analysis-orbit-dot {
   position: absolute;
   top: -5rpx;
@@ -256,7 +261,7 @@
   width: 10rpx;
   height: 10rpx;
   border-radius: 50%;
-  background: #c1443b;
+  background: var(--cinnabar);
   box-shadow: 0 0 18rpx rgba(193, 68, 59, 0.42);
 }
 
@@ -276,20 +281,21 @@
 
 .analysis-title {
   display: block;
-  margin-top: 18rpx;
+  margin-top: var(--space-tight);
   color: #211d17;
-  font-family: "Songti SC", "STSong", serif;
-  font-size: 38rpx;
+  font-family: var(--font-serif);
+  font-size: var(--fs-title);
+  font-weight: 600;
   letter-spacing: 1rpx;
   text-align: center;
 }
 
 .analysis-preview {
   display: block;
-  margin-top: 20rpx;
+  margin-top: var(--space-tight);
   overflow: hidden;
   color: rgba(33, 29, 23, 0.42);
-  font-size: 23rpx;
+  font-size: var(--fs-label);
   letter-spacing: 0;
   line-height: 1.7;
   text-align: center;
@@ -297,17 +303,18 @@
   white-space: nowrap;
 }
 
+/* 「进行中」这条高亮改用旧金，朱砂只留给上方的轨道点 */
 .analysis-current {
-  margin-top: 46rpx;
+  margin-top: var(--space-group);
   padding: 28rpx 30rpx;
-  border-left: 3rpx solid #c1443b;
+  border-left: 3rpx solid var(--gold-line);
   background: #fbf6ec;
 }
 
 .analysis-current-title {
   display: block;
   color: #211d17;
-  font-size: 27rpx;
+  font-size: var(--fs-aux);
   letter-spacing: 0;
 }
 
@@ -315,7 +322,7 @@
   display: block;
   margin-top: 10rpx;
   color: rgba(33, 29, 23, 0.56);
-  font-size: 22rpx;
+  font-size: var(--fs-label);
   line-height: 1.65;
 }
 
@@ -328,7 +335,7 @@
 }
 
 .analysis-timeline {
-  margin-top: 34rpx;
+  margin-top: var(--space-group);
 }
 
 .analysis-step {
@@ -360,7 +367,7 @@
 }
 
 .analysis-step-title {
-  font-size: 22rpx;
+  font-size: var(--fs-label);
   letter-spacing: 0;
 }
 
@@ -375,13 +382,13 @@
 }
 
 .analysis-step.is-active .analysis-step-dot {
-  border-color: #c1443b;
-  box-shadow: 0 0 0 7rpx rgba(193, 68, 59, 0.11);
+  border-color: var(--gold-line);
+  box-shadow: 0 0 0 7rpx rgba(184, 134, 59, 0.16);
 }
 
 .analysis-note {
   display: block;
-  margin-top: 38rpx;
+  margin-top: var(--space-group);
   color: rgba(33, 29, 23, 0.36);
   font-size: var(--fs-label);
   line-height: 1.6;

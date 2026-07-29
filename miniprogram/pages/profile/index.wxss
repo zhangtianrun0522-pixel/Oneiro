@@ -1,18 +1,19 @@
 .profile-screen { padding-bottom: calc(64rpx + env(safe-area-inset-bottom)); }
 
+/* 页面头部下的第一道版式节奏，改用旧金细线 */
 .profile-intro {
   display: block;
-  margin-top: 24rpx;
+  margin-top: var(--space-tight);
   padding: 24rpx 0;
-  border-top: 1rpx solid rgba(33, 29, 23, 0.1);
-  border-bottom: 1rpx solid rgba(33, 29, 23, 0.1);
+  border-top: 1rpx solid rgba(184, 134, 59, 0.35);
+  border-bottom: 1rpx solid rgba(184, 134, 59, 0.35);
   color: rgba(33, 29, 23, 0.58);
   font-size: var(--fs-aux);
   line-height: 1.75;
 }
 
 .memory-section {
-  margin-top: 34rpx;
+  margin-top: var(--space-block);
   padding: 30rpx;
   border: 0;
   border-radius: 0;
@@ -24,16 +25,16 @@
 .facts-section { background: transparent; }
 
 .supporting-section {
-  margin-top: 20rpx;
+  margin-top: var(--space-group);
   padding: 22rpx 24rpx;
 }
 
 .supporting-section .memory-title {
-  font-size: 26rpx;
+  font-size: var(--fs-aux);
 }
 
 .supporting-section .memory-summary {
-  margin-top: 14rpx;
+  margin-top: var(--space-tight);
   font-size: var(--fs-aux);
 }
 
@@ -99,8 +100,19 @@
 .memory-title {
   margin-top: 8rpx;
   color: #211d17;
-  font-size: 31rpx;
+  font-size: var(--fs-body);
   font-weight: 650;
+}
+
+/* profile 页唯一的朱砂点睛：阶段画像是本页最重要的结论，标题前落一枚印章方块 */
+.portrait-section .memory-title::before {
+  content: '';
+  display: inline-block;
+  width: 8rpx;
+  height: 8rpx;
+  margin-right: 10rpx;
+  background: var(--cinnabar);
+  vertical-align: middle;
 }
 
 .memory-count,
@@ -118,9 +130,9 @@
 }
 
 .memory-summary {
-  margin-top: 22rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.68);
-  font-size: 24rpx;
+  font-size: var(--fs-aux);
   line-height: 1.75;
 }
 
@@ -134,7 +146,7 @@
 }
 
 .portrait-card {
-  margin-top: 24rpx;
+  margin-top: var(--space-tight);
   padding: 26rpx;
   border: 1rpx solid rgba(33, 29, 23, 0.13);
   border-radius: 0;
@@ -150,7 +162,7 @@
 .portrait-empty-title {
   display: block;
   color: rgba(33, 29, 23, 0.74);
-  font-size: 26rpx;
+  font-size: var(--fs-aux);
   font-weight: 600;
 }
 
@@ -163,15 +175,15 @@
 }
 
 .portrait-summary {
-  margin-top: 14rpx;
+  margin-top: var(--space-tight);
   color: #211d17;
-  font-size: 25rpx;
+  font-size: var(--fs-aux);
   line-height: 1.78;
 }
 
 .portrait-reason,
 .portrait-note {
-  margin-top: 16rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.44);
   font-size: var(--fs-label);
   line-height: 1.65;
@@ -181,13 +193,13 @@
   box-sizing: border-box;
   width: 100%;
   min-height: 180rpx;
-  margin-top: 16rpx;
+  margin-top: var(--space-tight);
   padding: 18rpx;
   border: 1rpx solid rgba(33, 29, 23, 0.2);
   border-radius: 0;
   background: #fdfaf2;
   color: #211d17;
-  font-size: 24rpx;
+  font-size: var(--fs-aux);
   line-height: 1.7;
 }
 
@@ -195,7 +207,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 12rpx;
-  margin-top: 22rpx;
+  margin-top: var(--space-tight);
 }
 
 /* 方正、克制的纸本语言：内容区按钮不用胶囊圆角 */
@@ -232,7 +244,7 @@
   text-underline-offset: 6rpx;
 }
 
-.portrait-generate { margin-top: 24rpx; border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
+.portrait-generate { margin-top: var(--space-tight); border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
 
 .portrait-primary::after,
 .portrait-secondary::after,
@@ -242,7 +254,7 @@
 }
 
 .portrait-history {
-  margin-top: 28rpx;
+  margin-top: var(--space-group);
   padding-top: 22rpx;
   border-top: 1rpx solid rgba(33, 29, 23, 0.1);
 }
@@ -252,7 +264,7 @@
   align-items: center;
   justify-content: space-between;
   min-height: var(--tap-min);
-  margin-top: 26rpx;
+  margin-top: var(--space-tight);
   padding-top: 22rpx;
   border-top: 1rpx solid rgba(33, 29, 23, 0.1);
   color: rgba(33, 29, 23, 0.48);
@@ -264,7 +276,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
-  margin-top: 14rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.48);
   font-size: var(--fs-label);
 }
@@ -305,12 +317,16 @@
   justify-content: space-between;
 }
 
+/* 「清除」不再用朱砂强调危险，降为深墨文字链，与 .portrait-link /
+   .history-restore 的低调操作语言保持一致 */
 .clear-field {
   width: auto !important;
   min-height: var(--tap-min);
-  color: var(--cinnabar);
+  color: var(--ink-70);
   font-size: var(--fs-label);
   line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
 .picker-field {
@@ -320,7 +336,7 @@
 
 .privacy-copy {
   display: block;
-  margin-top: 22rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.42);
   font-size: var(--fs-label);
   line-height: 1.6;
@@ -328,7 +344,7 @@
 }
 
 .profile-revisit {
-  margin-top: 32rpx;
+  margin-top: var(--space-group);
   padding: 28rpx;
   border-left: 3rpx solid rgba(184, 134, 59, 0.72);
   background: #fbf6ec;
@@ -343,29 +359,29 @@
 
 .profile-revisit-kicker {
   color: #b8863b;
-  font-size: 17rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 3rpx;
 }
 
 .profile-revisit-title {
-  margin-top: 12rpx;
+  margin-top: var(--space-tight);
   color: #211d17;
-  font-size: 27rpx;
+  font-size: var(--fs-aux);
   font-weight: 600;
 }
 
 .profile-revisit-question {
-  margin-top: 12rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.7);
-  font-size: 25rpx;
+  font-size: var(--fs-aux);
   line-height: 1.75;
 }
 
 .profile-revisit-actions {
   display: flex;
   gap: 16rpx;
-  margin-top: 22rpx;
+  margin-top: var(--space-group);
 }
 
 .profile-revisit-answer,
@@ -374,7 +390,7 @@
   height: 68rpx;
   margin: 0;
   border-radius: 0;
-  font-size: 22rpx;
+  font-size: var(--fs-label);
   font-weight: 800;
   line-height: 68rpx;
 }
@@ -393,14 +409,14 @@
 }
 
 .profile-revisit-disable {
-  margin-top: 18rpx;
+  margin-top: var(--space-tight);
   color: rgba(33, 29, 23, 0.38);
-  font-size: 19rpx;
+  font-size: var(--fs-label);
   text-align: center;
 }
 
 .profile-revisit-composer {
-  margin-top: 22rpx;
+  margin-top: var(--space-group);
 }
 
 .profile-revisit-textarea {
@@ -413,14 +429,14 @@
   border-radius: 0;
   background: #fdfaf2;
   color: #211d17;
-  font-size: 25rpx;
+  font-size: var(--fs-aux);
   line-height: 1.6;
 }
 
 .profile-revisit-send {
   display: block;
   width: 150rpx;
-  margin-top: 16rpx;
+  margin-top: var(--space-tight);
   margin-left: auto;
   background: #211d17;
   color: #fbf6ec;
@@ -435,19 +451,19 @@
 /* ── 页面分为两个明确分区 ── */
 .zone-title {
   display: block;
-  margin: 56rpx 0 0;
+  margin: var(--space-block) 0 0;
   padding-bottom: 16rpx;
   border-bottom: 2rpx solid var(--ink);
   color: var(--ink);
-  font-family: "Songti SC", "STSong", serif;
-  font-size: 34rpx;
+  font-family: var(--font-serif);
+  font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: 2rpx;
 }
 
 .zone-note {
   display: block;
-  margin-top: 14rpx;
+  margin-top: var(--space-tight);
   color: var(--ink-55);
   font-size: var(--fs-label);
   line-height: 1.6;
