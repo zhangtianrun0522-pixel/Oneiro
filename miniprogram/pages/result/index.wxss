@@ -715,11 +715,13 @@
 }
 
 /* result 页唯一的朱砂点睛：进入解读区第一眼看到的标题，前面落一枚印章方块 */
+/* 与页面其余章节标题（.reading-label）同一档字号，唯一的区别
+   落在前缀的朱砂点睛上，不再单独放大成介于 label 与正文之间的尺寸 */
 .section-title {
   display: block;
   margin-bottom: var(--space-tight);
   color: var(--ink);
-  font-size: var(--fs-aux);
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 1rpx;
 }
@@ -817,8 +819,37 @@
   letter-spacing: 2rpx;
 }
 
-.primary-button + .ghost-button {
+/* 主按钮下方的一行轻量文字链：分享 / 保存完整解读 / 删除，
+   与「每屏一个实心主按钮」的硬规则配合——除收藏梦卡外，其余操作
+   全部降级为同一分量的文字链，不再用第二个按钮块与主按钮抢视觉权重 */
+.action-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40rpx;
   margin-top: var(--space-tight);
+}
+
+.action-link {
+  flex: 0 0 auto;
+  min-height: var(--tap-min);
+  padding: 0 4rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
+}
+
+.action-link[disabled] {
+  opacity: 0.5;
+}
+
+/* 删除仍与其余两个文字链同一分量，不再用朱砂标出危险，
+   与 .delete-button / profile 的 .clear-field 处理保持一致 */
+.action-link-delete {
+  color: var(--ink-70);
 }
 
 .text-button {
@@ -992,5 +1023,3 @@
   text-decoration: underline;
   text-underline-offset: 6rpx;
 }
-
-.share-button { margin-top: var(--space-tight); }

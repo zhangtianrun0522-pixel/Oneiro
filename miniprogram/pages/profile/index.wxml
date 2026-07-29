@@ -43,7 +43,7 @@
     </view>
 
     <view wx:if="{{memoryState.current}}" class="portrait-card portrait-feature current-portrait">
-      <text class="portrait-status">此刻的阶段画像 · {{memoryState.current.useInFutureReadings === false ? '暂不用于解读' : '用于后续解读'}}</text>
+      <text class="portrait-status {{memoryState.current.useInFutureReadings === false ? 'is-paused' : ''}}">此刻的阶段画像 · {{memoryState.current.useInFutureReadings === false ? '暂不用于解读' : '用于后续解读'}}</text>
       <textarea
         wx:if="{{portraitEditing}}"
         class="portrait-editor"

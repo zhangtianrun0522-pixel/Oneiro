@@ -81,10 +81,12 @@
   padding-top: 20rpx;
 }
 
+/* 内边距/间距对齐参考稿的疏朗感：12px/14px 的气泡内边距，
+   消息之间 16px 的呼吸区（气泡结构本身不改，仍是不对称小圆角） */
 .message-row {
   max-width: 88%;
-  margin-bottom: 24rpx;
-  padding: 24rpx 26rpx;
+  margin-bottom: 32rpx;
+  padding: 24rpx 28rpx;
 }
 
 /* 不对称小圆角给出方向感：AI 消息左上直角贴着旧金强调边，
@@ -121,22 +123,25 @@
 .composer-row { display: flex; align-items: flex-end; gap: 12rpx; }
 .turn-limit { flex: 0 0 auto; color: var(--ink-55); font-size: var(--fs-label); }
 
+/* 胶囊输入框：参考稿是浅底色圆角胶囊而非下划线单线，这里换成
+   同类的浅墨色底 + 全圆角，视觉上更贴近「说点什么…」的疏朗感 */
 .chat-input {
   flex: 1;
   width: auto;
   min-width: 0;
   min-height: var(--tap-min);
   max-height: 160rpx;
-  padding: 17rpx 12rpx;
+  padding: 17rpx 28rpx;
   border: 0;
-  border-bottom: 1rpx solid rgba(33, 29, 23, 0.24);
-  border-radius: 0;
-  background: transparent;
+  border-radius: 999rpx;
+  background: rgba(33, 29, 23, 0.05);
   color: #211d17;
   font-size: var(--fs-body);
   line-height: 1.5;
 }
 
+/* 圆形提交按钮：说 / 发送两个按钮宽高相等，直接改成正圆即可对齐
+   参考稿的圆形提交按钮版式，不涉及任何手势逻辑改动 */
 .voice-button,
 .send-button {
   flex: 0 0 var(--tap-min);
@@ -144,7 +149,7 @@
   height: var(--tap-min);
   margin: 0;
   padding: 0;
-  border-radius: 0;
+  border-radius: 50%;
   font-size: var(--fs-label);
   font-weight: 800;
   line-height: var(--tap-min);

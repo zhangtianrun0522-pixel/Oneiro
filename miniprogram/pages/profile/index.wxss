@@ -184,6 +184,12 @@
   letter-spacing: 2rpx;
 }
 
+/* 「暂停用于解读」与「用于解读中」不能共用同一枚肯定色——
+   暂停态改用中性墨灰，与仍在生效的旧金色形成清楚的区分度 */
+.portrait-status.is-paused {
+  color: var(--ink-55);
+}
+
 .portrait-card {
   margin-top: var(--space-tight);
   padding: 26rpx;
@@ -292,10 +298,18 @@
   border: 0;
 }
 
+/* 历史版本是阶段画像的从属子列表，不再只用一条上分隔线，
+   换成缩进 + 左侧细金线的容器，读出「附属于上方结论」的层级关系 */
 .portrait-history {
-  margin-top: var(--space-group);
-  padding-top: 22rpx;
-  border-top: 1rpx solid rgba(33, 29, 23, 0.1);
+  margin-top: var(--space-tight);
+  padding: 20rpx 20rpx 20rpx 24rpx;
+  border-top: 0;
+  border-left: 2rpx solid rgba(184, 134, 59, 0.35);
+  background: rgba(33, 29, 23, 0.03);
+}
+
+.portrait-history .history-item:first-child {
+  margin-top: 0;
 }
 
 .portrait-history-toggle {

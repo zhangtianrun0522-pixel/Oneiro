@@ -158,14 +158,24 @@
         <text class="reading-label">另一种可能</text>
         <text class="reading-copy">{{dream.result.alternative_reading}}</text>
       </view>
+
+      <view wx:if="{{dream.result.one_small_act}}" class="reading-block">
+        <text class="reading-label">今天的小行动</text>
+        <text class="reading-copy">{{dream.result.one_small_act}}</text>
+      </view>
     </view>
   </view>
 
-  <!-- 一个主操作 + 一个次操作，其余收进「更多」 -->
+  <!-- 每屏一个实心主按钮：收藏梦卡。分享/保存完整解读/删除全部降级为
+       主按钮下方的一行轻量文字链，不再用第二个按钮块与主按钮抢视觉权重。 -->
   <block wx:if="{{!interpretationUnavailable}}">
     <button class="primary-button" bindtap="saveCard">{{cardSaved ? '已收藏梦卡' : '收藏梦卡'}}</button>
-    <button wx:if="{{!sharePath}}" class="ghost-button share-button" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard">分享这张梦卡</button>
-    <button wx:else class="ghost-button share-button" open-type="share">分享给朋友</button>
+    <view class="action-links">
+      <button wx:if="{{!sharePath}}" class="action-link" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard">分享这张梦卡</button>
+      <button wx:else class="action-link" open-type="share">分享给朋友</button>
+      <button class="action-link" bindtap="saveFullReading">保存完整解读</button>
+      <button class="action-link action-link-delete" bindtap="deleteDream">删除这个梦</button>
+    </view>
   </block>
 
   <view class="more-toggle" bindtap="toggleMoreActions">
@@ -174,10 +184,11 @@
   </view>
 
   <view wx:if="{{showMoreActions}}" class="more-actions">
-    <button wx:if="{{!interpretationUnavailable}}" class="text-button" bindtap="saveFullReading">保存完整解读</button>
     <button class="text-button" bindtap="newDream">再记一个梦</button>
     <button class="text-button" bindtap="openArchive">梦境档案</button>
-    <button class="text-button delete-button" bindtap="deleteDream">删除这个梦</button>
+    <!-- 未生成解读时，删除入口没有出现在上方的 action-links 行里，
+         这里补一个兜底入口，保证原梦仍然可删除 -->
+    <button wx:if="{{interpretationUnavailable}}" class="text-button delete-button" bindtap="deleteDream">删除这个梦</button>
   </view>
   <text wx:if="{{shareImagePath}}" class="share-ready">梦卡图已准备，可保存或分享</text>
   <canvas type="2d" id="shareCanvas" class="share-canvas"></canvas>
