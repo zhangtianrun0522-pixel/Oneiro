@@ -13,30 +13,50 @@
   <text wx:if="{{hasArchive}}" class="deck-count">已记下 {{archiveCount}} 个梦</text>
 
   <!-- 阶段观察 / 本月主牌 / 阶段原型合并为一张「本月观察」，
-       让梦境时间轴尽早出现，而不是被三张卡连续推到屏幕外 -->
-  <view wx:if="{{insights.eligible || insights.monthlyCard.eligible || archetypeEligible}}" class="month-observation">
-    <text class="mo-label">本月观察{{insights.monthlyCard.eligible ? ' · ' + insights.monthlyCard.month : ''}}</text>
-    <text wx:if="{{insights.monthlyCard.eligible}}" class="mo-title">{{insights.monthlyCard.title}}</text>
-    <text class="mo-copy">{{insights.monthlyCard.eligible ? insights.monthlyCard.insight : insights.stageSummary}}</text>
+       让梦境时间轴尽早出现，而不是被三张卡连续推到屏幕外。
+       外层 .month-observation-deck 用两层旋转偏移的纸色底卡（.deck-shadow）
+       在深色主卡背后垫出「一叠牌」的厚度感——数据上只有当月这一张观察卡
+       （dreamMemory.buildInsights 不产出历史月份数组），所以这里刻意不做
+       左右翻页圆点或滑动交互，避免伪造不存在的可翻页能力，只用叠层视觉
+       暗示「这是牌堆里的一张」。 -->
+  <view wx:if="{{insights.eligible || insights.monthlyCard.eligible || archetypeEligible}}" class="month-observation-deck">
+    <view class="deck-shadow deck-shadow-2"></view>
+    <view class="deck-shadow deck-shadow-1"></view>
+    <view class="month-observation">
+      <text class="mo-label">本月观察{{insights.monthlyCard.eligible ? ' · ' + insights.monthlyCard.month : ''}}</text>
+      <text wx:if="{{insights.monthlyCard.eligible}}" class="mo-title">{{insights.monthlyCard.title}}</text>
+      <view class="mo-divider"></view>
+      <text class="mo-copy">{{insights.monthlyCard.eligible ? insights.monthlyCard.insight : insights.stageSummary}}</text>
 
-    <view wx:if="{{insights.eligible}}" class="mo-tags">
-      <view wx:if="{{insights.recurringEmotions.length}}" class="insight-row">
-        <text class="insight-key">情绪</text>
-        <text wx:for="{{insights.recurringEmotions}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+      <view wx:if="{{insights.eligible}}" class="mo-tags">
+        <view wx:if="{{insights.recurringEmotions.length}}" class="insight-row">
+          <text class="insight-key">情绪</text>
+          <text wx:for="{{insights.recurringEmotions}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+        </view>
+        <view wx:if="{{insights.recurringPlaces.length}}" class="insight-row">
+          <text class="insight-key">场景</text>
+          <text wx:for="{{insights.recurringPlaces}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+        </view>
+        <view wx:if="{{insights.recurringPeople.length}}" class="insight-row">
+          <text class="insight-key">人物</text>
+          <text wx:for="{{insights.recurringPeople}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+        </view>
       </view>
-      <view wx:if="{{insights.recurringPlaces.length}}" class="insight-row">
-        <text class="insight-key">场景</text>
-        <text wx:for="{{insights.recurringPlaces}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
-      </view>
-      <view wx:if="{{insights.recurringPeople.length}}" class="insight-row">
-        <text class="insight-key">人物</text>
-        <text wx:for="{{insights.recurringPeople}}" wx:key="label" class="insight-value">{{item.label}} · {{item.count}}</text>
+
+      <view wx:if="{{archetypeEligible}}" class="mo-archetype" bindtap="openArchetypeCard">
+        <text class="mo-archetype-copy">阶段梦境原型 · {{archetype.label}}</text>
+        <text class="mo-archetype-arrow">解锁分享卡 →</text>
       </view>
     </view>
+  </view>
 
-    <view wx:if="{{archetypeEligible}}" class="mo-archetype" bindtap="openArchetypeCard">
-      <text class="mo-archetype-copy">阶段梦境原型 · {{archetype.label}}</text>
-      <text class="mo-archetype-arrow">解锁分享卡 →</text>
+  <!-- 重复线索：insights.recurringSymbols 是 dreamMemory.buildInsights 早已计算好、
+       但此前页面从未渲染过的字段（与卡内「情绪/场景/人物」互不重复，是独立的符号
+       重复信号），直接复用即可，不需要新增任何数据计算 -->
+  <view wx:if="{{insights.eligible && insights.recurringSymbols.length}}" class="recurring-clues">
+    <text class="recurring-clues-label">重复线索</text>
+    <view class="recurring-clues-tags">
+      <text wx:for="{{insights.recurringSymbols}}" wx:key="label" class="recurring-clue-tag">{{item.label}} ×{{item.count}}</text>
     </view>
   </view>
 
