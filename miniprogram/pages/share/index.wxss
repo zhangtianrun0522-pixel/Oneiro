@@ -5,11 +5,21 @@
 }
 
 .shared-card {
+  position: relative;
   padding: 48rpx 38rpx 44rpx;
   border-radius: 22rpx;
   background: var(--paper-raised);
   color: var(--ink);
   box-shadow: 0 44rpx 140rpx rgba(33, 29, 23, 0.16);
+}
+
+/* 分享卡角标印：贴着卡片右上角盖下去，像实物印泥落在画作一角，
+   这是对外可见的脸，所以用中印（64rpx）而不是行内小印 */
+.shared-card-seal {
+  top: -20rpx;
+  right: 26rpx;
+  transform: rotate(-6deg);
+  box-shadow: 0 6rpx 18rpx rgba(33, 29, 23, 0.22), inset 0 0 0 3rpx rgba(242, 236, 223, 0.14);
 }
 
 .card-header {

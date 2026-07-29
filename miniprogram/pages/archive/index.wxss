@@ -245,7 +245,10 @@
   margin-top: var(--space-block);
   padding: 30rpx 28rpx;
   border-left: 3rpx solid var(--gold-line);
-  background: var(--paper-raised);
+  background-color: var(--paper-raised);
+  background-image: var(--paper-noise);
+  background-repeat: repeat;
+  background-size: 64rpx 64rpx;
 }
 
 /* archive 页唯一的朱砂点睛：标题前一枚 8rpx 印章方块，纯 CSS 伪元素，

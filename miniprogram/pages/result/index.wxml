@@ -27,6 +27,7 @@
         </view>
 
         <view wx:else class="dream-card-face dream-card-back card-face-fade">
+          <view class="oneiro-seal oneiro-seal--sm oneiro-seal--corner card-back-seal"><text>梦</text></view>
           <text class="back-title">{{dream.result.title}}</text>
           <text class="back-insight">{{cardBackInsight}}</text>
           <view class="back-divider"><view></view></view>

@@ -15,6 +15,11 @@ page {
   --gold-line: #b8863b;
   --gold-ink: #8a5d29;
 
+  /* 纸纹：64×64 灰度噪点 PNG（node 脚本生成，逐像素 alpha ≤ 3.5%），
+     以 background-image 平铺在暖纸底色之上，制造「远看均匀、近看有纤维感」
+     的质地。体积 1.4KB / base64 1860 字符，远低于 2KB 上限。 */
+  --paper-noise: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAQAAAAAYLlVAAAFOklEQVR42nVZSZIbMQzDBQf8yf9/VxIvaixKTcUzcdsSxQUEIbz04gt/X/H39+/184PvE37/4Tz5PPv3FN/3We/p/Rvf1T8r8f3zPPn3jL6AG+GL5GY4n/0Zw7PR73Mwo1mr6Gz+/hTOAmmzzt+3U8E2lvns8c3ve79XnPd9ra8HGGHgcfdjiLtSYQzNbzqL+5q/VRV+PvviuPOJlMraxzg/hywQzwb8vmZe8Dxxs98rpjOfjGC425PRvcAxD+evXE9mPM14wKxeF8HM8JN7JviJWeHxunqyQVZVSFufIsyotqNhJ8JZFlOusANhypafEPimXhOyqNHO49HV+cRuSDsQwzAvYHlGKpKuA+Obc6Ka1S7fIgrVkeb9LixyjlM0Q1ibpx8UUKZychqZCfh+9WRT5APDfhaaqf6GBYNlnm/MQNivAR1jWl5koiEcyYDcB/XaG4zyLC8jYIODaY7zjniM5GU0NHWpRb7UkbzOvZxgrvOvOpggoJdWqIi8YmQPs8hhJditQgFOCSaohEQBTmMCAzUtC1DAAYuxojPg8j/HDEQ7xiSt54Z5ENNSGBmOirx7yxGA1r5leMCAKsbn8ElCDLwiEpKF7qhlHbBZPTVr3sNygulNtrkRLFoMgG0Az1pJ9/Oa4scYxNf3XN6QERsiUouD9+zOH7ucz6P4T1Izh5vkiM4ami9mzFkQj6gSesQ6j2lp1+7urVT54inIgvPIiIyvUwb3SRIyTEUzfOS5kGmnYsb4dUNNL8hyy6TKpWHl6G2YVcTZW4+v0n4GIVsDUDPAsqg8jqqBcbi1EKjOYAKaskn6hsgAFcorAsbgjMal3ABUN5wPRz/ThQutwfxPsfLphozEQvU7Rpd3usXgCzsF4cIjGfyJn8noxlxQ7MDBpE/Jet5dBREyFkJqwTFdvqxGRU1QucFyv2q8qTaVAwcLZBVQxKoYlknNK3WtmaQ/RFFIXHm9ZjZskrnx7XDlt/DQcsyw2eRRNYI15dawn54oVEyigGjjzoClZLuZXgwipkD7VVm2uQlBvzhz0QyT0S/uZ86yzWxQtTwuqPDCDZsps1IM1axyKMULZYAVOgalONNy4heGATPmgdWVuqFFn9mxumdl1lSj6pU9hG5LZxGR0AxQeakrMKdysiObCkdaxMrqD0qLap0sUqGiJ6w+t/FngXKO/giaip9KxkB8XXUAXSEr+6SqqJ0takbTkwOq3pVliaoGVBfAcIdVDThM+7QszADJ6IoojsRSERRiFkPYWuGLYzqblHZss2wyYxgSXdIPTb90SfPJF6KE2ZRol3TgImIvZOOisqZmqs4BXVmArinazD+ZD4qsI1yOGvhxm+NwmehYs0KPoCj33hpzqsaHFSv0jzwHA+EY8xBrfmi+pIuJlyzAZL5GgmuxmZEXnOknSXkL96mqsVGMdSLU11CJ1mL3UtVUE9hCeM5Aqtn1Jlgt/+XMjmw9tPqGZQIunF6livadEi6q6gr4mhlrAyLvhi2wsDhiTju3KalHeF2Sj61Cos6huoJQmaWYpHSh9OkTDreqGRyjAmoIiYIZMfp6n7Gp2kzD2QkciHRtn5hmksqnSqTOcKAKd0c85IVM9/TbTcqt5bDuTDQyTwfKZLrt4BzGi9pe1Yw2g/rusBsbXClFbI1SC1k9jXnhUPLcShebN9H4V07IMlPxxbxLbTBCzUMtU10kHwTc3MYo1WC294i6MENcoBpzlYOfVNsqT+s8uqinra8yLus4LTvv3k/hYhQxluKZ0wymBPVKnSmv6htJJlX/AFZ5Cb90N/YhAAAAAElFTkSuQmCC");
+
   /* 字号：五档，从「栏目眉」到「每页至多一处」的大字，拉开梯度而不是
      挤在 22–28rpx 的窄带里 */
   --fs-label: 22rpx;
@@ -38,7 +43,10 @@ page {
   --tap-min: 88rpx;
 
   min-height: 100vh;
-  background: var(--paper);
+  background-color: var(--paper);
+  background-image: var(--paper-noise);
+  background-repeat: repeat;
+  background-size: 64rpx 64rpx;
   color: var(--ink);
   font-family: var(--font-sans);
 }
@@ -72,7 +80,10 @@ button::after {
 .screen {
   min-height: 100vh;
   padding: 56rpx 40rpx calc(64rpx + env(safe-area-inset-bottom));
-  background: var(--paper);
+  background-color: var(--paper);
+  background-image: var(--paper-noise);
+  background-repeat: repeat;
+  background-size: 64rpx 64rpx;
 }
 
 .brand {
@@ -165,6 +176,54 @@ button::after {
 
 .muted {
   color: rgba(33, 29, 23, 0.46);
+}
+
+/* ── Oneiro 印：品牌印章 ─────────────────────────────────────────
+   朱砂底方印，内嵌暖纸色宋体「梦」字，1rpx 纸色内描边模拟印泥呼吸感。
+   两档：--sm 44rpx 用于行内角标／标签位，--md 64rpx 用于更醒目的独立展示。
+   对比度 #f2ecdf on #c1443b ≈ 4.0:1，达标（≥3:1）。
+   --corner 变体把印做成绝对定位角标，落在已 position 的卡面容器里，
+   不占据文档流、不挤压既有内容。 ───────────────────────────────── */
+.oneiro-seal {
+  display: inline-flex;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(242, 236, 223, 0.55);
+  border-radius: 2rpx;
+  background: var(--cinnabar);
+  box-shadow: inset 0 0 0 3rpx rgba(242, 236, 223, 0.14);
+}
+
+.oneiro-seal text {
+  color: var(--paper);
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.oneiro-seal--sm {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.oneiro-seal--sm text {
+  font-size: 24rpx;
+}
+
+.oneiro-seal--md {
+  width: 64rpx;
+  height: 64rpx;
+}
+
+.oneiro-seal--md text {
+  font-size: 34rpx;
+}
+
+.oneiro-seal--corner {
+  position: absolute;
+  z-index: 2;
 }
 
 

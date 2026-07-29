@@ -44,6 +44,13 @@
 
 .dream-card-back::before { position: absolute; inset: 16rpx; border: 1rpx solid rgba(184, 134, 59, 0.32); content: ''; pointer-events: none; }
 
+/* 卡背角标印：绝对定位落在右下角，不参与 flex 纵向布局，
+   不挤压标题／线索／问题的既有排布 */
+.card-back-seal {
+  right: 30rpx;
+  bottom: 30rpx;
+}
+
 .card-face-fade {
   animation: card-face-fade-in 180ms ease-out both;
 }
@@ -542,7 +549,10 @@
 .original-dream {
   padding: 28rpx 26rpx;
   border-left: 4rpx solid rgba(184, 134, 59, 0.6);
-  background: var(--paper-raised);
+  background-color: var(--paper-raised);
+  background-image: var(--paper-noise);
+  background-repeat: repeat;
+  background-size: 64rpx 64rpx;
 }
 
 .original-copy {
@@ -580,6 +590,95 @@
   padding: 0;
   border-left: 0;
   background: transparent;
+}
+
+/* ── 三个视角的极简线描符号 ─────────────────────────────────────
+   纯 CSS（border / radial-gradient / 旋转短线）画在各视角标题左侧，
+   约 32rpx，线色统一用 --gold-line，不额外引入图片资源。 ────────── */
+.cultural-reading .reading-label,
+.psychological-reading .reading-label,
+.metaphysical-heading .reading-label {
+  position: relative;
+  padding-left: 46rpx;
+}
+
+/* 心理视角：一弯月牙——底圆实心，叠一个纸色圆「咬」出弧形缺口 */
+.psychological-reading .reading-label::before,
+.psychological-reading .reading-label::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  border-radius: 50%;
+}
+
+.psychological-reading .reading-label::before {
+  left: 4rpx;
+  width: 30rpx;
+  height: 30rpx;
+  margin-top: -15rpx;
+  background: var(--gold-line);
+}
+
+.psychological-reading .reading-label::after {
+  left: 12rpx;
+  width: 26rpx;
+  height: 26rpx;
+  margin-top: -13rpx;
+  background: var(--paper);
+}
+
+/* 文化象征：极简云纹——一个圆角短条 + 一个圆形叠出云的轮廓 */
+.cultural-reading .reading-label::before,
+.cultural-reading .reading-label::after {
+  content: '';
+  position: absolute;
+  background: var(--gold-line);
+}
+
+.cultural-reading .reading-label::before {
+  left: 2rpx;
+  top: 50%;
+  width: 32rpx;
+  height: 15rpx;
+  margin-top: 2rpx;
+  border-radius: 12rpx 12rpx 6rpx 6rpx;
+}
+
+.cultural-reading .reading-label::after {
+  left: 8rpx;
+  top: 50%;
+  width: 18rpx;
+  height: 18rpx;
+  margin-top: -13rpx;
+  border-radius: 50%;
+}
+
+/* 命理视角：罗盘——外圈 + 中心点（同一层用 radial-gradient 叠背景）
+   + 一根指针短线 */
+.metaphysical-heading .reading-label::before {
+  content: '';
+  position: absolute;
+  left: 4rpx;
+  top: 50%;
+  width: 30rpx;
+  height: 30rpx;
+  margin-top: -15rpx;
+  border: 2rpx solid var(--gold-line);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--gold-line) 0 3rpx, transparent 3rpx 100%);
+}
+
+.metaphysical-heading .reading-label::after {
+  content: '';
+  position: absolute;
+  left: 19rpx;
+  top: 50%;
+  width: 13rpx;
+  height: 2rpx;
+  margin-top: -1rpx;
+  background: var(--gold-line);
+  transform: rotate(-38deg);
+  transform-origin: left center;
 }
 
 .dream-chat-entry {
