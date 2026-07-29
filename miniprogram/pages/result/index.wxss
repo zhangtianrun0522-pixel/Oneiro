@@ -627,7 +627,8 @@
   background: var(--paper);
 }
 
-/* 文化象征：极简云纹——一个圆角短条 + 一个圆形叠出云的轮廓 */
+/* 文化象征：极简云纹——底条 + 一大一小两个错位圆峰。
+   单圆居中会读成"人头+肩膀"，双峰错位才是云的轮廓。 */
 .cultural-reading .reading-label::before,
 .cultural-reading .reading-label::after {
   content: '';
@@ -638,19 +639,20 @@
 .cultural-reading .reading-label::before {
   left: 2rpx;
   top: 50%;
-  width: 32rpx;
-  height: 15rpx;
-  margin-top: 2rpx;
-  border-radius: 12rpx 12rpx 6rpx 6rpx;
+  width: 34rpx;
+  height: 12rpx;
+  margin-top: 3rpx;
+  border-radius: 12rpx;
 }
 
 .cultural-reading .reading-label::after {
-  left: 8rpx;
+  left: 6rpx;
   top: 50%;
-  width: 18rpx;
-  height: 18rpx;
-  margin-top: -13rpx;
+  width: 12rpx;
+  height: 12rpx;
+  margin-top: -7rpx;
   border-radius: 50%;
+  box-shadow: 13rpx -3rpx 0 3rpx var(--gold-line);
 }
 
 /* 命理视角：罗盘——外圈 + 中心点（同一层用 radial-gradient 叠背景）
