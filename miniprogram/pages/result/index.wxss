@@ -1,9 +1,7 @@
 .result-screen {
   min-height: 100vh;
-  padding: 42rpx 40rpx 64rpx;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(159, 183, 201, 0.16), transparent 36%),
-    #050609;
+  padding: 36rpx 40rpx 84rpx;
+  background: var(--paper);
 }
 
 .dream-card-switcher {
@@ -12,24 +10,39 @@
   height: 100%;
 }
 
+.dream-card-stage { height: 840rpx; }
+
 .dream-card-face {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: 22rpx;
-  box-shadow: 0 44rpx 140rpx rgba(0, 0, 0, 0.42);
+  border-radius: 4rpx;
+  box-shadow: 0 24rpx 56rpx rgba(33, 29, 23, 0.14);
 }
 
 .dream-card-front {
   background: #0a0c10;
 }
 
+/* 卡背：稳定的纵向结构，不再用绝对定位。
+   标题 → 核心观察 → 分隔线 → 梦中线索 → 留给用户的问题。
+   内容短时问题被 margin-top:auto 推到底部，内容长时自然向下增长并内部滚动。
+   （旧实现把 .back-question 设成 absolute + bottom，曾经与「统一改 relative」
+     的写法叠加导致 bottom 变成"上移一截"，把问题压在梦中线索上；现在的
+     .back-question 不再声明 left/right/bottom，只靠 flex + margin-top:auto
+     定位，彻底避免这个坑。） */
 .dream-card-back {
   box-sizing: border-box;
-  padding: 44rpx 42rpx;
-  background: #f4e7ca;
-  color: #171a20;
+  display: flex;
+  flex-direction: column;
+  padding: 44rpx 38rpx;
+  overflow-y: auto;
+  background-color: #211d17;
+  background-image: repeating-linear-gradient(135deg, rgba(184, 134, 59, 0.06) 0, rgba(184, 134, 59, 0.06) 1rpx, transparent 1rpx, transparent 13rpx);
+  color: #f2ecdf;
 }
+
+.dream-card-back::before { position: absolute; inset: 16rpx; border: 1rpx solid rgba(184, 134, 59, 0.32); content: ''; pointer-events: none; }
 
 .card-face-fade {
   animation: card-face-fade-in 180ms ease-out both;
@@ -54,6 +67,8 @@
   letter-spacing: 5rpx;
 }
 
+/* 卡片「正面」始终是深色艺术图（AI 出图或 CSS 兜底梦象），与页面纸色主题
+   无关，因此这里的白字是刻意保留的前景对比色，不随暖纸化改动 */
 .front-meta {
   color: rgba(255, 255, 255, 0.9);
   text-shadow: 0 2rpx 10rpx rgba(5, 6, 9, 0.72);
@@ -71,74 +86,110 @@
   letter-spacing: 7rpx;
 }
 
+.back-title,
+.back-insight,
+.back-label,
+.back-symbols,
+.back-question {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+/* 与 .back-question 各取一个 auto，剩余空间在"上方留白"和"问题之前"平均分配，
+   避免上半拥挤、下半一大片空的失衡 */
 .back-title {
   display: block;
-  margin-top: 26rpx;
-  font-size: 54rpx;
-  font-weight: 600;
-  letter-spacing: 10rpx;
+  margin-top: auto;
+  padding-top: 20rpx;
+  color: #f2ecdf;
+  font-size: 42rpx;
+  font-weight: 500;
+  letter-spacing: 2rpx;
 }
 
 .back-insight {
   display: block;
-  margin-top: 54rpx;
-  color: rgba(23, 26, 32, 0.86);
-  font-size: 30rpx;
-  line-height: 1.85;
+  margin-top: 24rpx;
+  color: rgba(242, 236, 223, 0.78);
+  font-size: 26rpx;
+  line-height: 1.75;
 }
 
 .back-divider {
   display: flex;
   align-items: center;
-  margin-top: 62rpx;
+  margin-top: 32rpx;
+}
+
+.back-divider::before,
+.back-divider::after {
+  flex: 1;
+  height: 1rpx;
+  background: rgba(184, 134, 59, 0.34);
+  content: '';
 }
 
 .back-divider::after {
-  content: "";
-  width: 18rpx;
-  height: 18rpx;
-  margin-left: 18rpx;
-  background: #e43b25;
+  width: auto;
+  margin-left: 0;
+}
+
+.back-divider > view {
+  width: 9rpx;
+  height: 9rpx;
+  margin: 0 18rpx;
+  flex: 0 0 9rpx;
+  transform: rotate(45deg);
+  background: var(--gold-line);
 }
 
 .back-label {
   display: block;
-  margin-top: 42rpx;
-  color: rgba(23, 26, 32, 0.54);
-  font-size: 20rpx;
+  margin-top: 28rpx;
+  color: #d2a459;
+  font-size: var(--fs-label);
   font-weight: 800;
-  letter-spacing: 5rpx;
+  letter-spacing: 4rpx;
 }
 
+/* margin-bottom 保证内容再长也有呼吸区（flex 子项之间外边距不合并） */
 .back-symbols {
   display: flex;
   flex-wrap: wrap;
-  gap: 18rpx;
+  justify-content: center;
+  gap: 12rpx;
   margin-top: 18rpx;
-  color: #171a20;
-  font-size: 27rpx;
+  margin-bottom: 34rpx;
+  color: rgba(242, 236, 223, 0.9);
+  font-size: var(--fs-aux);
+}
+
+.back-symbols text {
+  padding: 8rpx 14rpx;
+  border: 1rpx solid rgba(184, 134, 59, 0.4);
 }
 
 .back-symbols text:not(:last-child)::after {
-  content: "·";
-  margin-left: 18rpx;
+  display: none;
 }
 
 .back-question {
-  position: absolute;
-  left: 42rpx;
-  right: 42rpx;
-  bottom: 58rpx;
-  color: rgba(23, 26, 32, 0.86);
-  font-size: 28rpx;
-  line-height: 1.75;
+  margin-top: auto;          /* 有余量时贴底，内容长时自然接在线索之后 */
+  padding-top: 24rpx;
+  border-top: 1rpx solid rgba(184, 134, 59, 0.24);
+  color: rgba(242, 236, 223, 0.74);
+  font-size: var(--fs-aux);
+  font-style: italic;
+  line-height: 1.7;
 }
 
 .card-flip-hint {
   display: block;
   margin: 24rpx 0 0;
   text-align: center;
-  color: rgba(255, 255, 255, 0.34);
+  color: rgba(33, 29, 23, 0.42);
   font-size: 20rpx;
   letter-spacing: 3rpx;
 }
@@ -208,12 +259,8 @@
   justify-content: center;
   gap: 18rpx;
   margin: 18rpx 0 0;
-  color: rgba(255, 255, 255, 0.46);
+  color: rgba(33, 29, 23, 0.42);
   font-size: 20rpx;
-}
-
-.quality-ready-notice {
-  color: rgba(202, 177, 117, 0.72);
 }
 
 .image-retry {
@@ -225,7 +272,7 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--gold-line);
   font-size: 20rpx;
   font-weight: 800;
   line-height: 1.4;
@@ -454,18 +501,16 @@
   background: rgba(255, 236, 199, 0.64);
 }
 
-.reading {
-  margin-top: 34rpx;
-  padding: 34rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
-  border-radius: 32rpx;
-  background: rgba(255, 255, 255, 0.035);
+.reading,
+.grounded-reading {
+  margin-top: 32rpx;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
-.grounded-reading {
-  margin-top: 34rpx;
-  padding: 40rpx 34rpx;
-}
+.reading-block { margin-top: 34rpx; }
 
 .milestone-pill {
   display: flex;
@@ -473,15 +518,15 @@
   gap: 18rpx;
   margin-top: 24rpx;
   padding: 18rpx 22rpx;
-  border: 1rpx solid rgba(202, 177, 117, 0.22);
-  border-radius: 999rpx;
-  background: rgba(202, 177, 117, 0.1);
+  border: 1rpx solid rgba(184, 134, 59, 0.34);
+  border-radius: 2rpx;
+  background: var(--paper-raised);
 }
 
 .milestone-copy {
   flex: 1;
   min-width: 0;
-  color: rgba(202, 177, 117, 0.84);
+  color: rgba(122, 84, 33, 0.8);
   font-size: 22rpx;
   font-weight: 700;
   line-height: 1.5;
@@ -490,22 +535,22 @@
 .milestone-edit {
   flex: 0 0 auto;
   padding: 8rpx 4rpx;
-  color: rgba(255, 255, 255, 0.34);
+  color: rgba(122, 84, 33, 0.8);
   font-size: 18rpx;
 }
 
 .original-dream {
-  padding: 26rpx;
-  border-left: 4rpx solid rgba(159, 183, 201, 0.34);
-  background: rgba(255, 255, 255, 0.025);
+  padding: 28rpx 26rpx;
+  border-left: 4rpx solid rgba(184, 134, 59, 0.6);
+  background: var(--paper-raised);
 }
 
 .original-copy {
   display: block;
   margin-top: 14rpx;
-  color: rgba(255, 255, 255, 0.66);
+  color: rgba(33, 29, 23, 0.76);
   font-size: 27rpx;
-  line-height: 1.85;
+  line-height: 1.82;
 }
 
 .connection-list {
@@ -516,25 +561,25 @@
 }
 
 .connection-item {
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 26rpx;
-  line-height: 1.75;
+  color: rgba(33, 29, 23, 0.76);
+  font-size: 27rpx;
+  line-height: 1.82;
 }
 
 .reading-boundary {
   display: block;
   margin-top: 20rpx;
-  color: rgba(255, 255, 255, 0.34);
+  color: rgba(33, 29, 23, 0.42);
   font-size: 21rpx;
   line-height: 1.65;
 }
 
-.cultural-reading {
-  border-left-color: rgba(202, 177, 117, 0.42);
-}
-
+/* 文化象征 / 心理视角：不再用卡片框，纯段落呈现 */
+.cultural-reading,
 .psychological-reading {
-  border-left-color: rgba(159, 183, 201, 0.36);
+  padding: 0;
+  border-left: 0;
+  background: transparent;
 }
 
 .dream-chat-entry {
@@ -543,9 +588,9 @@
   gap: 22rpx;
   margin-top: 34rpx;
   padding: 28rpx;
-  border: 1rpx solid rgba(159, 183, 201, 0.18);
-  border-radius: 8rpx;
-  background: rgba(159, 183, 201, 0.08);
+  border: 1rpx solid rgba(33, 29, 23, 0.16);
+  border-radius: 2rpx;
+  background: transparent;
 }
 
 .chat-entry-copy {
@@ -556,59 +601,59 @@
 .chat-entry-question {
   display: block;
   margin-top: 12rpx;
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(33, 29, 23, 0.76);
   font-size: 25rpx;
   line-height: 1.65;
 }
 
 .chat-entry-arrow {
   flex: 0 0 52rpx;
-  color: rgba(202, 177, 117, 0.84);
+  color: var(--gold-line);
   font-size: 40rpx;
   text-align: center;
 }
 
 .section-title {
   display: block;
-  margin-bottom: 24rpx;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 24rpx;
+  margin-bottom: 26rpx;
+  color: var(--ink);
+  font-size: 26rpx;
   font-weight: 800;
-  letter-spacing: 8rpx;
+  letter-spacing: 1rpx;
 }
 
 .reading-copy {
   display: block;
   margin-top: 12rpx;
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 26rpx;
-  line-height: 1.9;
+  color: rgba(33, 29, 23, 0.76);
+  font-size: 27rpx;
+  line-height: 1.82;
 }
 
 .metaphysical-reading {
   padding: 26rpx;
-  border-left: 4rpx solid rgba(159, 183, 201, 0.72);
-  background: rgba(159, 183, 201, 0.1);
+  border-left: 3rpx solid rgba(184, 134, 59, 0.5);
+  background: var(--paper-raised);
 }
 
 .metaphysical-subsection {
   margin-top: 26rpx;
   padding-top: 22rpx;
-  border-top: 1rpx solid rgba(159, 183, 201, 0.14);
+  border-top: 1rpx solid rgba(33, 29, 23, 0.1);
 }
 
 .metaphysical-subtitle {
   display: block;
-  color: rgba(202, 177, 117, 0.76);
-  font-size: 20rpx;
+  color: var(--gold-line);
+  font-size: 19rpx;
   font-weight: 800;
-  letter-spacing: 4rpx;
+  letter-spacing: 2rpx;
 }
 
 .metaphysical-copy {
   display: block;
   margin-top: 10rpx;
-  color: rgba(255, 255, 255, 0.66);
+  color: rgba(33, 29, 23, 0.76);
   font-size: 25rpx;
   line-height: 1.82;
 }
@@ -619,8 +664,8 @@
 
 .life-note-reading {
   padding: 26rpx;
-  border-left: 4rpx solid rgba(159, 183, 201, 0.56);
-  background: rgba(159, 183, 201, 0.08);
+  border-left: 3rpx solid rgba(184, 134, 59, 0.5);
+  background: var(--paper-raised);
 }
 
 .life-note-footer {
@@ -632,14 +677,14 @@
 }
 
 .life-note-date {
-  color: rgba(159, 183, 201, 0.42);
+  color: rgba(33, 29, 23, 0.42);
   font-size: 19rpx;
   letter-spacing: 2rpx;
 }
 
 .life-note-link {
   margin-left: auto;
-  color: rgba(202, 177, 117, 0.76);
+  color: var(--gold-line);
   font-size: 20rpx;
 }
 
@@ -649,15 +694,15 @@
 
 .alternative-reading {
   padding-top: 10rpx;
-  border-top: 1rpx solid rgba(255, 255, 255, 0.05);
+  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
 }
 
 .reading-label {
   display: block;
-  color: rgba(159, 183, 201, 0.7);
-  font-size: 20rpx;
+  color: var(--gold-line);
+  font-size: 19rpx;
   font-weight: 900;
-  letter-spacing: 7rpx;
+  letter-spacing: 2rpx;
 }
 
 .primary-button + .ghost-button {
@@ -668,10 +713,10 @@
   flex: 1;
   height: 82rpx;
   padding: 0;
-  border: 1rpx solid rgba(159, 183, 201, 0.16);
+  border: 1rpx solid rgba(33, 29, 23, 0.2);
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.02);
-  color: rgba(255, 255, 255, 0.54);
+  background: transparent;
+  color: rgba(33, 29, 23, 0.68);
   font-size: 24rpx;
   line-height: 82rpx;
 }
@@ -683,7 +728,7 @@
 .share-ready {
   display: block;
   margin-top: 22rpx;
-  color: rgba(159, 183, 201, 0.48);
+  color: rgba(33, 29, 23, 0.42);
   font-size: 22rpx;
   text-align: center;
 }
@@ -695,7 +740,7 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: rgba(219, 132, 124, 0.58);
+  color: rgba(193, 68, 59, 0.72);
   font-size: 22rpx;
   line-height: 72rpx;
 }
@@ -711,71 +756,6 @@
   width: 450px;
   height: 600px;
 }
-
-/* Claude Design warm-paper result surface. */
-.result-screen { padding: 36rpx 40rpx 84rpx; background: #f2ecdf; }
-.dream-card-stage { height: 840rpx; }
-.dream-card-face { border-radius: 4rpx; box-shadow: 0 24rpx 56rpx rgba(33, 29, 23, 0.14); }
-/* 卡背：稳定的纵向结构，不再用绝对定位。
-   标题 → 核心观察 → 分隔线 → 梦中线索 → 留给用户的问题。
-   内容短时问题被 margin-top:auto 推到底部，内容长时自然向下增长并内部滚动。
-   （旧实现把 .back-question 设成 absolute + bottom，而覆盖块又统一改成
-     relative，导致 bottom 变成"上移 24pt"，把问题压在梦中线索上。） */
-.dream-card-back {
-  display: flex;
-  flex-direction: column;
-  padding: 44rpx 38rpx;
-  overflow-y: auto;
-  background-color: #211d17;
-  background-image: repeating-linear-gradient(135deg, rgba(184, 134, 59, 0.06) 0, rgba(184, 134, 59, 0.06) 1rpx, transparent 1rpx, transparent 13rpx);
-  color: #f2ecdf;
-}
-.dream-card-back::before { position: absolute; inset: 16rpx; border: 1rpx solid rgba(184, 134, 59, 0.32); content: ''; pointer-events: none; }
-.back-title, .back-insight, .back-label, .back-symbols, .back-question { position: relative; z-index: 1; flex: 0 0 auto; text-align: center; }
-/* 与 .back-question 各取一个 auto，剩余空间在"上方留白"和"问题之前"平均分配，
-   避免上半拥挤、下半一大片空的失衡 */
-.back-title { margin-top: auto; padding-top: 20rpx; color: #f2ecdf; font-size: 42rpx; font-weight: 500; letter-spacing: 2rpx; }
-.back-insight { margin-top: 24rpx; color: rgba(242, 236, 223, 0.78); font-size: 26rpx; line-height: 1.75; }
-.back-divider { position: relative; z-index: 1; flex: 0 0 auto; margin-top: 32rpx; }
-.back-divider::before, .back-divider::after { flex: 1; height: 1rpx; background: rgba(184, 134, 59, 0.34); content: ''; }
-.back-divider::after { width: auto; height: 1rpx; margin-left: 0; }
-.back-divider > view { width: 9rpx; height: 9rpx; margin: 0 18rpx; flex: 0 0 9rpx; transform: rotate(45deg); background: #b8863b; }
-.back-label { margin-top: 28rpx; color: #d2a459; font-size: var(--fs-label); letter-spacing: 4rpx; }
-/* margin-bottom 保证内容再长也有呼吸区（flex 子项之间外边距不合并） */
-.back-symbols { justify-content: center; gap: 12rpx; margin-top: 18rpx; margin-bottom: 34rpx; color: rgba(242, 236, 223, 0.9); font-size: var(--fs-aux); }
-.back-symbols text { padding: 8rpx 14rpx; border: 1rpx solid rgba(184, 134, 59, 0.4); }
-.back-symbols text:not(:last-child)::after { display: none; }
-.back-question {
-  margin-top: auto;          /* 有余量时贴底，内容长时自然接在线索之后 */
-  padding-top: 24rpx;
-  border-top: 1rpx solid rgba(184, 134, 59, 0.24);
-  color: rgba(242, 236, 223, 0.74);
-  font-size: var(--fs-aux);
-  font-style: italic;
-  line-height: 1.7;
-}
-.card-flip-hint, .card-image-notice, .share-ready { color: rgba(33, 29, 23, 0.42); }
-.image-retry { color: #b8863b; }
-.milestone-pill { border-color: rgba(184, 134, 59, 0.34); border-radius: 2rpx; background: #fbf6ec; }
-.milestone-copy, .milestone-edit { color: rgba(122, 84, 33, 0.8); }
-.reading, .grounded-reading { margin-top: 32rpx; padding: 0; border: 0; border-radius: 0; background: transparent; }
-.section-title { margin-bottom: 26rpx; color: #211d17; font-size: 26rpx; letter-spacing: 1rpx; }
-.original-dream { padding: 28rpx 26rpx; border-left-color: rgba(184, 134, 59, 0.6); background: #fbf6ec; }
-.original-copy, .reading-copy, .connection-item, .chat-entry-question, .metaphysical-copy { color: rgba(33, 29, 23, 0.76); }
-.original-copy, .reading-copy, .connection-item { font-size: 27rpx; line-height: 1.82; }
-.reading-block { margin-top: 34rpx; }
-.reading-label, .metaphysical-subtitle { color: #b8863b; font-size: 19rpx; letter-spacing: 2rpx; }
-.cultural-reading, .psychological-reading { padding: 0; border-left: 0; background: transparent; }
-.metaphysical-reading, .life-note-reading { padding: 26rpx; border-left: 3rpx solid rgba(184, 134, 59, 0.5); background: #fbf6ec; }
-.metaphysical-subsection { border-top-color: rgba(33, 29, 23, 0.1); }
-.reading-boundary, .life-note-date, .reading-basis { color: rgba(33, 29, 23, 0.42); }
-.life-note-link, .chat-entry-arrow { color: #b8863b; }
-.alternative-reading { border-top-color: rgba(33, 29, 23, 0.12); }
-.dream-chat-entry { padding: 28rpx; border-color: rgba(33, 29, 23, 0.16); border-radius: 2rpx; background: transparent; }
-.primary-button { margin-top: 40rpx; border-color: #c1443b; background: #c1443b; color: #fbf6ec; }
-.ghost-button, .text-button { border-color: rgba(33, 29, 23, 0.2); background: transparent; color: rgba(33, 29, 23, 0.68); }
-.text-button { line-height: 82rpx; }
-.delete-button { color: rgba(193, 68, 59, 0.72); }
 
 .metaphysical-heading {
   display: flex;

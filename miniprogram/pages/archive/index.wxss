@@ -1,11 +1,22 @@
 .empty {
-  margin-top: 80rpx;
-  padding: 40rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.06);
-  border-radius: 28rpx;
-  color: rgba(255, 255, 255, 0.35);
+  margin-top: 54rpx;
+  padding: 36rpx 0;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
+  border-right: 0;
+  border-bottom: 1rpx solid rgba(33, 29, 23, 0.12);
+  border-left: 0;
+  border-radius: 0;
+  color: rgba(33, 29, 23, 0.5);
   font-size: 26rpx;
   line-height: 1.8;
+}
+
+.archive-list {
+  margin-top: 54rpx;
+}
+
+.timeline-month {
+  margin-top: 48rpx;
 }
 
 .timeline-month:first-child {
@@ -14,24 +25,24 @@
 
 .timeline-month-label {
   display: block;
-  color: rgba(202, 177, 117, 0.7);
-  font-size: 20rpx;
-  font-weight: 800;
-  letter-spacing: 3rpx;
+  color: #211d17;
+  font-size: 32rpx;
+  font-weight: 500;
+  letter-spacing: 1rpx;
 }
 
 .timeline-track {
   position: relative;
-  margin-top: 18rpx;
+  margin-top: 10rpx;
 }
 
 .timeline-track::before {
   position: absolute;
   top: 18rpx;
   bottom: 18rpx;
-  left: 17rpx;
+  left: 19rpx;
   width: 1rpx;
-  background: rgba(159, 183, 201, 0.24);
+  background: rgba(33, 29, 23, 0.16);
   content: '';
 }
 
@@ -39,9 +50,9 @@
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 154rpx;
+  min-height: 168rpx;
   margin: 0;
-  padding: 14rpx 0;
+  padding: 18rpx 0;
   border: 0;
   background: transparent;
   text-align: left;
@@ -65,17 +76,17 @@
   z-index: 1;
   width: 11rpx;
   height: 11rpx;
-  border: 4rpx solid #131927;
+  border: 4rpx solid var(--gold-line);
   border-radius: 50%;
-  background: rgba(159, 183, 201, 0.7);
+  background: var(--paper);
 }
 
 .timeline-node.is-key-node {
   width: 15rpx;
   height: 15rpx;
-  border-color: #131927;
-  background: rgba(202, 177, 117, 0.94);
-  box-shadow: 0 0 0 5rpx rgba(202, 177, 117, 0.12);
+  border-color: var(--gold-line);
+  background: var(--gold-line);
+  box-shadow: 0 0 0 5rpx rgba(184, 134, 59, 0.12);
 }
 
 .archive-thumb {
@@ -84,8 +95,8 @@
   height: 132rpx;
   flex: 0 0 106rpx;
   overflow: hidden;
-  border: 1rpx solid rgba(255, 255, 255, 0.12);
-  border-radius: 10rpx;
+  border: 0;
+  border-radius: 0;
   background: linear-gradient(145deg, #18202a, #68737c 62%, #e4e4dc);
 }
 
@@ -103,6 +114,8 @@
   background: transparent;
 }
 
+/* 无缩略图时的兜底占位：叠在彩色主题渐变（.archive-thumb 的 artwork
+   底色）之上，因此仍需浅色文字来保持可读，与页面纸色主题无关 */
 .archive-thumb-placeholder {
   display: flex;
   align-items: flex-end;
@@ -123,22 +136,18 @@
   padding: 0 16rpx;
 }
 
-.timeline-entry.is-key-moment .archive-title {
-  color: rgba(239, 228, 200, 0.92);
-}
-
 .timeline-repeat {
   display: block;
   margin-top: 8rpx;
-  color: rgba(202, 177, 117, 0.72);
+  color: rgba(184, 134, 59, 0.86);
   font-size: 19rpx;
 }
 
 .deck-count {
   display: block;
   margin-top: 28rpx;
-  color: rgba(159, 183, 201, 0.62);
-  font-size: 24rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
   font-weight: 800;
   letter-spacing: 5rpx;
 }
@@ -152,17 +161,18 @@
 }
 
 .insight-key {
-  color: rgba(202, 177, 117, 0.58);
-  font-size: 19rpx;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
   font-weight: 800;
 }
 
 .insight-value {
   padding: 7rpx 14rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.045);
-  color: rgba(255, 255, 255, 0.44);
-  font-size: 18rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.14);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
 }
 
 .filter-banner {
@@ -172,23 +182,30 @@
   gap: 24rpx;
   margin-top: 24rpx;
   padding: 18rpx 20rpx;
-  border-left: 3rpx solid rgba(159, 183, 201, 0.36);
-  background: rgba(159, 183, 201, 0.06);
-  color: rgba(159, 183, 201, 0.62);
+  border-left: 3rpx solid rgba(184, 134, 59, 0.54);
+  background: var(--paper-raised);
+  color: rgba(33, 29, 23, 0.62);
   font-size: 22rpx;
 }
 
 .filter-clear {
   flex: 0 0 auto;
-  color: rgba(202, 177, 117, 0.8);
+  color: var(--gold-line);
   font-size: 20rpx;
 }
 
+.archetype-banner-arrow {
+  color: var(--gold-line);
+}
+
+/* .archive-title 在「关键时刻」条目内外最终显示效果一致（键时刻的
+   .timeline-entry.is-key-moment .archive-title 特化色已并入这条通用规则） */
 .archive-title {
   display: block;
-  color: rgba(255, 255, 255, 0.66);
-  font-size: 30rpx;
-  letter-spacing: 6rpx;
+  color: #211d17;
+  font-size: 28rpx;
+  font-weight: 600;
+  letter-spacing: 1rpx;
 }
 
 .archive-weather {
@@ -196,7 +213,7 @@
   width: 360rpx;
   margin-top: 10rpx;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--ink-70);
   font-size: 22rpx;
   line-height: 1.45;
   text-overflow: ellipsis;
@@ -205,16 +222,16 @@
 
 .archive-date {
   margin-left: auto;
-  color: rgba(255, 255, 255, 0.18);
-  font-size: 20rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
   letter-spacing: 4rpx;
 }
 
 .timeline-copy .archive-date {
   display: block;
   margin-left: 0;
-  color: rgba(159, 183, 201, 0.52);
-  font-size: 18rpx;
+  color: var(--ink-55);
+  font-size: var(--fs-label);
   letter-spacing: 2rpx;
 }
 
@@ -222,27 +239,6 @@
   width: auto;
   margin-top: 8rpx;
 }
-
-/* Claude Design timeline: an unframed private diary on warm paper. */
-.empty { margin-top: 54rpx; padding: 36rpx 0; border-top: 1rpx solid rgba(33, 29, 23, 0.12); border-bottom: 1rpx solid rgba(33, 29, 23, 0.12); border-radius: 0; color: rgba(33, 29, 23, 0.5); }
-.archive-list { margin-top: 54rpx; }
-.timeline-month { margin-top: 48rpx; }
-.timeline-month-label { color: #211d17; font-size: 32rpx; font-weight: 500; letter-spacing: 1rpx; }
-.timeline-track { margin-top: 10rpx; }
-.timeline-track::before { left: 19rpx; background: rgba(33, 29, 23, 0.16); }
-.timeline-entry { min-height: 168rpx; padding: 18rpx 0; }
-.timeline-node { border-color: #b8863b; background: #f2ecdf; }
-.timeline-node.is-key-node { border-color: #b8863b; background: #b8863b; box-shadow: 0 0 0 5rpx rgba(184, 134, 59, 0.12); }
-.archive-thumb { border: 0; border-radius: 0; }
-.timeline-entry.is-key-moment .archive-title, .archive-title { color: #211d17; font-size: 28rpx; font-weight: 600; letter-spacing: 1rpx; }
-.archive-weather { color: var(--ink-70); }
-.archive-date, .timeline-copy .archive-date { color: var(--ink-55); font-size: var(--fs-label); }
-.timeline-repeat { color: rgba(184, 134, 59, 0.86); }
-.deck-count { color: var(--ink-55); font-size: var(--fs-label); }
-.insight-key { color: var(--gold-ink); font-size: var(--fs-label); }
-.insight-value { border: 1rpx solid rgba(33, 29, 23, 0.14); border-radius: 0; background: transparent; color: var(--ink-70); font-size: var(--fs-label); }
-.filter-banner { border-left-color: rgba(184, 134, 59, 0.54); background: #fbf6ec; color: rgba(33, 29, 23, 0.62); }
-.filter-clear, .archetype-banner-arrow { color: #b8863b; }
 
 /* ── 本月观察：合并原「阶段观察 / 本月主牌 / 阶段原型」三张卡 ── */
 .month-observation {
