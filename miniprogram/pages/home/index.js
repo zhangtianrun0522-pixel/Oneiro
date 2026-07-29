@@ -140,6 +140,19 @@ function nextCardIndex(archive) {
   return next;
 }
 
+// Same lookup as nextCardIndex but read-only, for the "NO. XXX" preview label
+// shown above the capture area. Must never consume/advance the counter —
+// only the real submission (nextCardIndex, inside generateDreamCard) does.
+function peekNextCardIndex(archive) {
+  var storedNext = Number(wx.getStorageSync('oneiro:nextCardNumber') || 1);
+  var maxExisting = (Array.isArray(archive) ? archive : []).reduce(function (max, item) {
+    var cardNo = item && item.result ? String(item.result.card_no || '') : '';
+    var matched = cardNo.match(/(\d+)/);
+    return matched ? Math.max(max, Number(matched[1])) : max;
+  }, 0);
+  return Math.max(storedNext, maxExisting + 1, 1);
+}
+
 function readProfile() {
   var app = getApp();
   var stored = wx.getStorageSync('oneiro:lastProfile') || {};
@@ -178,6 +191,12 @@ Page({
     recording: false,
     recordingSeconds: 0,
     recognizing: false,
+    editingDream: false,
+    dragDx: 0,
+    dragDy: 0,
+    dragZone: 'none',
+    heroCardNo: '',
+    heroDate: '',
     analysisActive: false,
     analysisPreview: '',
     analysisStageIndex: 0,
@@ -213,10 +232,22 @@ Page({
       this.setData({ dreamText: pendingDreamText });
     }
 
+    this.refreshHeroLabel();
+
     if (options && options.autoSubmit && pendingDreamText) {
       var that = this;
       setTimeout(function () { that.generateDreamCard(); }, 0);
     }
+  },
+
+  refreshHeroLabel: function () {
+    var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
+    var cardIndex = peekNextCardIndex(archive);
+    var now = new Date();
+    this.setData({
+      heroCardNo: 'NO. ' + String(cardIndex).padStart(3, '0'),
+      heroDate: (now.getMonth() + 1) + '月' + now.getDate() + '日'
+    });
   },
 
   onUnload: function () {
@@ -367,14 +398,6 @@ Page({
     }
   },
 
-  toggleRecording: function () {
-    if (this.data.recording) {
-      this.stopRecorder();
-    } else {
-      this.beginRecording('tap');
-    }
-  },
-
   clearVoiceStartTimer: function () {
     if (this.voiceStartTimer) {
       clearTimeout(this.voiceStartTimer);
@@ -382,20 +405,45 @@ Page({
     }
   },
 
-  onVoiceTouchStart: function () {
+  resetDragState: function () {
+    this.setData({ dragDx: 0, dragDy: 0, dragZone: 'none' });
+  },
+
+  enterEditingMode: function () {
+    this.setData({ editingDream: true });
+  },
+
+  onDreamTextTap: function () {
+    if (this.data.recording || this.data.recognizing) return;
+    this.enterEditingMode();
+  },
+
+  onDreamTextBlur: function () {
+    // Losing focus only collapses back to the static display — content is
+    // preserved, matching the "轻触圆环外收起" hint.
+    this.setData({ editingDream: false });
+  },
+
+  onVoiceTouchStart: function (event) {
     var self = this;
+    var touch = event && event.touches && event.touches[0];
 
     if (this.data.recognizing) return;
 
     this.clearVoiceStartTimer();
     this.voiceTouching = true;
     this.voiceLongPressStarted = false;
+    this.voiceCancelled = false;
+    this.voiceSubmitAfterRecognition = false;
+    this.voiceStartX = touch ? touch.clientX : 0;
+    this.voiceStartY = touch ? touch.clientY : 0;
+    this.resetDragState();
 
-    // A second tap while recording still acts as the explicit stop control.
+    // A second touch while recording still acts as the explicit stop control.
     if (this.data.recording) return;
 
-    // Delay the start very slightly so a normal tap can remain the compatible
-    // start/stop interaction while a held press becomes the primary flow.
+    // Delay the start very slightly so a quick tap can still mean "edit the
+    // text" while a held press becomes the primary voice-capture flow.
     this.voiceStartTimer = setTimeout(function () {
       self.voiceStartTimer = null;
       if (!self.voiceTouching || self.data.recording || self.data.recognizing) return;
@@ -404,59 +452,124 @@ Page({
     }, 240);
   },
 
+  onVoiceTouchMove: function (event) {
+    var touch = event && event.touches && event.touches[0];
+    if (!this.voiceTouching || !touch) return;
+
+    var dx = touch.clientX - this.voiceStartX;
+    var dy = touch.clientY - this.voiceStartY;
+    var zone = 'none';
+
+    if (dy > 48 && dy > Math.abs(dx)) {
+      zone = 'submit';
+    } else if (dy < -48 && Math.abs(dy) > Math.abs(dx)) {
+      zone = 'cancel';
+    }
+
+    this.setData({
+      dragDx: Math.max(-36, Math.min(36, dx)),
+      dragDy: Math.max(-36, Math.min(56, dy)),
+      dragZone: zone
+    });
+  },
+
   onVoiceTouchEnd: function () {
+    var zone = this.data.dragZone;
+    var wasRecording = this.data.recording;
+    // Long-press fired but recorder hasn't actually started yet — the
+    // authorize() dialog can still be resolving asynchronously.
+    var pendingRecording = this.voiceLongPressStarted && !wasRecording;
+
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
+    this.resetDragState();
+    this.voiceLongPressStarted = false;
 
-    if (this.voiceLongPressStarted || this.data.recording) {
-      // touchend is followed by tap for a button. Suppress that tap because
-      // this gesture already completed the recording action.
-      this.voiceSuppressTap = true;
-      if (this.data.recording) {
+    if (zone === 'cancel') {
+      if (wasRecording) {
+        // True cancel: discard the clip, no toast, no text appended.
+        this.voiceCancelled = true;
         this.stopRecorder();
-      } else {
-        // Permission dialogs can resolve after the finger has been released.
+      } else if (pendingRecording) {
+        this.voiceCancelled = true;
         this.voiceStopAfterAuthorization = true;
       }
-    }
-  },
-
-  onVoiceTouchCancel: function () {
-    this.voiceTouching = false;
-    this.clearVoiceStartTimer();
-
-    if (this.voiceLongPressStarted && !this.data.recording) {
-      this.voiceStopAfterAuthorization = true;
-    }
-    if (this.data.recording) {
-      this.stopRecorder();
-    }
-    this.voiceLongPressStarted = false;
-  },
-
-  onVoiceTap: function () {
-    if (this.voiceSuppressTap) {
-      this.voiceSuppressTap = false;
-      this.voiceLongPressStarted = false;
       return;
     }
 
-    this.toggleRecording();
+    if (zone === 'submit') {
+      if (wasRecording) {
+        this.voiceSubmitAfterRecognition = true;
+        this.stopRecorder();
+      } else if (pendingRecording) {
+        this.voiceSubmitAfterRecognition = true;
+        this.voiceStopAfterAuthorization = true;
+      } else if (this.data.dreamText.trim()) {
+        // Already had a draft and swiped down before the long-press
+        // threshold even fired: submit the existing draft directly.
+        this.generateDreamCard();
+      }
+      return;
+    }
+
+    // zone === 'none': an ordinary release, no meaningful drag.
+    if (wasRecording) {
+      this.stopRecorder();
+      return;
+    }
+    if (pendingRecording) {
+      this.voiceStopAfterAuthorization = true;
+      return;
+    }
+    // Quick tap on the circle (never entered recording): open text editing.
+    this.enterEditingMode();
+  },
+
+  onVoiceTouchCancel: function () {
+    var wasRecording = this.data.recording;
+    var pendingRecording = this.voiceLongPressStarted && !wasRecording;
+
+    this.voiceTouching = false;
+    this.clearVoiceStartTimer();
+    this.resetDragState();
+    this.voiceLongPressStarted = false;
+
+    // A system interruption (incoming call, notification shade, etc.) is
+    // treated the same as an explicit cancel — never leave a recording
+    // running unattended.
+    if (wasRecording) {
+      this.voiceCancelled = true;
+      this.stopRecorder();
+    } else if (pendingRecording) {
+      this.voiceCancelled = true;
+      this.voiceStopAfterAuthorization = true;
+    }
   },
 
   onRecorderStop: function (result) {
     var self = this;
+    var wasCancelled = !!this.voiceCancelled;
+    var shouldAutoSubmit = !!this.voiceSubmitAfterRecognition;
     var filePath = result && (result.tempFilePath || result.filePath);
     var duration = result && result.duration
       ? Math.min(Number(result.duration) / 1000, 60)
       : Math.min((Date.now() - this.recordingStartedAt) / 1000, 60);
     var fileSystemManager;
 
+    this.voiceCancelled = false;
+    this.voiceSubmitAfterRecognition = false;
+
     this.stopRecordingTimer();
     this.setData({
       recording: false,
       recordingSeconds: 0
     });
+
+    if (wasCancelled) {
+      // Up-swipe cancel: drop the clip entirely, no toast, no leftover text.
+      analytics.trackEvent('voice_record_cancelled', {});
+      return;
+    }
 
     if (!filePath) {
       wx.showToast({ title: voiceFailureMessage({ reason: 'invalid_audio' }), icon: 'none', duration: 2500 });
@@ -490,6 +603,12 @@ Page({
             duration: duration,
             textLength: text.length
           });
+
+          if (shouldAutoSubmit) {
+            // Down-swipe submit: recognition succeeded, go straight to
+            // interpretation without waiting on any further tap.
+            self.generateDreamCard();
+          }
         });
       },
       fail: function () {
@@ -512,6 +631,7 @@ Page({
       this.setData({ dreamText: pendingDreamText });
     }
     this.refreshRecentDreams();
+    this.refreshHeroLabel();
   },
 
   openProfile: function () {

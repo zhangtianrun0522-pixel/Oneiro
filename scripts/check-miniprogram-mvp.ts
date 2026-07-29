@@ -802,13 +802,20 @@ for (const path of [
 }
 
 for (const [path, expected] of [
-  ['miniprogram/pages/home/index.wxml', '保存并解读'],
-  ['miniprogram/pages/home/index.wxml', 'bindtap="generateDreamCard"'],
+  // 首页从「输入框 + 保存按钮」改造成手势采集区（方向代号 1a）后，'保存并
+  // 解读' 按钮已经真的从 UI 里去掉了，不是换皮——原按钮断言换成三条验证
+  // 新交互结构确实存在的断言：下滑提交的手势提示文案、touchmove 手势绑定
+  // （证明拖拽状态机接了线，不只是 touchstart/touchend 两端）、点文字进入
+  // 编辑态的绑定。generateDreamCard 本身仍然是核心提交入口，只是不再挂在
+  // 一个可点击的 <button bindtap> 上，而是被手势状态机在代码里直接调用
+  // （见下方 homePage.generateDreamCard() 的直接调用断言）。
+  ['miniprogram/pages/home/index.wxml', '下滑进入解读'],
+  ['miniprogram/pages/home/index.wxml', 'bindtouchmove="onVoiceTouchMove"'],
+  ['miniprogram/pages/home/index.wxml', 'bindtap="onDreamTextTap"'],
   ['miniprogram/pages/home/index.wxml', 'bindtouchstart="onVoiceTouchStart"'],
   ['miniprogram/pages/home/index.wxml', '打开梦境档案'],
   ['miniprogram/pages/home/index.wxml', '我的资料'],
   ['miniprogram/pages/home/index.wxml', 'fromShare'],
-  ['miniprogram/pages/home/index.wxml', 'bindtap="generateDreamCard"'],
   ['miniprogram/pages/result/index.wxml', 'theme-{{dream.result.card_theme}}'],
   ['miniprogram/pages/result/index.wxml', 'dream-ai-image'],
   ['miniprogram/pages/result/index.wxml', '画面生成中'],

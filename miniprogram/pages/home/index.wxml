@@ -7,54 +7,66 @@
     <button class="profile-link" bindtap="openProfile">我的资料</button>
   </view>
 
-  <view class="hero">
-    <text class="eyebrow">PRIVATE DREAM NOTEBOOK</text>
-    <text class="title">今天醒来，</text>
-    <text class="title title-accent">还记得什么？</text>
-    <text wx:if="{{fromShare}}" class="share-note">你刚看到的是一张去隐私的梦卡。你也可以从一个画面开始，私密记下自己的梦。</text>
-    <view class="copy">
-      <text>一个画面、一句话，也值得被留下。</text>
+  <view class="capture-stage">
+    <text class="capture-eyebrow">{{heroCardNo}} · {{heroDate}}</text>
+
+    <view class="capture-textzone">
+      <view wx:if="{{recording}}" class="capture-waveform">
+        <view class="wave-bars">
+          <view class="wave-bar" style="height:24rpx;animation-delay:0s"></view>
+          <view class="wave-bar" style="height:52rpx;animation-delay:0.1s"></view>
+          <view class="wave-bar" style="height:36rpx;animation-delay:0.2s"></view>
+          <view class="wave-bar" style="height:60rpx;animation-delay:0.3s"></view>
+          <view class="wave-bar" style="height:32rpx;animation-delay:0.15s"></view>
+        </view>
+        <text class="capture-waveform-note">{{recordingSeconds}}s · 松开完成</text>
+      </view>
+      <view wx:elif="{{recognizing}}" class="capture-recognizing">
+        <text>正在整理刚才的话…</text>
+      </view>
+      <textarea
+        wx:elif="{{editingDream}}"
+        class="capture-textarea"
+        value="{{dreamText}}"
+        maxlength="1200"
+        focus="{{editingDream}}"
+        auto-height="{{false}}"
+        bindinput="onDreamInput"
+        bindblur="onDreamTextBlur"
+      />
+      <view wx:else class="capture-static {{dreamText ? 'has-draft' : ''}}" bindtap="onDreamTextTap">
+        <text>{{dreamText || '今天醒来，还记得什么？'}}</text>
+      </view>
     </view>
-    <text class="hero-note">先保留原梦，再慢慢理解它。</text>
+
+    <view class="capture-gesture">
+      <text
+        wx:if="{{dragZone !== 'none'}}"
+        class="drag-label {{dragZone === 'submit' ? 'drag-label--submit' : 'drag-label--cancel'}}"
+        style="transform: translate(calc(-50% + {{dragDx}}px), {{dragDy}}px);"
+      >{{dragZone === 'submit' ? '松开进入解读' : '松开取消'}}</text>
+      <button
+        class="voice-button {{editingDream ? 'is-compact' : ''}} {{recording ? 'is-recording' : ''}} {{!recording && dreamText ? 'has-draft' : ''}} {{dragZone === 'submit' ? 'is-drag-submit' : ''}} {{dragZone === 'cancel' ? 'is-drag-cancel' : ''}}"
+        style="transform: translate({{dragDx}}px, {{dragDy}}px);"
+        bindtouchstart="onVoiceTouchStart"
+        bindtouchmove="onVoiceTouchMove"
+        bindtouchend="onVoiceTouchEnd"
+        bindtouchcancel="onVoiceTouchCancel"
+        disabled="{{recognizing}}"
+      >
+        <view class="voice-dot"></view>
+      </button>
+    </view>
+
+    <text class="capture-hint">
+      <block wx:if="{{editingDream}}">轻触圆环外收起 · 仍可按住说</block>
+      <block wx:elif="{{recording}}">下滑进入解读 · 上滑取消</block>
+      <block wx:elif="{{dreamText}}">按住可继续说 · 下滑进入解读</block>
+      <block wx:else>按住说 · 或轻触文字输入</block>
+    </text>
   </view>
 
-  <view class="capture-surface {{recording ? 'is-recording' : ''}} {{dreamText ? 'has-draft' : ''}}">
-    <view class="capture-header">
-      <text class="capture-label">{{recording ? '正在听你说' : dreamText ? '梦的草稿' : '一段梦的开始'}}</text>
-      <text wx:if="{{dreamText}}" class="capture-prompt">{{dreamText.length}} / 1200</text>
-    </view>
-    <textarea
-      class="dream-input"
-      value="{{dreamText}}"
-      maxlength="1200"
-      auto-height="{{false}}"
-      bindinput="onDreamInput"
-      placeholder="例如：我在月光下的图书馆里，捡到一把银色钥匙…"
-      placeholder-class="muted"
-    />
-    <view class="capture-divider"></view>
-    <button
-      class="{{recording ? 'voice-button recording' : 'voice-button'}}"
-      bindtap="onVoiceTap"
-      bindtouchstart="onVoiceTouchStart"
-      bindtouchend="onVoiceTouchEnd"
-      bindtouchcancel="onVoiceTouchCancel"
-      disabled="{{recognizing}}"
-    >
-      <text wx:if="{{recording}}">松开完成 · {{recordingSeconds}}s</text>
-      <block wx:else><text class="voice-button-icon">◌</text><text>按住说话</text></block>
-    </button>
-    <text wx:if="{{!recognizing}}" class="voice-hint">{{recording ? '松开后自动转成文字' : '按住说话，松开自动转成文字'}}</text>
-    <text wx:if="{{recognizing}}" class="recognizing-note">正在整理刚才的话…</text>
-  </view>
-
-  <button class="primary-button" disabled="{{recording || recognizing}}" bindtap="generateDreamCard">
-    <view class="primary-button-copy">
-      <text class="primary-button-en">SAVE / INTERPRET</text>
-      <text class="primary-button-cn">保存并解读</text>
-    </view>
-    <text class="primary-button-arrow">→</text>
-  </button>
+  <text wx:if="{{fromShare}}" class="share-note">你刚看到的是一张去隐私的梦卡。你也可以从一个画面开始，私密记下自己的梦。</text>
   <text class="privacy-note">原梦会先保存，出生资料完全自愿。</text>
 
   <view wx:if="{{recentDreams.length}}" class="recent-section">
