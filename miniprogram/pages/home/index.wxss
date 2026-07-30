@@ -52,18 +52,40 @@
   text-align: center;
 }
 
+/* 不再是一个 height:344rpx 靠 align-items:center 居中的单一容器——录音/
+   识别状态和草稿文字现在是两个可以同时存在的纵向堆叠块，草稿文字必须
+   任何时候都渲染，用 max-height 兜底避免圆环被顶出屏幕，超长文字交给
+   .capture-textscroll 内部滚动。 */
 .capture-textzone {
   box-sizing: border-box;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
   width: 100%;
-  height: 344rpx;
+  max-height: 420rpx;
   margin-top: 24rpx;
   padding: 0 8rpx;
 }
 
+/* 录音/识别提示：草稿文字上方独立的一行，绝不整块替换文字区 */
+.capture-status {
+  flex-shrink: 0;
+  width: 100%;
+  margin-bottom: 16rpx;
+}
+
+.capture-textscroll {
+  box-sizing: border-box;
+  width: 100%;
+  height: 320rpx;
+}
+
 .capture-static {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   color: rgba(33, 29, 23, 0.45);
   font-family: var(--font-serif);
@@ -81,7 +103,7 @@
 .capture-textarea {
   box-sizing: border-box;
   width: 100%;
-  height: 100%;
+  height: 320rpx;
   background: transparent;
   color: var(--ink);
   font-family: var(--font-serif);
@@ -91,15 +113,15 @@
 }
 
 .capture-waveform { display: flex; flex-direction: column; align-items: center; }
-.wave-bars { display: flex; align-items: flex-end; justify-content: center; gap: 8rpx; height: 68rpx; }
+.wave-bars { display: flex; align-items: flex-end; justify-content: center; gap: 8rpx; height: 40rpx; }
 .wave-bar { width: 6rpx; border-radius: 4rpx; background: rgba(193, 68, 59, 0.6); animation: wave-breathe 0.9s ease-in-out infinite; }
 @keyframes wave-breathe {
   0%, 100% { transform: scaleY(0.6); opacity: 0.6; }
   50% { transform: scaleY(1); opacity: 1; }
 }
-.capture-waveform-note { display: block; margin-top: 14rpx; color: rgba(193, 68, 59, 0.75); font-size: var(--fs-label); text-align: center; }
+.capture-waveform-note { display: block; margin-top: 10rpx; color: rgba(193, 68, 59, 0.75); font-size: var(--fs-label); text-align: center; }
 
-.capture-recognizing { color: var(--gold-ink); font-size: var(--fs-aux); text-align: center; }
+.capture-recognizing { display: block; color: var(--gold-ink); font-size: var(--fs-aux); text-align: center; }
 
 .capture-gesture {
   position: relative;
@@ -116,8 +138,66 @@
   letter-spacing: 1rpx;
   pointer-events: none;
 }
-.drag-label--submit { color: var(--ink); }
 .drag-label--cancel { color: var(--cinnabar-ink); }
+
+/* 下滑确认区：录音中、拖拽临近或越过阈值、以及回弹反馈时才出现，是
+   「下滑提交」这个手势唯一有实体感的落点，比原来一行跟手小字更明确，
+   同时保持暖纸/深墨/朱砂的克制调性——虚线描边 = 待命，旧金描边 = 已进入
+   感应范围，墨色反色 = 已越过阈值松手即提交，和圆环 is-drag-submit 的
+   视觉语言呼应，不做花哨的营销动效。 */
+.confirm-target {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 216rpx;
+  height: 72rpx;
+  /* 圆环向下跟手上限 28px。104rpx(52px) 静止净空 → 跟到底时仍留约 24px，
+     两者不会读成相接的一个整体（72rpx 时到底只剩 8px，视觉上是相切的）。 */
+  margin: 104rpx auto 0;
+  border: 2rpx dashed rgba(33, 29, 23, 0.28);
+  border-radius: 36rpx;
+  pointer-events: none;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.confirm-target-label {
+  color: rgba(33, 29, 23, 0.5);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 1rpx;
+}
+
+/* 靠近但未过阈值：描边转旧金，提示「已经在感应范围内」 */
+.confirm-target.is-near {
+  border-color: var(--gold-line);
+}
+.confirm-target.is-near .confirm-target-label {
+  color: var(--gold-ink);
+}
+
+/* 越过阈值：实线深墨描边 + 浅纸底，读作「已就绪，松手即提交」。
+   这里刻意不做成深墨实心——圆环在 submit 态本身就是深墨填充，
+   两个同色实心块靠近时会读成一个整体形状。 */
+.confirm-target.is-armed {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--paper-raised);
+  transform: scale(1.04);
+}
+.confirm-target.is-armed .confirm-target-label {
+  color: var(--ink);
+}
+
+/* 拖了但没到阈值就松手：一次轻微的横向回弹，提示「差一点」而不是报错抖动 */
+.confirm-target.is-bounce {
+  animation: confirm-target-bounce 0.32s ease;
+}
+@keyframes confirm-target-bounce {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-6rpx); }
+  60% { transform: translateX(6rpx); }
+}
 
 /* 正圆语音按钮，全页画面主角。width 必须带 !important，否则会被微信
    button 的内置 184px 压掉，渲染成椭圆（height 不受影响，所以只有宽度

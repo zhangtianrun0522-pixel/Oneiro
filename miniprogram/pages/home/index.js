@@ -17,6 +17,38 @@ var ANALYSIS_STAGES = [
   { title: '收束成完整解读', detail: '把梦境、个人关联和不同视角整理成一份结果' }
 ];
 
+// 拖拽阈值：下滑超过 SUBMIT 才判「提交」，上滑超过 CANCEL（绝对值）才判
+// 「取消」。ATTEMPT_MIN 是「有效拖拽意图」的下界——低于它视为误触/静止，
+// 不给任何反馈；介于 ATTEMPT_MIN 和 SUBMIT 之间视为「拖了但没到位」，
+// 松手时要给用户一个明确的信号，而不是像 zone==='none' 一样悄无声息。
+var DRAG_SUBMIT_THRESHOLD = 48;
+var DRAG_CANCEL_THRESHOLD = 48;
+var DRAG_ATTEMPT_MIN = 16;
+
+// 震动是锦上添花，绝不能成为依赖：部分机型/基础库版本没有振动能力，或
+// 用户拒绝了权限，都会直接走 fail。fail 回调兜底之外再包一层 try/catch，
+// 双重保险，任何情况都不能打断录音/拖拽这条主流程。
+function triggerVibrate(type) {
+  try {
+    if (typeof wx === 'undefined' || typeof wx.vibrateShort !== 'function') return;
+    var options = { fail: function () {} };
+    var supportsType = true;
+    if (typeof wx.canIUse === 'function') {
+      try {
+        supportsType = wx.canIUse('vibrateShort.object.type');
+      } catch (probeError) {
+        supportsType = false;
+      }
+    }
+    if (type && supportsType) {
+      options.type = type;
+    }
+    wx.vibrateShort(options);
+  } catch (error) {
+    // 忽略——见上方注释。
+  }
+}
+
 function voiceFailureMessage(result) {
   var reason = result && result.reason ? String(result.reason) : '';
   if (reason === 'not_configured') return '语音服务未配置，请先用文字记录';
@@ -194,6 +226,7 @@ Page({
     dragDx: 0,
     dragDy: 0,
     dragZone: 'none',
+    dragBounce: false,
     heroCardNo: '',
     heroDate: '',
     analysisActive: false,
@@ -252,6 +285,10 @@ Page({
   onUnload: function () {
     this.stopAnalysisProgress();
     this.clearVoiceStartTimer();
+    if (this.dragBounceTimer) {
+      clearTimeout(this.dragBounceTimer);
+      this.dragBounceTimer = null;
+    }
     this.voiceTouching = false;
     this.stopRecordingTimer();
     if (this.data.recording) {
@@ -405,7 +442,7 @@ Page({
   },
 
   resetDragState: function () {
-    this.setData({ dragDx: 0, dragDy: 0, dragZone: 'none' });
+    this.setData({ dragDx: 0, dragDy: 0, dragZone: 'none', dragBounce: false });
   },
 
   enterEditingMode: function () {
@@ -436,6 +473,11 @@ Page({
     this.voiceSubmitAfterRecognition = false;
     this.voiceStartX = touch ? touch.clientX : 0;
     this.voiceStartY = touch ? touch.clientY : 0;
+    this.lastDragZone = 'none';
+    if (this.dragBounceTimer) {
+      clearTimeout(this.dragBounceTimer);
+      this.dragBounceTimer = null;
+    }
     this.resetDragState();
 
     // A second touch while recording still acts as the explicit stop control.
@@ -459,17 +501,51 @@ Page({
     var dy = touch.clientY - this.voiceStartY;
     var zone = 'none';
 
-    if (dy > 48 && dy > Math.abs(dx)) {
+    if (dy > DRAG_SUBMIT_THRESHOLD && dy > Math.abs(dx)) {
       zone = 'submit';
-    } else if (dy < -48 && Math.abs(dy) > Math.abs(dx)) {
+    } else if (dy < -DRAG_CANCEL_THRESHOLD && Math.abs(dy) > Math.abs(dx)) {
       zone = 'cancel';
+    } else if (dy > DRAG_ATTEMPT_MIN && dy > Math.abs(dx)) {
+      // Dragged down with clear intent but short of the submit threshold —
+      // onVoiceTouchEnd never submits for this zone, it only drives the
+      // confirm-target's "getting close" state and the release-time
+      // "you didn't quite make it" feedback.
+      zone = 'attempt';
     }
 
+    // Haptics fire once per edge crossing, never on every touchmove tick —
+    // that would turn into a continuous buzz. lastDragZone is the previous
+    // frame's zone so we can detect entering/leaving 'submit' and entering
+    // 'cancel'.
+    var previousZone = this.lastDragZone || 'none';
+    if (zone !== previousZone && (zone === 'submit' || previousZone === 'submit' || zone === 'cancel')) {
+      triggerVibrate('light');
+    }
+    this.lastDragZone = zone;
+
     this.setData({
+      // 向下跟手距离压到 28px：圆环下方的确认条只隔 36px，原来放到 56px
+      // 会让圆环压到确认条上，两者又都是深墨填充，视觉上糊成一个团块。
       dragDx: Math.max(-36, Math.min(36, dx)),
-      dragDy: Math.max(-36, Math.min(56, dy)),
+      dragDy: Math.max(-36, Math.min(28, dy)),
       dragZone: zone
     });
+  },
+
+  // Called only when the user dragged down past ATTEMPT_MIN but let go
+  // before reaching SUBMIT_THRESHOLD — an "almost" release must never be
+  // silent like a plain tap-release is.
+  showDragAttemptFeedback: function () {
+    wx.showToast({ title: '再往下滑一点，进入解读', icon: 'none', duration: 1400 });
+    this.setData({ dragBounce: true });
+    var self = this;
+    if (this.dragBounceTimer) {
+      clearTimeout(this.dragBounceTimer);
+    }
+    this.dragBounceTimer = setTimeout(function () {
+      self.dragBounceTimer = null;
+      self.setData({ dragBounce: false });
+    }, 320);
   },
 
   onVoiceTouchEnd: function () {
@@ -481,6 +557,7 @@ Page({
 
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
+    this.lastDragZone = 'none';
     this.resetDragState();
     this.voiceLongPressStarted = false;
 
@@ -497,6 +574,9 @@ Page({
     }
 
     if (zone === 'submit') {
+      // Instant confirmation right when the threshold-crossing release
+      // happens — do not wait on async recognition/interpretation for it.
+      triggerVibrate('medium');
       if (wasRecording) {
         this.voiceSubmitAfterRecognition = true;
         this.stopRecorder();
@@ -511,7 +591,13 @@ Page({
       return;
     }
 
-    // zone === 'none': an ordinary release, no meaningful drag.
+    if (zone === 'attempt') {
+      this.showDragAttemptFeedback();
+    }
+
+    // zone === 'none', or a short-of-threshold 'attempt': an ordinary
+    // release, no submission — the recording/recognition flow below is
+    // unchanged either way.
     if (wasRecording) {
       this.stopRecorder();
       return;
@@ -530,6 +616,7 @@ Page({
 
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
+    this.lastDragZone = 'none';
     this.resetDragState();
     this.voiceLongPressStarted = false;
 

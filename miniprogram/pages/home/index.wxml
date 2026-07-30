@@ -5,21 +5,30 @@
     <text class="capture-eyebrow">{{heroCardNo}} · {{heroDate}}</text>
 
     <view class="capture-textzone">
-      <view wx:if="{{recording}}" class="capture-waveform">
-        <view class="wave-bars">
-          <view class="wave-bar" style="height:24rpx;animation-delay:0s"></view>
-          <view class="wave-bar" style="height:52rpx;animation-delay:0.1s"></view>
-          <view class="wave-bar" style="height:36rpx;animation-delay:0.2s"></view>
-          <view class="wave-bar" style="height:60rpx;animation-delay:0.3s"></view>
-          <view class="wave-bar" style="height:32rpx;animation-delay:0.15s"></view>
+      <!-- 录音/识别状态是独立的一行，不再和已输入的草稿文字互斥切换——草稿
+           必须在这两种状态下持续可见，这正是真机验收发现的「下滑时文字被
+           挡住/换掉」问题的根因（原来是 wx:elif 整块替换，不是遮罩）。 -->
+      <view class="capture-status" wx:if="{{recording || recognizing}}">
+        <view wx:if="{{recording}}" class="capture-waveform">
+          <view class="wave-bars">
+            <view class="wave-bar" style="height:18rpx;animation-delay:0s"></view>
+            <view class="wave-bar" style="height:30rpx;animation-delay:0.1s"></view>
+            <view class="wave-bar" style="height:22rpx;animation-delay:0.2s"></view>
+            <view class="wave-bar" style="height:34rpx;animation-delay:0.3s"></view>
+            <view class="wave-bar" style="height:20rpx;animation-delay:0.15s"></view>
+          </view>
+          <text class="capture-waveform-note">{{recordingSeconds}}s · 松开完成</text>
         </view>
-        <text class="capture-waveform-note">{{recordingSeconds}}s · 松开完成</text>
+        <text wx:elif="{{recognizing}}" class="capture-recognizing">正在整理刚才的话…</text>
       </view>
-      <view wx:elif="{{recognizing}}" class="capture-recognizing">
-        <text>正在整理刚才的话…</text>
-      </view>
+
+      <scroll-view wx:if="{{!editingDream}}" class="capture-textscroll" scroll-y="{{true}}">
+        <view class="capture-static {{dreamText ? 'has-draft' : ''}}" bindtap="onDreamTextTap">
+          <text>{{dreamText || '今天醒来，还记得什么？'}}</text>
+        </view>
+      </scroll-view>
       <textarea
-        wx:elif="{{editingDream}}"
+        wx:else
         class="capture-textarea"
         value="{{dreamText}}"
         maxlength="1200"
@@ -28,17 +37,14 @@
         bindinput="onDreamInput"
         bindblur="onDreamTextBlur"
       />
-      <view wx:else class="capture-static {{dreamText ? 'has-draft' : ''}}" bindtap="onDreamTextTap">
-        <text>{{dreamText || '今天醒来，还记得什么？'}}</text>
-      </view>
     </view>
 
     <view class="capture-gesture">
       <text
-        wx:if="{{dragZone !== 'none'}}"
-        class="drag-label {{dragZone === 'submit' ? 'drag-label--submit' : 'drag-label--cancel'}}"
+        wx:if="{{dragZone === 'cancel'}}"
+        class="drag-label drag-label--cancel"
         style="transform: translate(calc(-50% + {{dragDx}}px), {{dragDy}}px);"
-      >{{dragZone === 'submit' ? '松开进入解读' : '松开取消'}}</text>
+      >松开取消</text>
       <button
         class="voice-button {{editingDream ? 'is-compact' : ''}} {{recording ? 'is-recording' : ''}} {{!recording && dreamText ? 'has-draft' : ''}} {{dragZone === 'submit' ? 'is-drag-submit' : ''}} {{dragZone === 'cancel' ? 'is-drag-cancel' : ''}}"
         style="transform: translate({{dragDx}}px, {{dragDy}}px);"
@@ -50,11 +56,23 @@
       >
         <view class="voice-dot"></view>
       </button>
+
+      <!-- 下滑确认区：录音中 / 拖拽临近阈值 / 越过阈值 / 刚回弹时才出现，
+           比原来一行跟手小字更有「这是提交落点」的实体感，同时保持
+           暖纸/深墨/朱砂的克制调性，不做花哨动效。 -->
+      <view
+        class="confirm-target {{dragZone === 'submit' ? 'is-armed' : ''}} {{dragZone === 'attempt' ? 'is-near' : ''}} {{dragBounce ? 'is-bounce' : ''}}"
+        wx:if="{{recording || dragZone === 'submit' || dragZone === 'attempt' || dragBounce}}"
+      >
+        <text class="confirm-target-label">{{dragZone === 'submit' ? '松开 · 进入解读' : '下滑进入解读'}}</text>
+      </view>
     </view>
 
     <text class="capture-hint">
       <block wx:if="{{editingDream}}">轻触圆环外收起 · 仍可按住说</block>
-      <block wx:elif="{{recording}}">下滑进入解读 · 上滑取消</block>
+      <!-- 录音中不再重复「下滑进入解读」：圆环下方的确认条已经写着这句，
+           两处相隔 20px 出现同一句话读起来像渲染重复 -->
+      <block wx:elif="{{recording}}">上滑取消这次录音</block>
       <block wx:elif="{{dreamText}}">按住可继续说 · 下滑进入解读</block>
       <block wx:else>按住说 · 或轻触文字输入</block>
     </text>
