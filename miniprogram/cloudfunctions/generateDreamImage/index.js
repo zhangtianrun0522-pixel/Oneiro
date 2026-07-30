@@ -25,6 +25,16 @@ const DEFAULT_QUALITY = 'low';
 const DEFAULT_TIMEOUT_MS = 55000;
 const FUNCTION_BUDGET_MS = 55000;
 const NANO_BANANA_SUBMIT_TIMEOUT_MS = 46000;
+// seedream 出的是 1728x2304（约 4MP，模型硬性要求 ≥3686400 像素，见
+// normalizeImageDimension）。实测该尺寸下 provider 端到端约 25–37 秒，
+// 远超同步小图模型的耗时。此前这条路径沿用了 12 秒的通用超时，于是
+// 每次都在 ~13 秒被 socket 超时掐断，客户端只看到
+// "image provider timeout"，看起来像"出图反复失败"。
+// 42 秒是在 FUNCTION_BUDGET_MS(55s) 内为下载(≤12s)+上传云存储留出余量的取值。
+const SEEDREAM_SUBMIT_TIMEOUT_MS = 42000;
+// 同步小图模型（gpt-image 等）保持原来的快速失败超时，不被 seedream 的
+// 长耗时拖累
+const SYNC_IMAGE_SUBMIT_TIMEOUT_MS = 12000;
 const QUALITY_DEFAULT_MODEL = 'gpt-image-2';
 const QUALITY_DEFAULT_TIMEOUT_MS = 12000;
 const QUALITY_DEFAULT_SIZE = '768x1024';
@@ -1321,7 +1331,12 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
         quality: config.quality,
         n: 1
     }),
-    isGrsaiEndpoint ? remainingTimeout(deadline, 45000) : remainingTimeout(deadline, 12000)
+    isGrsaiEndpoint
+      ? remainingTimeout(deadline, 45000)
+      : remainingTimeout(
+        deadline,
+        isSeedreamModel(config.model) ? SEEDREAM_SUBMIT_TIMEOUT_MS : SYNC_IMAGE_SUBMIT_TIMEOUT_MS
+      )
   );
   let body = response.body;
   image = extractImage(body);
@@ -1416,6 +1431,7 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
 }
 
 exports.main = async function (event) {
+  const handlerStartedAt = Date.now();
   const action = String((event && event.action) || '').trim();
   const wxContext = cloud.getWXContext ? cloud.getWXContext() : {};
   const openid = String((wxContext && wxContext.OPENID) || '');
@@ -1530,12 +1546,22 @@ exports.main = async function (event) {
       preparedReferences.urls
     );
   } catch (error) {
+    // 诊断字段：上一次这里只回了 "image provider timeout"，既看不出是哪一段
+    // 超时、也看不出配置的预算是多少，排查时必须重新读代码才能定位。
+    // 带上实际耗时、该模型的提交超时和函数总预算，让下次的失败自解释。
     return {
       ok: false,
       reason: 'provider_error',
       provider: config.provider,
       providerConfigured: config.provider === 'openai' && !!config.apiKey,
-      message: error && error.message ? error.message.slice(0, 300) : 'image generation failed'
+      message: error && error.message ? error.message.slice(0, 300) : 'image generation failed',
+      elapsedMs: Date.now() - handlerStartedAt,
+      model: config.model,
+      requestedSize: config.size,
+      submitTimeoutMs: isSeedreamModel(config.model)
+        ? SEEDREAM_SUBMIT_TIMEOUT_MS
+        : SYNC_IMAGE_SUBMIT_TIMEOUT_MS,
+      functionBudgetMs: FUNCTION_BUDGET_MS
     };
   } finally {
     for (let index = 0; index < preparedReferences.fileIDs.length; index += 1) {
