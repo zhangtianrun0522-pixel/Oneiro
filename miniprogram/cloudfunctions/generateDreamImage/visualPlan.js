@@ -32,7 +32,7 @@ const EMOTION_PALETTES = {
     dominant: 'warm ochre #D9A33A',
     accent: 'muted teal #4B9290',
     focal: 'burnt orange #B85A31',
-    auxiliary: ['grass green #6E8A45'],
+    auxiliary: ['burnt orange #B85A31', 'grass green #6E8A45'],
     outline: 'warm black ink #1C1A18',
     paper: 'aged cream #F1E1BE'
   },
@@ -42,7 +42,7 @@ const EMOTION_PALETTES = {
     dominant: 'terracotta orange #C96532',
     accent: 'pale cyan #94D0D1',
     focal: 'lemon yellow #E7C94A',
-    auxiliary: ['deep green #1C4C43'],
+    auxiliary: ['lemon yellow #E7C94A', 'deep green #1C4C43'],
     outline: 'near-black indigo #121525',
     paper: 'clean warm cream #F6E8C8'
   },
@@ -51,8 +51,8 @@ const EMOTION_PALETTES = {
     keywords: ['悲伤', '难过', '失落', '孤独', '哭', '离开', '消失', '告别'],
     dominant: 'deep indigo #2B3D67',
     accent: 'warm cream #E9D2A4',
-    focal: 'carmine coral #C94F3D',
-    auxiliary: ['ink green #1A4A40'],
+    focal: 'muted coral #B96750',
+    auxiliary: ['muted coral #B96750', 'ink green #1A4A40'],
     outline: 'near-black blue #151923',
     paper: 'milk cream #EFE3C9'
   },
@@ -61,8 +61,8 @@ const EMOTION_PALETTES = {
     keywords: ['愤怒', '生气', '发火', '争吵', '冲突', '破坏', '攻击'],
     dominant: 'vermilion #D33D29',
     accent: 'electric blue #2D68C4',
-    focal: 'signal yellow #E7C94A',
-    auxiliary: ['burnt orange #DA6A2C'],
+    focal: 'burnt orange #DA6A2C',
+    auxiliary: ['burnt orange #DA6A2C', 'deep ink #1A1A19'],
     outline: 'charcoal black #151311',
     paper: 'warm paper #F1DFBC'
   },
@@ -72,7 +72,7 @@ const EMOTION_PALETTES = {
     dominant: 'deep ink green #164F46',
     accent: 'golden yellow #D6A62E',
     focal: 'coral orange #D95B3D',
-    auxiliary: ['deep violet #4D4165'],
+    auxiliary: ['deep violet #4D4165', 'pale cyan #9CBEC0'],
     outline: 'green-black ink #111916',
     paper: 'antique ivory #EEE0BE'
   },
@@ -82,7 +82,7 @@ const EMOTION_PALETTES = {
     dominant: 'sage green #6B9A70',
     accent: 'warm orange #D77540',
     focal: 'warm yellow #E4C25E',
-    auxiliary: ['clear light blue #74B9C1'],
+    auxiliary: ['clear light blue #74B9C1', 'warm yellow #E4C25E'],
     outline: 'soft near-black #1B2420',
     paper: 'cream white #F4E8CD'
   }
@@ -385,8 +385,13 @@ function normalizeVisualPlan(rawPlan, context) {
 }
 
 function paletteList(palette) {
+  const reserved = [palette.dominant, palette.accent, palette.focal, palette.outline, palette.paper]
+    .filter(Boolean);
+  const auxiliary = (palette.auxiliary || []).filter(function (color) {
+    return reserved.indexOf(color) < 0;
+  }).slice(0, 1);
   return [palette.dominant, palette.accent, palette.focal]
-    .concat(palette.auxiliary || [])
+    .concat(auxiliary)
     .concat([palette.outline, palette.paper])
     .filter(Boolean)
     .slice(0, 6);
@@ -493,20 +498,41 @@ function buildGenerationPrompt(plan, stylePreset) {
 
 function seedreamCompositionGrammar(composition) {
   const id = composition && composition.id;
+  const fallback = COMPOSITIONS[id];
+  const customFields = [
+    composition && composition.subject_position,
+    composition && composition.visual_flow,
+    composition && composition.spatial_layers,
+    composition && composition.negative_space
+  ].filter(Boolean);
+  const isGeneric = fallback &&
+    composition.subject_position === fallback.subject_position &&
+    composition.visual_flow === fallback.visual_flow &&
+    composition.spatial_layers === fallback.spatial_layers &&
+    composition.negative_space === fallback.negative_space;
   const grammars = {
-    off_center_diagonal: '主体偏离中心并被边缘局部裁切；用一条斜向路径从主要动作连接异常；前景边缘安静、中景动作集中、远景稀疏。',
-    threshold_depth: '主体靠近梦中已出现的偏置前景结构；由该结构把视线拉向远处异常；大前景、压缩中景和微小远景依次展开。',
-    cropped_closeup: '梦中已出现的动作或物体被边缘大幅裁切；该近景锚点指向孤立异常；夸张前景、窄中景和近乎空白的远景形成层级。',
+    off_center_diagonal: '主体偏离中心并可被边缘局部裁切；用一条斜向路径连接主要动作与核心关系；前景边缘安静、中景动作集中、远景稀疏。',
+    threshold_depth: '主体靠近梦中已出现的偏置前景结构；由该结构把视线拉向远处结果；大前景、压缩中景和微小远景依次展开。',
+    cropped_closeup: '梦中已出现的动作或物体可被边缘大幅裁切；该近景锚点指向核心变化；夸张前景、窄中景和近乎空白的远景形成层级。',
     split_distance: '两个不等的状态在画面两端分开；两者之间的距离成为视觉路径；近处锚点、开放中段和远处小锚点依次展开。',
-    low_horizon: '主体放在低处一侧；视线从低处主体垂直拉向异常；低处前景压缩，上部空间安静且占主导。',
+    low_horizon: '主体放在低处一侧；视线从低处主体垂直拉向核心事件；低处前景压缩，上部空间安静且占主导。',
     vertical_drift: '主体偏向一侧，已出现的物体沿纵向漂移；一条断续竖向节奏穿过动作；裁切近景、主体动作和稀疏远景依次展开。'
   };
-  return grammars[id] || '主体偏离中心；用一条明确路径连接主要动作和异常；前景锚点、中景动作、远景结果依次展开。';
+  if (!isGeneric && customFields.length) {
+    return '优先服从本梦的场景定制构图：' + clean(customFields.join('；'), 420) + '。不要用通用模板覆盖这些关系。';
+  }
+  return grammars[id] || '主体偏离中心；用一条明确路径连接主要动作和核心关系；按事件需要安排空间层次。';
 }
 
 function buildSeedreamGenerationPrompt(plan, stylePreset) {
-  const anomaly = clean(plan.anomalies[0] || '没有额外异常，不要自行添加', 120);
+  const hasAnomaly = !!plan.anomalies[0];
+  const anomaly = clean(plan.anomalies[0] || '', 120);
   const palette = plan.palette || {};
+  const reservedColors = [palette.dominant, palette.accent, palette.focal, palette.outline, palette.paper]
+    .filter(Boolean);
+  const auxiliaryColors = (palette.auxiliary || []).filter(function (color) {
+    return reservedColors.indexOf(color) < 0;
+  }).slice(0, 1);
   const anchors = uniqueStrings([plan.main_event].concat(plan.preserve_elements || []), 3, 72);
   const composition = plan.composition || {};
   const hiddenSymbol = plan.hidden_symbol
@@ -521,9 +547,11 @@ function buildSeedreamGenerationPrompt(plan, stylePreset) {
     '梦境事实：' + clean(plan.raw_text, 160).replace(/[。！？!?]+$/, '') + '。只画梦境事实中明确出现的人、地点、物体和动作；不确定细节省略。关键物体保留最基本的类别轮廓和结构，不得替换成相近物种或物品。',
     '核心事件：' + clean(plan.main_event, 110) + '。场景：' + clean(plan.setting, 70) + '。情绪：' + clean(plan.emotion.join('、'), 45) + '。',
     '叙事锚点仅保留2–3个：' + (anchors.join('、') || '核心事件') + '。',
-    '唯一超现实规则：' + anomaly + '；它必须真实改变动作、距离或空间结构，不能只是装饰。',
-    '构图方案“' + clean(composition.id, 40) + '”：若梦境明确给出场所，先建立普通空间容器；若未说明地点，只用无指向性的平面色块空间，不新增房间、家具、景观或人物。再放入一个被平静对待的异常关系；以前景锚点、中景动作、远景结果组织三层；' + seedreamCompositionGrammar(composition) + '保持约35–50%主动留白，至少一个已出现的结构或物体被画面边缘裁切，缩小后仍读得出清楚剪影和事件；不照搬任何既有场景。',
-    '关系型配色，共4–6色：低明度主导色场“' + clean(palette.dominant, 50) + '”覆盖约45–60%；明确冷暖或互补对撞色“' + clean(palette.accent, 50) + '”引导动作或视觉路径；高饱和焦点“' + clean(palette.focal, 50) + '”局部不超过3%；辅助结构色“' + clean((palette.auxiliary || []).join('、'), 90) + '”；近黑线稿“' + clean(palette.outline, 50) + '”；暖纸支撑色“' + clean(palette.paper, 50) + '”。不平均分配，不固定任何色相组合或人物服装颜色。',
+    hasAnomaly
+      ? '唯一超现实规则：' + anomaly + '；它必须真实改变动作、距离或空间结构，不能只是装饰。'
+      : '本梦没有明确的超现实规则；不要自行制造异常，只凝练原梦中的普通情境、动作与情绪关系。',
+    '构图方案“' + clean(composition.id, 40) + '”：若梦境明确给出场所，先建立普通空间容器；若未说明地点，只用无指向性的平面色块空间，不新增房间、家具、景观或人物。' + (hasAnomaly ? '将异常关系平静地放进场景。' : '围绕原梦的核心动作或关系组织画面。') + seedreamCompositionGrammar(composition) + '根据事件需要使用单平面、前中后层次或近景裁切，不强制统一景深；保留约35–50%主动留白，缩小后仍读得出清楚剪影和事件；不照搬任何既有场景。',
+    '关系型配色，共4–6色：低明度主导色场“' + clean(palette.dominant, 50) + '”覆盖约45–60%；明确冷暖或互补对撞色“' + clean(palette.accent, 50) + '”引导动作或视觉路径；高饱和焦点“' + clean(palette.focal, 50) + '”局部不超过3%；辅助结构色“' + clean(auxiliaryColors.join('、') || '无额外辅助色', 90) + '”；近黑线稿“' + clean(palette.outline, 50) + '”；暖纸支撑色“' + clean(palette.paper, 50) + '”。不平均分配，不固定任何色相组合或人物服装颜色。',
     style + ' 画面以少数宽阔、不规则的大平面承重，只在边缘留下克制的手工痕迹；不使用排线、素描阴影、密集短线或逐根毛发。动物、植物和复杂建筑也归纳成清楚的大剪影与少量必要结构线。',
     '人物若出现，画成无五官、无写实关节和衣褶的匿名背影、侧背、小尺度或裁切剪影。' + hiddenSymbol,
     '避免写实、3D、光泽、渐变、发光、卡牌框、塔罗装饰、通用紫色幻想、平滑矢量、规则透视、对称海报、重复纹理，以及无依据的月亮、时钟、眼睛、花朵、动物或第二个人物。'

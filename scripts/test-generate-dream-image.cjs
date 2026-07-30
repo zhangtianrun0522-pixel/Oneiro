@@ -212,6 +212,34 @@ async function run() {
     symbols: ['信']
   });
   const sadnessSeedreamPrompt = visualPlanner.buildSeedreamGenerationPrompt(sadnessPlan);
+  const sadnessGenericPrompt = visualPlanner.buildGenerationPrompt(sadnessPlan);
+  const sadnessInternalPrompt = visualPlanner.buildInternalTestGenerationPrompt(sadnessPlan);
+  const plainSeedreamPrompt = visualPlanner.buildSeedreamGenerationPrompt(mysteryPlan);
+  const customCompositionPlan = visualPlanner.normalizeVisualPlan({
+    main_event: '我站在空房间中央看着天花板缓慢下降',
+    emotion: ['焦虑'],
+    setting: '空房间',
+    anomalies: ['天花板缓慢下降'],
+    preserve_elements: ['我', '天花板'],
+    composition: {
+      template: 'low_horizon',
+      subject_position: '主体严格位于画面中央下方',
+      visual_flow: '视线从主体垂直上升到下降的天花板',
+      spatial_layers: '使用单一平面压缩空间，不建立前中后景',
+      negative_space: '顶部保留38%低密度压迫空间'
+    }
+  }, {
+    dreamText: '我站在空房间中央，看着天花板缓慢下降。',
+    dreamFacts: {
+      people: ['我'],
+      places: ['空房间'],
+      objects: ['天花板'],
+      actions: ['天花板缓慢下降'],
+      emotions: ['焦虑']
+    },
+    symbols: ['天花板']
+  });
+  const customCompositionPrompt = visualPlanner.buildSeedreamGenerationPrompt(customCompositionPlan);
   const hallucinatedPlan = visualPlanner.normalizeVisualPlan({
     main_event: '我在空房间里走路，月亮照着神秘眼睛和蛇',
     setting: '月亮下的神殿',
@@ -278,11 +306,11 @@ async function run() {
   assert.match(seedreamPrompt, /35–50%主动留白/);
   assert.match(seedreamPrompt, /若梦境明确给出场所.*普通空间容器/);
   assert.match(seedreamPrompt, /若未说明地点.*不新增房间、家具、景观或人物/);
-  assert.match(seedreamPrompt, /一个被平静对待的异常关系/);
+  assert.match(seedreamPrompt, /将异常关系平静地放进场景/);
   assert.match(seedreamPrompt, /构图方案“off_center_diagonal”/);
   assert.match(seedreamPrompt, /不照搬任何既有场景/);
   assert.match(seedreamPrompt, /一条斜向路径/);
-  assert.match(seedreamPrompt, /边缘裁切/);
+  assert.match(seedreamPrompt, /边缘局部裁切/);
   assert.match(seedreamPrompt, /手工压力墨线、哑光平涂、轻微印刷颗粒和干刷断点，非写实高对比/);
   assert.match(seedreamPrompt, /不得替换成相近物种或物品/);
   assert.match(seedreamPrompt, /不使用排线、素描阴影、密集短线或逐根毛发/);
@@ -308,6 +336,15 @@ async function run() {
   assert.notEqual(visualPlan.palette.dominant, sadnessPlan.palette.dominant);
   assert.notEqual(visualPlan.composition.id, sadnessPlan.composition.id);
   assert.notEqual(seedreamPrompt, sadnessSeedreamPrompt);
+  assert.match(plainSeedreamPrompt, /本梦没有明确的超现实规则/);
+  assert.match(plainSeedreamPrompt, /不要自行制造异常/);
+  assert.doesNotMatch(plainSeedreamPrompt, /将异常关系平静地放进场景/);
+  assert.match(customCompositionPrompt, /优先服从本梦的场景定制构图/);
+  assert.match(customCompositionPrompt, /主体严格位于画面中央下方/);
+  assert.match(customCompositionPrompt, /使用单一平面压缩空间，不建立前中后景/);
+  assert.match(customCompositionPrompt, /不要用通用模板覆盖这些关系/);
+  assert.match(sadnessGenericPrompt, /muted coral #B96750/);
+  assert.match(sadnessInternalPrompt, /muted coral #B96750/);
   assert.equal(visualPlanner.styleVersionForPreset('production'), 'oneiro-seedream-dream-v2.2');
   assert.equal(
     crypto.createHash('sha256').update(compiledPrompt).digest('hex'),
