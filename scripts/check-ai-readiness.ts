@@ -10,6 +10,17 @@ const nodeRequire = createRequire(import.meta.url);
 type InterpretDreamModule = {
   main: (event: Record<string, unknown>) => Promise<Record<string, unknown>>;
   parseJsonResponse?: (text: string) => Record<string, unknown>;
+  normalizeGroundedSymbols?: (value: unknown, dreamText: string, fallback: string[]) => string[];
+  normalizeAiResult?: (
+    raw: Record<string, unknown>,
+    dreamText: string,
+    profile: Record<string, unknown>,
+    cardIndex: number,
+    sourceLabel: string,
+    memory: unknown,
+    baziChart: unknown,
+    lifeNote: unknown
+  ) => Record<string, any>;
 };
 
 function read(relativePath: string): string {
@@ -158,7 +169,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false): 
   };
 
   const source = exposeParser
-    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;'
+    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.normalizeGroundedSymbols = normalizeGroundedSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;'
     : read(interpretDreamPath);
   vm.runInNewContext(source, sandbox, { filename: interpretDreamPath });
   return commonJsModule.exports;
@@ -425,6 +436,68 @@ assert.match(String(rainMetaphysical.tension || ''), /暴雨/);
 assert.match(String(rainMetaphysical.tension || ''), /承接|挡|边界|阈值|决定/);
 assert.match(String(rainMetaphysical.rhythm || ''), /沙漠|暴雨/);
 assert.match(String(rainMetaphysical.rhythm || ''), /列|处理|承接|拒绝/);
+
+const peachInterpretation = await loadInterpretDream({}).main({
+  dreamText: '我梦见西红柿里爆出了一颗水蜜桃',
+  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
+  cardIndex: 6,
+});
+const peachResult = peachInterpretation.result as Record<string, any>;
+assert.ok(!peachResult.symbols.includes('清水'));
+assert.doesNotMatch(JSON.stringify(peachResult), /清水|水面|水意象|水的意象/);
+
+const exposedInterpretDream = loadInterpretDream({}, true);
+const normalizeGroundedSymbols = exposedInterpretDream.normalizeGroundedSymbols;
+assert.ok(normalizeGroundedSymbols);
+assert.deepEqual(
+  normalizeGroundedSymbols(['水蜜桃'], '我梦见西红柿里爆出了一颗水蜜桃', ['清水']),
+  ['水蜜桃']
+);
+assert.deepEqual(
+  normalizeGroundedSymbols(undefined, '我梦见自己站在水里，看着河水涨起', ['清水']),
+  ['清水']
+);
+for (const falseWaterText of ['我去了上海', '墙上挂着海报', '我在看海报', '河马跑过河南']) {
+  assert.ok(!normalizeGroundedSymbols(['清水'], falseWaterText, ['未命名场景']).includes('清水'));
+}
+
+const normalizeAiResult = exposedInterpretDream.normalizeAiResult;
+assert.ok(normalizeAiResult);
+const modelFirstPeach = normalizeAiResult(
+  {
+    symbols: ['西红柿', '水蜜桃'],
+    card_theme_label: '未命名场景',
+    dream_facts: {
+      objects: ['西红柿', '水蜜桃'],
+      actions: ['爆出'],
+    },
+  },
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  6,
+  'AI 梦卡',
+  null,
+  null,
+  null
+);
+assert.deepEqual(modelFirstPeach.symbols, ['西红柿', '水蜜桃']);
+assert.equal(modelFirstPeach.card_theme_label, '西红柿');
+assert.doesNotMatch(JSON.stringify(modelFirstPeach), /未命名场景|清水|水面|水意象|水的意象/);
+
+const waterBodyInterpretation = await loadInterpretDream({}).main({
+  dreamText: '我梦见自己站在水里，看着河水涨起',
+  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
+  cardIndex: 7,
+});
+assert.ok((waterBodyInterpretation.result as Record<string, any>).symbols.includes('清水'));
+for (const explicitWaterText of ['我梦见一座水库', '我打了一桶井水', '浴缸里装满了水']) {
+  const explicitWaterInterpretation = await loadInterpretDream({}).main({
+    dreamText: explicitWaterText,
+    profile: {},
+    cardIndex: 8,
+  });
+  assert.ok((explicitWaterInterpretation.result as Record<string, any>).symbols.includes('清水'));
+}
 
 const snowRoseInterpretation = await loadInterpretDream({}).main({
   dreamText: '我梦见沙漠里开始下暴雪，然后沙地里长出了玫瑰花',

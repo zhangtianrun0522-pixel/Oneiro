@@ -160,7 +160,7 @@ function buildInterpretationSystemPrompt(baziChart) {
 const symbolRules = [
   { label: '暴雨', titleWord: '雨', theme: 'tide', keywords: ['暴雨', '大雨', '下暴雨', '下雨', '雨'], meaning: '暴雨把情绪从背景推到眼前，带来突然、密集而难以忽略的变化。' },
   { label: '暴雪', titleWord: '雪', theme: 'tide', keywords: ['暴雪', '大雪', '下暴雪', '下大雪', '下雪', '飘雪', '雪'], meaning: '暴雪把视野、路径和原有秩序一起遮住，也让环境的变化变得无法忽略。' },
-  { label: '清水', titleWord: '潮', theme: 'tide', keywords: ['水', '海', '河', '湖', '溪', '江', '池'], meaning: '水代表正在浮上来的情绪、直觉和记忆；只有原文明确出现水体时才使用这一标签。' },
+  { label: '清水', titleWord: '潮', theme: 'tide', keywords: ['清水', '海', '河', '湖', '溪', '江', '池'], meaning: '水代表正在浮上来的情绪、直觉和记忆；只有原文明确出现水体时才使用这一标签。' },
   { label: '沙漠', titleWord: '漠', theme: 'mist', keywords: ['沙漠', '荒漠', '沙丘'], meaning: '沙漠常把空旷、资源稀薄和等待变化的处境压缩成一幅画面。' },
   { label: '玫瑰', titleWord: '花', theme: 'hearth', keywords: ['玫瑰花', '玫瑰', '花朵', '鲜花'], meaning: '玫瑰把美感、欲望、照料与刺痛放在同一朵花里；它从哪里出现，比花本身更重要。' },
   { label: '门', titleWord: '门', theme: 'threshold', keywords: ['门', '入口', '出口', '房间', '走廊'], meaning: '门代表阶段转换，也代表你对未知选择的试探。' },
@@ -262,18 +262,51 @@ function containsAny(text, keywords) {
   });
 }
 
+const explicitWaterBodyPatterns = [
+  /清水|海水|海边|海里|海中|海面|海上|海底|海岸|海滩|海洋|河水|河里|河中|河面|河边|河上|河底|河岸|河流|河道|湖水|湖里|湖中|湖面|湖边|湖上|湖底|湖岸|湖畔|湖泊|溪水|溪流|小溪|江水|江里|江中|江面|江边|江上|江底|江岸|池塘|池水|水池|泳池|鱼池|池里|池中|池面|池边|泉水|井水|水井|瀑布|水库|水面|水中|水里|水下|积水|洪水|涨水|水位|水流|水渠|水沟|水塘|水湾|水岸|水边|水底|水草|水淹|水没|水漫|水退|水涨|热水|冷水|温水|开水/,
+  /(?:梦见|看见|望着|面对|走向|来到|站在|漂在|沉入|跃入|一片|一条|一座|无边的|辽阔的)(?:了)?(?:大)?(?:海|河|湖|江)(?:[，。！？、\s]|$)/,
+  /(?:大海|出海|入海|看海|望海|小河|大河|过河|长江|大江|过江)(?:[，。！？、\s]|$)/,
+  /(?:浴缸|杯子?|碗|盆|桶|水槽|地上|路上|屋里|房里)(?:里|中|内|上)?(?:装满|盛满|都是|有|积着|流着)?(?:了)?水(?:[，。！？、\s]|$)/
+];
+
+function matchExplicitWaterBody(text) {
+  const source = String(text || '');
+  let index;
+  for (index = 0; index < explicitWaterBodyPatterns.length; index += 1) {
+    const match = source.match(explicitWaterBodyPatterns[index]);
+    if (match) return match;
+  }
+  return null;
+}
+
+function hasExplicitWaterBody(text) {
+  return !!matchExplicitWaterBody(text);
+}
+
+function matchesSymbolRule(source, rule) {
+  return rule.label === '清水'
+    ? hasExplicitWaterBody(source)
+    : containsAny(source, rule.keywords);
+}
+
 function pickSymbols(text) {
   const source = String(text || '');
   const matches = symbolRules.map(function (rule, ruleIndex) {
-    const matchedKeyword = rule.keywords.slice().sort(function (a, b) {
+    const keywordMatch = rule.keywords.slice().sort(function (a, b) {
       return b.length - a.length;
     }).find(function (keyword) {
       return source.indexOf(keyword) !== -1;
     });
+    const waterBodyMatch = rule.label === '清水'
+      ? matchExplicitWaterBody(source)
+      : null;
+    const matchedKeyword = waterBodyMatch
+      ? waterBodyMatch[0]
+      : keywordMatch;
     return matchedKeyword
       ? Object.assign({}, rule, {
           matchedKeyword: matchedKeyword,
-          matchedIndex: source.indexOf(matchedKeyword),
+          matchedIndex: waterBodyMatch ? waterBodyMatch.index : source.indexOf(matchedKeyword),
           ruleIndex: ruleIndex
         })
       : null;
@@ -366,11 +399,9 @@ function normalizeGroundedSymbols(value, dreamText, fallback) {
   const fallbackItems = Array.isArray(fallback) ? fallback : [];
   const literalCandidates = [];
   symbolRules.forEach(function (rule) {
-    rule.keywords.forEach(function (keyword) {
-      if (source.indexOf(keyword) !== -1 && literalCandidates.indexOf(rule.label) < 0) {
-        literalCandidates.push(rule.label);
-      }
-    });
+    if (matchesSymbolRule(source, rule) && literalCandidates.indexOf(rule.label) < 0) {
+      literalCandidates.push(rule.label);
+    }
   });
   const items = Array.isArray(value) ? value.filter(function (item) {
     const candidate = String(item || '').trim();
@@ -378,14 +409,7 @@ function normalizeGroundedSymbols(value, dreamText, fallback) {
     return source.indexOf(candidate) !== -1 || fallbackItems.indexOf(candidate) !== -1 || literalCandidates.indexOf(candidate) !== -1;
   }) : [];
   const normalized = asStringArray(items, [], 5, 32);
-  const groundedFallback = fallbackItems.filter(function (item) {
-    return source.indexOf(item) !== -1 || literalCandidates.indexOf(item) >= 0;
-  });
-  const merged = normalized.slice();
-  groundedFallback.forEach(function (item) {
-    if (merged.indexOf(item) < 0 && merged.length < 5) merged.push(item);
-  });
-  return merged.length ? merged : fallbackItems.slice(0, 5);
+  return normalized.length ? normalized : fallbackItems.slice(0, 5);
 }
 
 function repairDreamTerms(value, dreamText) {
@@ -393,9 +417,9 @@ function repairDreamTerms(value, dreamText) {
   let text = typeof value === 'string' ? value.trim() : '';
   if (!text) return '';
 
-  if (!/[水海河湖溪江池]/.test(source) && /暴雨|大雨|下雨|雨/.test(source)) {
-    const rainWord = /暴雨|大雨|下暴雨/.test(source) ? '暴雨' : '雨';
-    text = text.replace(/清水|水面|水意象|水的意象/g, rainWord);
+  if (!hasExplicitWaterBody(source)) {
+    const replacement = source.includes('水蜜桃') ? '水蜜桃' : '梦中画面';
+    text = text.replace(/清水|水面|水意象|水的意象/g, replacement);
   }
 
   if (!source.includes('另一个人')) {
@@ -1459,15 +1483,33 @@ function buildCulturalSymbolismFallback(symbols, dreamText, dreamFacts) {
 
 function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memory, baziChart, lifeNote) {
   const dreamSymbols = pickSymbols(dreamText);
-  const labels = dreamSymbols.map(function (symbol) {
+  const fallbackLabels = dreamSymbols.map(function (symbol) {
     return symbol.label;
   });
   const themeSymbol = pickThemeSymbol(dreamSymbols);
   const nickname = String(profile.nickname || '你');
   const primary = dreamSymbols[0];
-  const secondary = dreamSymbols[1] || dreamSymbols[0];
   const rawOmens = raw && raw.omens ? raw.omens : {};
-  const symbols = normalizeGroundedSymbols(raw && raw.symbols, dreamText, labels);
+  const symbols = normalizeGroundedSymbols(raw && raw.symbols, dreamText, fallbackLabels);
+  // Once the model has returned source-grounded symbols, all downstream
+  // interpretation fallbacks must use them as well. Local labels are only an
+  // offline/no-valid-model-output fallback and must never overwrite AI semantics.
+  const labels = symbols.length ? symbols : fallbackLabels;
+  const primaryLabel = labels[0] || primary.label;
+  const fallbackThemeLabel = themeSymbol.label === '未命名场景'
+    ? primaryLabel
+    : themeSymbol.label;
+  const cardThemeLabel = asString(raw && raw.card_theme_label, fallbackThemeLabel, 24) === '未命名场景'
+    ? fallbackThemeLabel
+    : asString(raw && raw.card_theme_label, fallbackThemeLabel, 24);
+  const groundedDreamSymbols = labels.map(function (label) {
+    return dreamSymbols.find(function (symbol) {
+      return symbol.label === label;
+    }) || {
+      label: label,
+      meaning: '这个意象需要结合它在本次梦里的具体位置、动作和变化来理解。'
+    };
+  });
   const dreamFacts = normalizeDreamFacts(raw && raw.dream_facts, dreamText, symbols);
   const visualPlan = normalizeVisualPlan(raw && raw.visual_plan, dreamText, dreamFacts, symbols);
   const dreamPreview = compactDream(dreamText);
@@ -1513,7 +1555,7 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     ? metaphysicalReadingFallback.temperament + ' ' + metaphysicalReadingFallback.dream_echo + ' ' + metaphysicalReadingFallback.tension
     : '';
   const psychologicalFallback = buildPsychologicalFallback(dreamFacts, labels, dreamText);
-  const culturalFallback = buildCulturalSymbolismFallback(dreamSymbols, dreamText, dreamFacts);
+  const culturalFallback = buildCulturalSymbolismFallback(groundedDreamSymbols, dreamText, dreamFacts);
   const rawMetaphysicalReading = raw && raw.metaphysical_reading && typeof raw.metaphysical_reading === 'object'
     ? raw.metaphysical_reading
     : {};
@@ -1528,7 +1570,7 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     title: asString(raw && raw.title, titleFor(dreamSymbols), 24),
     card_no: 'NO. ' + String(cardIndex).padStart(3, '0'),
     card_theme: normalizeTheme(raw && raw.card_theme, themeSymbol.theme || 'mist'),
-    card_theme_label: asString(raw && raw.card_theme_label, themeSymbol.label, 24),
+    card_theme_label: cardThemeLabel,
     dream_facts: dreamFacts,
     visual_plan: visualPlan,
     bazi_chart: baziChart || { available: false, precision: 'missing' },
@@ -1552,7 +1594,7 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     ), dreamText),
     card_insight: repairDreamTerms(asString(
       raw && raw.card_insight,
-      '这张牌提醒你先看见“' + primary.label + '”背后的真实需要，再决定今天要回应什么。',
+      '这张牌提醒你先看见“' + primaryLabel + '”背后的真实需要，再决定今天要回应什么。',
       360
     ), dreamText),
     dream_translation: repairDreamTerms(asString(

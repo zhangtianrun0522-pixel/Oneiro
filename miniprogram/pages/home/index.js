@@ -25,6 +25,16 @@ var DRAG_SUBMIT_THRESHOLD = 48;
 var DRAG_CANCEL_THRESHOLD = 48;
 var DRAG_ATTEMPT_MIN = 16;
 
+// Keep this decision independent from Page#setData: touch events can arrive
+// faster than rendering updates, while submission must follow the real finger
+// position at the moment it is released.
+function dragZoneForDelta(dx, dy) {
+  if (dy >= DRAG_SUBMIT_THRESHOLD && dy > Math.abs(dx)) return 'submit';
+  if (dy <= -DRAG_CANCEL_THRESHOLD && Math.abs(dy) > Math.abs(dx)) return 'cancel';
+  if (dy > DRAG_ATTEMPT_MIN && dy > Math.abs(dx)) return 'attempt';
+  return 'none';
+}
+
 // 震动是锦上添花，绝不能成为依赖：部分机型/基础库版本没有振动能力，或
 // 用户拒绝了权限，都会直接走 fail。fail 回调兜底之外再包一层 try/catch，
 // 双重保险，任何情况都不能打断录音/拖拽这条主流程。
@@ -474,6 +484,7 @@ Page({
     this.voiceStartX = touch ? touch.clientX : 0;
     this.voiceStartY = touch ? touch.clientY : 0;
     this.lastDragZone = 'none';
+    this.voiceDragZone = 'none';
     if (this.dragBounceTimer) {
       clearTimeout(this.dragBounceTimer);
       this.dragBounceTimer = null;
@@ -499,19 +510,7 @@ Page({
 
     var dx = touch.clientX - this.voiceStartX;
     var dy = touch.clientY - this.voiceStartY;
-    var zone = 'none';
-
-    if (dy > DRAG_SUBMIT_THRESHOLD && dy > Math.abs(dx)) {
-      zone = 'submit';
-    } else if (dy < -DRAG_CANCEL_THRESHOLD && Math.abs(dy) > Math.abs(dx)) {
-      zone = 'cancel';
-    } else if (dy > DRAG_ATTEMPT_MIN && dy > Math.abs(dx)) {
-      // Dragged down with clear intent but short of the submit threshold —
-      // onVoiceTouchEnd never submits for this zone, it only drives the
-      // confirm-target's "getting close" state and the release-time
-      // "you didn't quite make it" feedback.
-      zone = 'attempt';
-    }
+    var zone = dragZoneForDelta(dx, dy);
 
     // Haptics fire once per edge crossing, never on every touchmove tick —
     // that would turn into a continuous buzz. lastDragZone is the previous
@@ -522,6 +521,9 @@ Page({
       triggerVibrate('light');
     }
     this.lastDragZone = zone;
+    // This is the synchronous business state. dragZone in data is presentation
+    // state only and must not decide what touchend does.
+    this.voiceDragZone = zone;
 
     this.setData({
       // 向下跟手距离压到 28px：圆环下方的确认条只隔 36px，原来放到 56px
@@ -548,8 +550,13 @@ Page({
     }, 320);
   },
 
-  onVoiceTouchEnd: function () {
-    var zone = this.data.dragZone;
+  onVoiceTouchEnd: function (event) {
+    var touch = event && event.changedTouches && event.changedTouches[0];
+    // The final point can differ from the last touchmove (especially on a
+    // slow release), so always recalculate from changedTouches when present.
+    var zone = touch
+      ? dragZoneForDelta(touch.clientX - this.voiceStartX, touch.clientY - this.voiceStartY)
+      : (this.voiceDragZone || 'none');
     var wasRecording = this.data.recording;
     // Long-press fired but recorder hasn't actually started yet — the
     // authorize() dialog can still be resolving asynchronously.
@@ -558,6 +565,7 @@ Page({
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
     this.lastDragZone = 'none';
+    this.voiceDragZone = 'none';
     this.resetDragState();
     this.voiceLongPressStarted = false;
 
@@ -617,6 +625,7 @@ Page({
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
     this.lastDragZone = 'none';
+    this.voiceDragZone = 'none';
     this.resetDragState();
     this.voiceLongPressStarted = false;
 

@@ -58,7 +58,7 @@ var symbolRules = [
     label: '清水',
     titleWord: '潮',
     theme: 'tide',
-    keywords: ['水', '海', '河', '湖', '洪水', '清水', '溪', '江', '池'],
+    keywords: ['海', '河', '湖', '洪水', '清水', '溪', '江', '池'],
     meaning: '明确出现的水体代表正在浮上来的情绪、直觉和记忆。',
     mirror: '你可能正在让某个感受越过理性控制，开始承认它真实存在。',
     action: '写下这股情绪最想保护你的部分'
@@ -196,6 +196,25 @@ function containsAny(text, keywords) {
   return false;
 }
 
+function hasExplicitWaterBody(text) {
+  var source = String(text || '');
+
+  return [
+    /清水|海水|海边|海里|海中|海面|海上|海底|海岸|海滩|海洋|河水|河里|河中|河面|河边|河上|河底|河岸|河流|河道|湖水|湖里|湖中|湖面|湖边|湖上|湖底|湖岸|湖畔|湖泊|溪水|溪流|小溪|江水|江里|江中|江面|江边|江上|江底|江岸|池塘|池水|水池|泳池|鱼池|池里|池中|池面|池边|泉水|井水|水井|瀑布|水库|水面|水中|水里|水下|积水|洪水|涨水|水位|水流|水渠|水沟|水塘|水湾|水岸|水边|水底|水草|水淹|水没|水漫|水退|水涨|热水|冷水|温水|开水/,
+    /(?:梦见|看见|望着|面对|走向|来到|站在|漂在|沉入|跃入|一片|一条|一座|无边的|辽阔的)(?:了)?(?:大)?(?:海|河|湖|江)(?:[，。！？、\s]|$)/,
+    /(?:大海|出海|入海|看海|望海|小河|大河|过河|长江|大江|过江)(?:[，。！？、\s]|$)/,
+    /(?:浴缸|杯子?|碗|盆|桶|水槽|地上|路上|屋里|房里)(?:里|中|内|上)?(?:装满|盛满|都是|有|积着|流着)?(?:了)?水(?:[，。！？、\s]|$)/
+  ].some(function (pattern) {
+    return pattern.test(source);
+  });
+}
+
+function matchesSymbolRule(text, rule) {
+  return rule.label === '清水'
+    ? hasExplicitWaterBody(text)
+    : containsAny(text, rule.keywords);
+}
+
 function pickThemeSymbol(symbols) {
   var themeSymbol = symbols[0];
   var themeScore = themePriority[themeSymbol.theme] || themePriority.mist;
@@ -217,7 +236,7 @@ function pickSymbols(text) {
   var i;
 
   for (i = 0; i < symbolRules.length; i += 1) {
-    if (containsAny(text, symbolRules[i].keywords)) {
+    if (matchesSymbolRule(text, symbolRules[i])) {
       matches.push(symbolRules[i]);
     }
   }

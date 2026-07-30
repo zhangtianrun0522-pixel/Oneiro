@@ -49,7 +49,7 @@
         class="voice-button {{editingDream ? 'is-compact' : ''}} {{recording ? 'is-recording' : ''}} {{!recording && dreamText ? 'has-draft' : ''}} {{dragZone === 'submit' ? 'is-drag-submit' : ''}} {{dragZone === 'cancel' ? 'is-drag-cancel' : ''}}"
         style="transform: translate({{dragDx}}px, {{dragDy}}px);"
         bindtouchstart="onVoiceTouchStart"
-        bindtouchmove="onVoiceTouchMove"
+        catchtouchmove="onVoiceTouchMove"
         bindtouchend="onVoiceTouchEnd"
         bindtouchcancel="onVoiceTouchCancel"
         disabled="{{recognizing}}"

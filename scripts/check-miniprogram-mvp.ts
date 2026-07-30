@@ -824,7 +824,7 @@ for (const [path, expected] of [
   // 一个可点击的 <button bindtap> 上，而是被手势状态机在代码里直接调用
   // （见下方 homePage.generateDreamCard() 的直接调用断言）。
   ['miniprogram/pages/home/index.wxml', '下滑进入解读'],
-  ['miniprogram/pages/home/index.wxml', 'bindtouchmove="onVoiceTouchMove"'],
+  ['miniprogram/pages/home/index.wxml', 'catchtouchmove="onVoiceTouchMove"'],
   ['miniprogram/pages/home/index.wxml', 'bindtap="onDreamTextTap"'],
   ['miniprogram/pages/home/index.wxml', 'bindtouchstart="onVoiceTouchStart"'],
   ['miniprogram/pages/home/index.wxml', 'fromShare'],
@@ -1055,6 +1055,20 @@ const homeDream = localOracle.buildLocalDreamResult(
   acceptance.acceptanceDreamResult,
   '我回到老家的厨房，外面一直下雨，妈妈站在门口等我。'
 );
+const peachDream = localOracle.buildLocalDreamResult(
+  acceptance.acceptanceDreamResult,
+  '我梦见西红柿里爆出了一颗水蜜桃。'
+);
+const waterBodyDream = localOracle.buildLocalDreamResult(
+  acceptance.acceptanceDreamResult,
+  '我梦见自己站在水里，看着河水涨起。'
+);
+const falseWaterDreams = ['我去了上海。', '墙上挂着海报。', '我在看海报。', '河马跑过河南。'].map((dreamText) =>
+  localOracle.buildLocalDreamResult(acceptance.acceptanceDreamResult, dreamText)
+);
+const explicitWaterDreams = ['我梦见一座水库。', '我打了一桶井水。', '浴缸里装满了水。'].map((dreamText) =>
+  localOracle.buildLocalDreamResult(acceptance.acceptanceDreamResult, dreamText)
+);
 
 const memoryFixture = [1, 2, 3].map((index) => ({
   id: `memory-${index}`,
@@ -1092,6 +1106,10 @@ assert.ok(chaseDream.symbols.includes('学校'));
 assert.ok(homeDream.symbols.includes('暴雨'));
 assert.ok(!homeDream.symbols.includes('清水'));
 assert.ok(homeDream.symbols.includes('家屋'));
+assert.ok(!peachDream.symbols.includes('清水'));
+assert.ok(waterBodyDream.symbols.includes('清水'));
+assert.ok(falseWaterDreams.every((dream) => !dream.symbols.includes('清水')));
+assert.ok(explicitWaterDreams.every((dream) => dream.symbols.includes('清水')));
 assert.ok(chaseDream.dream_translation.includes('学校考试迟到'));
 assert.ok(homeDream.dream_translation.includes('老家的厨房'));
 
@@ -1185,6 +1203,74 @@ const pageModules = {
 const homePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);
 homePage.onLoad({ fromShare: '1' });
 assert.equal(homePage.data.fromShare, true);
+
+// Drag submission is based on finger coordinates, never on asynchronous
+// rendering state. Keep this focused on the gesture path so recording and
+// recognition behavior remain covered by the integration checks below.
+const originalGenerateDreamCard = homePage.generateDreamCard;
+let gestureSubmitCount = 0;
+homePage.generateDreamCard = function () {
+  gestureSubmitCount += 1;
+};
+
+function startVoiceGesture(page: MiniProgramPage): void {
+  page.voiceTouching = true;
+  page.voiceStartX = 100;
+  page.voiceStartY = 100;
+  page.voiceLongPressStarted = false;
+  page.voiceDragZone = 'none';
+  page.lastDragZone = 'none';
+  page.dragBounceTimer = null;
+  page.data.recording = false;
+  page.data.recognizing = false;
+  page.data.dreamText = '已经写下的梦';
+}
+
+function touchAt(y: number): Record<string, unknown> {
+  return { touches: [{ clientX: 100, clientY: y }] };
+}
+
+function touchEndAt(y: number): Record<string, unknown> {
+  return { changedTouches: [{ clientX: 100, clientY: y }] };
+}
+
+// A slow drag that passes 47px then 49px submits at its final point.
+startVoiceGesture(homePage);
+homePage.onVoiceTouchMove(touchAt(147));
+assert.equal(homePage.voiceDragZone, 'attempt');
+homePage.onVoiceTouchMove(touchAt(149));
+assert.equal(homePage.voiceDragZone, 'submit');
+homePage.onVoiceTouchEnd(touchEndAt(149));
+assert.equal(gestureSubmitCount, 1);
+
+// The 48px boundary is inclusive; 47px remains an incomplete attempt.
+startVoiceGesture(homePage);
+homePage.onVoiceTouchEnd(touchEndAt(148));
+assert.equal(gestureSubmitCount, 2);
+startVoiceGesture(homePage);
+homePage.onVoiceTouchEnd(touchEndAt(147));
+assert.equal(gestureSubmitCount, 2);
+
+// Crossing the boundary is not sticky: releasing after returning to 47px
+// must not submit even though the last touchmove entered the submit zone.
+startVoiceGesture(homePage);
+homePage.onVoiceTouchMove(touchAt(160));
+assert.equal(homePage.voiceDragZone, 'submit');
+homePage.onVoiceTouchEnd(touchEndAt(147));
+assert.equal(gestureSubmitCount, 2);
+
+// Simulate delayed setData. The synchronously stored zone and changedTouches
+// still submit, proving rendering state is not used as business state.
+const immediateSetData = homePage.setData;
+homePage.setData = function () {};
+startVoiceGesture(homePage);
+homePage.onVoiceTouchMove(touchAt(149));
+assert.equal(homePage.voiceDragZone, 'submit');
+homePage.onVoiceTouchEnd(touchEndAt(149));
+assert.equal(gestureSubmitCount, 3);
+homePage.setData = immediateSetData;
+homePage.generateDreamCard = originalGenerateDreamCard;
+homePage.data.dreamText = '';
 const profilePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
 profilePage.onLoad();
 profilePage.onInput({ currentTarget: { dataset: { key: 'nickname' } }, detail: { value: ' Runtu ' } });

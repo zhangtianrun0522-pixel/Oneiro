@@ -252,9 +252,17 @@ async function run() {
   assert.ok(seedreamPrompt.length < 1800, 'Seedream prompt should stay concise enough for synchronous generation');
   assert.match(seedreamPrompt, /核心事件/);
   assert.match(seedreamPrompt, /唯一超现实规则/);
-  assert.match(seedreamPrompt, /粗粝丝网印刷与孔版印刷画风/);
+  assert.match(seedreamPrompt, /ONEIRO v2\.1 内测确认画风/);
+  assert.match(seedreamPrompt, /连续大面积哑光色场/);
+  assert.match(seedreamPrompt, /钴蓝\/群青、朱红、暖赭黄、深绿、近黑、暖纸/);
+  assert.match(seedreamPrompt, /朱红只作叙事焦点和关键动作/);
+  assert.match(seedreamPrompt, /40–50%/);
+  assert.match(seedreamPrompt, /匿名、背影或侧背剪影/);
+  assert.match(seedreamPrompt, /单条手绘墨线，粗细变化、略弯、轻微错位/);
+  assert.match(seedreamPrompt, /商业矢量、规则透视、重复纹理、渐变、发光和投影/);
   assert.match(seedreamPrompt, /只画梦境事实中明确出现/);
   assert.match(seedreamPrompt, /无边框、标题、文字、数字或水印/);
+  assert.equal(visualPlanner.styleVersionForPreset('production'), 'oneiro-seedream-dream-v2.1');
   assert.equal(
     crypto.createHash('sha256').update(compiledPrompt).digest('hex'),
     'a654063f41d75140ef2025eeba4bd6571af5f12f6ee16b42eea3a929e70ecdbf',
@@ -336,7 +344,7 @@ async function run() {
   assert.equal(result.ok, true);
   assert.equal(result.status, 'succeeded');
   assert.ok(result.fileID, 'legacy Seedream calls should transparently finalize when budget allows');
-  assert.equal(result.styleVersion, 'oneiro-seedream-dream-v2.0');
+  assert.equal(result.styleVersion, 'oneiro-seedream-dream-v2.1');
   assert.equal(result.visualPlan.palette.id, 'anxiety');
   assert.equal(result.qualityCheck.checks.output_aspect_ratio_3_4, true);
   assert.equal(state.requestBodies[state.requestBodies.length - 1].model, 'doubao-seedream-5-0-lite-260128');
@@ -351,7 +359,7 @@ async function run() {
     'legacy Seedream clients must use the compact production prompt'
   );
   assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /核心事件/);
-  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /粗粝丝网印刷与孔版印刷画风/);
+  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /ONEIRO v2\.1 内测确认画风/);
   assert.doesNotMatch(state.requestBodies[state.requestBodies.length - 1].prompt, /fixed red-and-blue pairing|tarot-inspired/);
 
   result = await imageFunction.main({

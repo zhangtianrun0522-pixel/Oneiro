@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const STYLE_VERSION = 'oneiro-seedream-dream-v2.0';
+const STYLE_VERSION = 'oneiro-seedream-dream-v2.1';
 const INTERNAL_TEST_STYLE_VERSION = 'oneiro-internal-test-style-v1.4';
 const STYLE_PRESETS = {
   production: {
@@ -476,14 +476,13 @@ function buildGenerationPrompt(plan, stylePreset) {
 }
 
 function buildSeedreamGenerationPrompt(plan, stylePreset) {
-  const palette = paletteList(plan.palette);
   const anomaly = clean(plan.anomalies[0] || '没有额外异常，不要自行添加', 120);
   const hiddenSymbol = plan.hidden_symbol
     ? '隐藏符号“' + clean(plan.hidden_symbol, 50) + '”只出现一次且非常隐蔽。'
     : '不要自行添加隐藏符号。';
   const style = normalizeStylePreset(stylePreset) === 'internal_test'
     ? '极简手绘内测画风：单一大色场、匿名剪影人物、粗细变化明显的单线墨迹、少量套色偏移与纸张颗粒。'
-    : 'ONEIRO 粗粝丝网印刷与孔版印刷画风：高饱和哑光色块、粗细变化的手绘墨线、轻微套色偏移和纸张颗粒，安静而超现实。';
+    : 'ONEIRO v2.1 内测确认画风：满版连续大面积哑光色场，安静低密度空间约 40–50%。色彩只用钴蓝/群青、朱红、暖赭黄、深绿、近黑、暖纸的角色关系：钴蓝/群青、深绿或暖赭黄承托单一主色场，朱红只作叙事焦点和关键动作，其他颜色仅作少量结构，近黑为墨线，暖纸仅作内含色块；不平均分配颜色。人物只作匿名、背影或侧背剪影。所有轮廓使用单条手绘墨线，粗细变化、略弯、轻微错位；少物件。拒绝商业矢量、规则透视、重复纹理、渐变、发光和投影。';
 
   return [
     '创作一张原创竖版 3:4 梦境叙事插画；画面全出血，无边框、标题、文字、数字或水印。',
@@ -496,9 +495,7 @@ function buildSeedreamGenerationPrompt(plan, stylePreset) {
       plan.composition.subject_position,
       plan.composition.visual_flow,
       plan.composition.negative_space
-    ].join('；'), 150) + '。只保留一个焦点、2–3 个叙事锚点和大面积留白。',
-    '配色：以 ' + clean(palette[0], 45) + ' 为主色场，以 ' + clean(palette[1], 45) +
-      ' 表现动作，其余仅少量使用 ' + clean(palette.slice(2).join('、'), 90) + '。',
+    ].join('；'), 150) + '。只保留一个焦点和 2–3 个叙事锚点；其余区域保持安静、低密度。',
     style,
     '人物若出现，画成无五官、无写实关节和衣褶的匿名剪影。只画梦境事实中明确出现的人、地点、物体和动作；不确定的细节宁可省略。' + hiddenSymbol,
     '避免写实、3D、光泽、渐变、发光、卡牌框、塔罗装饰、通用紫色幻想、平滑矢量、对称海报、重复纹理和无依据的月亮、时钟、眼睛、花朵、动物或第二个人物。'
