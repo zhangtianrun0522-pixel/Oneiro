@@ -20,7 +20,9 @@ const state = {
   providerCalls: 0,
   uploaded: 0,
   deletedFiles: [],
-  requestBodies: []
+  requestBodies: [],
+  generatedAssets: [],
+  streamResponse: false
 };
 
 function queryResult(collection, query) {
@@ -32,6 +34,7 @@ function queryResult(collection, query) {
     return state.deletion && query.openid === 'owner' && query.sourceDreamId === 'dream-1'
       ? [{ _id: 'legacy-tombstone' }] : [];
   }
+  if (collection === 'generated_assets') return state.generatedAssets;
   return [];
 }
 
@@ -75,14 +78,26 @@ const cloud = {
   },
   uploadFile: async function () { state.uploaded += 1; return { fileID: 'cloud://image-1' }; },
   deleteFile: async function (input) { state.deletedFiles.push(input.fileList[0]); },
-  getTempFileURL: async function () { return { fileList: [{ tempFileURL: 'https://temp/image' }] }; }
+  getTempFileURL: async function (input) {
+    return {
+      fileList: input.fileList.map(function (fileID) {
+        if (fileID === 'cloud://stale') return { fileID: fileID, status: -1, tempFileURL: 'https://temp/stale' };
+        if (fileID === 'cloud://valid') return { fileID: fileID, status: 0, tempFileURL: 'https://temp/valid' };
+        if (fileID === 'cloud://statusless') return { fileID: fileID, tempFileURL: 'https://temp/statusless' };
+        return { fileID: fileID, status: 0, tempFileURL: 'https://temp/image' };
+      })
+    };
+  }
 };
 
 function fakeRequest(options, callback) {
   const request = new EventEmitter();
   let written = '';
   request.write = function (value) { written += String(value || ''); };
-  request.destroy = function (error) { request.emit('error', error); };
+  request.destroy = function (error) {
+    if (request.streamTimer) clearInterval(request.streamTimer);
+    request.emit('error', error);
+  };
   request.end = function () {
     state.providerCalls += 1;
     if (written) state.requestBodies.push(JSON.parse(written));
@@ -90,6 +105,12 @@ function fakeRequest(options, callback) {
     response.statusCode = 200;
     response.headers = {};
     callback(response);
+    if (state.streamResponse) {
+      request.streamTimer = setInterval(function () {
+        response.emit('data', Buffer.from(' '));
+      }, 5);
+      return;
+    }
     process.nextTick(function () {
       response.emit('data', Buffer.from(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] })));
       response.emit('end');
@@ -302,6 +323,39 @@ async function run() {
   assert.equal(result.referenceImageCount, 1);
   assert.deepEqual(state.requestBodies[state.requestBodies.length - 1].urls, ['https://temp/image']);
   assert.ok(state.deletedFiles.length > deletedBeforeReference, 'temporary reference image should be deleted: ' + JSON.stringify(state.deletedFiles));
+
+  state.generatedAssets = [
+    { file_id: 'cloud://stale', image_format: 'png' },
+    { file_id: 'cloud://valid', image_format: 'png' }
+  ];
+  const callsBeforeCache = state.providerCalls;
+  result = await imageFunction.main({ prompt: 'legacy summary', dreamId: 'dream-1', visualPlan: visualPlan });
+  assert.equal(result.cacheHit, true);
+  assert.equal(result.fileID, 'cloud://valid');
+  assert.equal(state.providerCalls, callsBeforeCache, 'stale cache entry must not block a valid candidate');
+
+  state.generatedAssets = [
+    { file_id: 'cloud://statusless', image_format: 'png' }
+  ];
+  result = await imageFunction.main({ prompt: 'legacy summary', dreamId: 'dream-1', visualPlan: visualPlan });
+  assert.equal(result.cacheHit, true);
+  assert.equal(result.fileID, 'cloud://statusless');
+  assert.equal(result.imageUrl, 'https://temp/statusless');
+
+  result = await imageFunction.main({ prompt: 'legacy summary', dreamId: 'dream-1', visualPlan: visualPlan, forceRefresh: true });
+  assert.equal(result.cacheHit, false);
+  assert.ok(state.providerCalls > callsBeforeCache, 'forceRefresh must bypass the fast cache');
+
+  state.generatedAssets = [];
+  process.env.OPENAI_IMAGE_TIMEOUT_MS = '1';
+  state.streamResponse = true;
+  const timeoutStartedAt = Date.now();
+  result = await imageFunction.main({ prompt: 'timeout', dreamId: 'dream-1', visualPlan: visualPlan, forceRefresh: true });
+  state.streamResponse = false;
+  delete process.env.OPENAI_IMAGE_TIMEOUT_MS;
+  assert.equal(result.reason, 'provider_timeout');
+  assert.equal(result.stage, 'submit');
+  assert.ok(Date.now() - timeoutStartedAt < 1500, 'absolute timeout must stop an active response stream');
 
   console.log('generateDreamImage visual-plan, authorization and deletion-race regressions passed');
 }

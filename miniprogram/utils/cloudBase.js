@@ -244,7 +244,7 @@ function getShareCard(shareId, callback) {
   return callCloudFunction('getShareCard', { shareId: shareId || '' }, callback);
 }
 
-function generateDreamImage(prompt, dreamId, theme, visualPlan, callback) {
+function generateDreamImage(prompt, dreamId, theme, visualPlan, options, callback) {
   if (typeof theme === 'function') {
     callback = theme;
     theme = 'mist';
@@ -253,11 +253,16 @@ function generateDreamImage(prompt, dreamId, theme, visualPlan, callback) {
     callback = visualPlan;
     visualPlan = null;
   }
+  if (typeof options === 'function') {
+    callback = options;
+    options = null;
+  }
   return callCloudFunction('generateDreamImage', {
     prompt: prompt || '',
     dreamId: dreamId || '',
     theme: theme || 'mist',
-    visualPlan: visualPlan && typeof visualPlan === 'object' ? visualPlan : null
+    visualPlan: visualPlan && typeof visualPlan === 'object' ? visualPlan : null,
+    forceRefresh: !!(options && options.forceRefresh)
   }, callback);
 }
 
@@ -373,20 +378,50 @@ function cloudHealth(callback) {
 }
 
 function resolveCloudImage(fileId, imageUrl, callback) {
-  function finishWithRemote(downloadError) {
-    if (!imageUrl || !wx.getImageInfo) {
-      if (callback) callback('', downloadError || 'missing_image_url');
+  function errorMessage(prefix, error) {
+    var detail = error && error.errMsg ? error.errMsg : error || 'failed';
+    return prefix + ':' + String(detail).slice(0, 240);
+  }
+
+  function finishWithRemote(url, downloadError, refreshError) {
+    if (!url || !wx.getImageInfo) {
+      if (callback) callback('', [downloadError, refreshError, 'missing_image_url'].filter(Boolean).join(';'));
       return;
     }
 
     wx.getImageInfo({
-      src: imageUrl,
+      src: url,
       success: function (info) {
         if (callback) callback(info && info.path ? info.path : '', '');
       },
       fail: function (error) {
-        var message = error && error.errMsg ? error.errMsg : downloadError || 'get_image_info_failed';
-        if (callback) callback('', message);
+        var remoteError = errorMessage('remote_load', error || 'get_image_info_failed');
+        if (callback) callback('', [downloadError, refreshError, remoteError].filter(Boolean).join(';'));
+      }
+    });
+  }
+
+  function refreshTempUrl(downloadError) {
+    if (!fileId || !wx.cloud || !wx.cloud.getTempFileURL) {
+      finishWithRemote(imageUrl, downloadError);
+      return;
+    }
+    wx.cloud.getTempFileURL({
+      fileList: [fileId],
+      success: function (res) {
+        var item = res && res.fileList && res.fileList[0];
+        var statusMissing = item && (item.status === undefined || item.status === null || item.status === '');
+        var freshUrl = item && item.tempFileURL && (statusMissing || Number(item.status) === 0)
+          ? item.tempFileURL
+          : '';
+        if (freshUrl) {
+          finishWithRemote(freshUrl, downloadError);
+          return;
+        }
+        finishWithRemote(imageUrl, downloadError, 'temp_url:' + (item && item.status !== undefined ? String(item.status) : 'missing'));
+      },
+      fail: function (error) {
+        finishWithRemote(imageUrl, downloadError, errorMessage('temp_url', error));
       }
     });
   }
@@ -396,7 +431,7 @@ function resolveCloudImage(fileId, imageUrl, callback) {
   }
 
   if (!fileId || !cloudReady || !hasCloud() || !wx.cloud.downloadFile) {
-    finishWithRemote();
+    finishWithRemote(imageUrl, 'cloud_download:unavailable');
     return false;
   }
 
@@ -407,7 +442,7 @@ function resolveCloudImage(fileId, imageUrl, callback) {
       if (callback) callback(path || '', path ? '' : 'download_missing_path');
     },
     fail: function (error) {
-      finishWithRemote(error && error.errMsg ? error.errMsg : 'cloud_download_failed');
+      refreshTempUrl(errorMessage('cloud_download', error || 'failed'));
     }
   });
 

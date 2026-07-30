@@ -667,7 +667,7 @@ Page({
     });
   },
 
-  requestDreamImage: function (done) {
+  requestDreamImage: function (done, options) {
     var that = this;
     var result = this.data.dream.result || {};
     var prompt = result.image_prompt || result.image || '';
@@ -685,6 +685,7 @@ Page({
       this.data.dream.id || '',
       result.card_theme || 'mist',
       result.visual_plan || null,
+      options && options.forceRefresh ? { forceRefresh: true } : null,
       function (imageRes) {
       var dream = that.data.dream;
 
@@ -921,6 +922,10 @@ Page({
     if (dream && dream.result) {
       dream.result = Object.assign({}, dream.result, {
         imageUrl: '',
+        image_file_id: '',
+        imageFileId: '',
+        fileID: '',
+        fileId: '',
         image_quality_job_id: '',
         image_quality_status: 'idle'
       });
@@ -937,7 +942,7 @@ Page({
       publicShareImagePath: ''
     });
     this.stopDreamImageQualityPolling();
-    this.requestDreamImage();
+    this.requestDreamImage(null, { forceRefresh: true });
   },
 
   openDreamChat: function () {

@@ -1315,6 +1315,20 @@ assert.equal(
   wx.cloudCalls.find((call) => call.name === 'generateDreamImage')?.data?.visualPlan?.main_event,
   '梦者在学校里被追赶并错过考试'
 );
+resultPage.data.dream.result = Object.assign({}, resultPage.data.dream.result, {
+  imageUrl: 'https://expired.example.com/image.png',
+  image_file_id: 'cloud://expired/image.png',
+  imageFileId: 'cloud://expired/image-file-id.png',
+  fileID: 'cloud://expired/file-id.png',
+  fileId: 'cloud://expired/file-id-lower.png'
+});
+resultPage.retryDreamImage();
+const retryImageCall = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && !call.data?.action).slice(-1)[0];
+assert.equal(retryImageCall?.data?.forceRefresh, true);
+assert.equal(resultPage.data.dream.result.image_file_id, 'cloud://mock/generated-dream-images/mock.png');
+assert.equal(resultPage.data.dream.result.imageFileId, '');
+assert.equal(resultPage.data.dream.result.fileID, '');
+assert.equal(resultPage.data.dream.result.fileId, '');
 const sharePayload = resultPage.onShareAppMessage();
 assert.equal(sharePayload.path, '/pages/home/index?fromShare=1');
 assert.ok(sharePayload.title.includes(resultPage.data.dream.result.title));

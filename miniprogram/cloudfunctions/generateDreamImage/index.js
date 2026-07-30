@@ -140,7 +140,29 @@ function requestJson(url, options, body, timeoutMs) {
   return new Promise(function (resolve, reject) {
     const parsed = new URL(url);
     const transport = parsed.protocol === 'http:' ? http : https;
-    const req = transport.request({
+    let req;
+    let settled = false;
+    let absoluteTimer;
+    const budget = Math.max(1, Number(timeoutMs) || 0);
+
+    function finish(callback, value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(absoluteTimer);
+      callback(value);
+    }
+
+    function fail(error) {
+      finish(reject, error);
+    }
+
+    function timeoutError() {
+      const error = new Error('image provider timeout');
+      error.code = 'ETIMEDOUT';
+      return error;
+    }
+
+    req = transport.request({
       method: options.method || 'GET',
       hostname: parsed.hostname,
       port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
@@ -159,19 +181,25 @@ function requestJson(url, options, body, timeoutMs) {
           const error = new Error('image provider failed with HTTP ' + res.statusCode);
           error.statusCode = res.statusCode;
           error.providerCode = providerErrorCode(parsedBody);
-          reject(error);
+          fail(error);
           return;
         }
-        resolve({ headers: res.headers, body: parseResponseBody(raw) });
+        finish(resolve, { headers: res.headers, body: parseResponseBody(raw) });
       });
+      res.on('error', fail);
     });
 
     req.on('timeout', function () {
-      const error = new Error('image provider timeout');
-      error.code = 'ETIMEDOUT';
+      const error = timeoutError();
+      fail(error);
       req.destroy(error);
     });
-    req.on('error', reject);
+    req.on('error', fail);
+    absoluteTimer = setTimeout(function () {
+      const error = timeoutError();
+      fail(error);
+      req.destroy(error);
+    }, budget);
     if (body) {
       req.write(body);
     }
@@ -183,7 +211,29 @@ function requestBuffer(url, timeoutMs) {
   return new Promise(function (resolve, reject) {
     const parsed = new URL(url);
     const transport = parsed.protocol === 'http:' ? http : https;
-    const req = transport.request({
+    let req;
+    let settled = false;
+    let absoluteTimer;
+    const budget = Math.max(1, Number(timeoutMs) || 0);
+
+    function finish(callback, value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(absoluteTimer);
+      callback(value);
+    }
+
+    function fail(error) {
+      finish(reject, error);
+    }
+
+    function timeoutError() {
+      const error = new Error('image download timeout');
+      error.code = 'ETIMEDOUT';
+      return error;
+    }
+
+    req = transport.request({
       method: 'GET',
       hostname: parsed.hostname,
       port: parsed.port || (parsed.protocol === 'http:' ? 80 : 443),
@@ -196,17 +246,25 @@ function requestBuffer(url, timeoutMs) {
       });
       res.on('end', function () {
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          reject(new Error('image download failed: ' + res.statusCode));
+          fail(new Error('image download failed: ' + res.statusCode));
           return;
         }
-        resolve(Buffer.concat(chunks));
+        finish(resolve, Buffer.concat(chunks));
       });
+      res.on('error', fail);
     });
 
     req.on('timeout', function () {
-      req.destroy(new Error('image download timeout'));
+      const error = timeoutError();
+      fail(error);
+      req.destroy(error);
     });
-    req.on('error', reject);
+    req.on('error', fail);
+    absoluteTimer = setTimeout(function () {
+      const error = timeoutError();
+      fail(error);
+      req.destroy(error);
+    }, budget);
     req.end();
   });
 }
@@ -466,31 +524,57 @@ function buildImageQualityCheck(plan, buffer, format) {
   return quality;
 }
 
+function usableTempFileItem(item) {
+  if (!item || !item.tempFileURL) return false;
+  return item.status === undefined || item.status === null || item.status === '' ||
+    Number(item.status) === 0;
+}
+
 async function cachedImage(key, openid, sourceDreamId) {
   try {
     const result = await cloud.database().collection('generated_assets')
       .where({ cache_key: key, openid: openid, sourceDreamId: sourceDreamId })
-      .limit(1)
+      .limit(20)
       .get();
-    const asset = result && result.data && result.data[0];
+    const assets = (result && result.data || []).filter(function (asset) {
+      return asset && asset.file_id;
+    });
 
-    if (!asset || !asset.file_id) {
+    if (!assets.length) {
       return null;
     }
 
-    const urls = await cloud.getTempFileURL({ fileList: [asset.file_id] });
-    const imageUrl = urls && urls.fileList && urls.fileList[0] ? urls.fileList[0].tempFileURL : '';
-    return imageUrl ? {
-      fileID: asset.file_id,
-      imageUrl: imageUrl,
-      imageFormat: asset.image_format || '',
-      imageBytes: Number(asset.image_bytes || 0),
-      visualPlan: asset.visual_plan || null,
-      qualityCheck: asset.quality_check || null
-    } : null;
+    const urls = await cloud.getTempFileURL({ fileList: assets.map(function (asset) { return asset.file_id; }) });
+    const fileList = urls && urls.fileList || [];
+    let index;
+
+    for (index = 0; index < assets.length; index += 1) {
+      const asset = assets[index];
+      const item = fileList.filter(function (candidate) {
+        return candidate && candidate.fileID === asset.file_id;
+      })[0] || fileList[index];
+      const imageUrl = usableTempFileItem(item) ? item.tempFileURL : '';
+      if (imageUrl) {
+        return {
+          fileID: asset.file_id,
+          imageUrl: imageUrl,
+          imageFormat: asset.image_format || '',
+          imageBytes: Number(asset.image_bytes || 0),
+          visualPlan: asset.visual_plan || null,
+          qualityCheck: asset.quality_check || null
+        };
+      }
+    }
+    return null;
   } catch (error) {
     return null;
   }
+}
+
+function withErrorStage(error, stage) {
+  const tagged = error instanceof Error ? error : new Error('image generation failed');
+  tagged.stage = stage;
+  return tagged;
 }
 
 async function reserveImage(key, fileID, cloudPath, generationPrompt, visualPlan, qualityCheck, theme, model, format, imageBytes, openid, sourceDreamId, dream, stylePreset, styleVersion) {
@@ -1234,7 +1318,7 @@ async function pollQualityJob(event, openid) {
   return { ok: true, status: 'provider_pending', jobId: jobId };
 }
 
-async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceDreamId, dream, requestedStylePreset, referenceImageUrls) {
+async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceDreamId, dream, requestedStylePreset, referenceImageUrls, forceRefresh) {
   const config = configuredProvider();
   const deadline = Date.now() + config.timeoutMs;
   const startedAt = Date.now();
@@ -1269,7 +1353,7 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
     };
   }
 
-  const cached = await cachedImage(key, openid, sourceDreamId);
+  const cached = forceRefresh ? null : await cachedImage(key, openid, sourceDreamId);
   if (cached) {
     return {
       ok: true,
@@ -1294,9 +1378,10 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
   const isGrsaiEndpoint = isGrsaiGenerateEndpoint(config.endpointUrl);
   let image;
 
-  if (isGrsaiEndpoint && isNanoBananaModel(config.model)) {
-    image = await generateWithGrsaiNanoBanana(config, generationPrompt, deadline, referenceImageUrls);
-  } else {
+  try {
+    if (isGrsaiEndpoint && isNanoBananaModel(config.model)) {
+      image = await generateWithGrsaiNanoBanana(config, generationPrompt, deadline, referenceImageUrls);
+    } else {
   const response = await requestJson(
     config.endpointUrl,
     {
@@ -1366,22 +1451,36 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
       }
     }
   }
+    }
+  } catch (error) {
+    throw withErrorStage(error, 'submit');
   }
   let buffer;
 
-  if (image.b64) {
-    buffer = Buffer.from(image.b64, 'base64');
-  } else if (image.url) {
-    buffer = await requestBuffer(image.url, remainingTimeout(deadline, 8000));
-  } else {
-    throw new Error('image provider response did not include image data');
+  try {
+    if (image.b64) {
+      buffer = Buffer.from(image.b64, 'base64');
+    } else if (image.url) {
+      buffer = await requestBuffer(image.url, remainingTimeout(deadline, 8000));
+    } else {
+      throw new Error('image provider response did not include image data');
+    }
+  } catch (error) {
+    throw withErrorStage(error, 'download');
   }
 
   const format = detectImageFormat(buffer);
   const qualityCheck = buildImageQualityCheck(visualPlan, buffer, format.extension);
   const cloudPath = 'generated-dream-images/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + format.extension;
-  const upload = await cloud.uploadFile({ cloudPath: cloudPath, fileContent: buffer });
-  const reserved = await reserveImage(
+  let upload;
+  try {
+    upload = await cloud.uploadFile({ cloudPath: cloudPath, fileContent: buffer });
+  } catch (error) {
+    throw withErrorStage(error, 'upload');
+  }
+  let reserved;
+  try {
+    reserved = await reserveImage(
     key,
     upload.fileID,
     cloudPath,
@@ -1396,18 +1495,25 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
     sourceDreamId,
     dream,
     stylePreset,
-    styleVersion
-  );
+      styleVersion
+    );
+  } catch (error) {
+    throw withErrorStage(error, 'reserve');
+  }
 
   if (!reserved) {
     await deleteUploadedFile(upload.fileID);
     return { ok: false, reason: 'dream_not_found' };
   }
 
-  const tempUrlRes = await cloud.getTempFileURL({ fileList: [upload.fileID] });
-  const tempUrl = tempUrlRes && tempUrlRes.fileList && tempUrlRes.fileList[0]
-    ? tempUrlRes.fileList[0].tempFileURL
-    : '';
+  let tempUrl;
+  try {
+    const tempUrlRes = await cloud.getTempFileURL({ fileList: [upload.fileID] });
+    const tempUrlItem = tempUrlRes && tempUrlRes.fileList && tempUrlRes.fileList[0];
+    tempUrl = usableTempFileItem(tempUrlItem) ? tempUrlItem.tempFileURL : '';
+  } catch (error) {
+    throw withErrorStage(error, 'temp-url');
+  }
 
   return {
     ok: true,
@@ -1543,18 +1649,17 @@ exports.main = async function (event) {
       sourceDreamId,
       dream,
       requestedStylePreset,
-      preparedReferences.urls
+      preparedReferences.urls,
+      event && event.forceRefresh === true
     );
   } catch (error) {
-    // 诊断字段：上一次这里只回了 "image provider timeout"，既看不出是哪一段
-    // 超时、也看不出配置的预算是多少，排查时必须重新读代码才能定位。
-    // 带上实际耗时、该模型的提交超时和函数总预算，让下次的失败自解释。
     return {
       ok: false,
-      reason: 'provider_error',
+      reason: qualityDiagnosticCode(error),
+      stage: String(error && error.stage || 'submit'),
       provider: config.provider,
       providerConfigured: config.provider === 'openai' && !!config.apiKey,
-      message: error && error.message ? error.message.slice(0, 300) : 'image generation failed',
+      message: 'image generation failed',
       elapsedMs: Date.now() - handlerStartedAt,
       model: config.model,
       requestedSize: config.size,
