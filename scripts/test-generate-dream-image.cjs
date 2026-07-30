@@ -200,6 +200,18 @@ async function run() {
     dreamFacts: {},
     symbols: []
   });
+  const sadnessPlan = visualPlanner.normalizeVisualPlan({
+    main_event: '我在屋顶收起一封没有寄出的信',
+    emotion: ['悲伤'],
+    setting: '下雨的屋顶',
+    objects: [{ name: '没有寄出的信', importance: 1, visualizable: true }],
+    composition: { template: 'vertical_drift' }
+  }, {
+    dreamText: '我在下雨的屋顶收起一封没有寄出的信。',
+    dreamFacts: { emotions: ['悲伤'], places: ['屋顶'], objects: ['信'] },
+    symbols: ['信']
+  });
+  const sadnessSeedreamPrompt = visualPlanner.buildSeedreamGenerationPrompt(sadnessPlan);
   const hallucinatedPlan = visualPlanner.normalizeVisualPlan({
     main_event: '我在空房间里走路，月亮照着神秘眼睛和蛇',
     setting: '月亮下的神殿',
@@ -246,23 +258,57 @@ async function run() {
     const palette = Object.assign({ id: key }, visualPlanner.EMOTION_PALETTES[key]);
     const count = visualPlanner.paletteList(palette).length;
     assert.ok(count >= 4 && count <= 6, key + ' palette must contain 4-6 inks');
+    assert.ok(palette.focal, key + ' palette must define a separate focal color');
+    assert.notEqual(palette.accent, palette.focal, key + ' contrast and focal colors must differ');
   });
   assert.equal(visualPlan.composition.id, 'off_center_diagonal');
   assert.match(compiledPrompt, /rough screenprint and risograph texture/);
-  assert.ok(seedreamPrompt.length < 1800, 'Seedream prompt should stay concise enough for synchronous generation');
+  assert.ok(seedreamPrompt.length < 2400, 'Seedream prompt should stay concise enough for synchronous generation');
   assert.match(seedreamPrompt, /核心事件/);
   assert.match(seedreamPrompt, /唯一超现实规则/);
-  assert.match(seedreamPrompt, /ONEIRO v2\.1 内测确认画风/);
-  assert.match(seedreamPrompt, /连续大面积哑光色场/);
-  assert.match(seedreamPrompt, /钴蓝\/群青、朱红、暖赭黄、深绿、近黑、暖纸/);
-  assert.match(seedreamPrompt, /朱红只作叙事焦点和关键动作/);
-  assert.match(seedreamPrompt, /40–50%/);
-  assert.match(seedreamPrompt, /匿名、背影或侧背剪影/);
-  assert.match(seedreamPrompt, /单条手绘墨线，粗细变化、略弯、轻微错位/);
-  assert.match(seedreamPrompt, /商业矢量、规则透视、重复纹理、渐变、发光和投影/);
+  assert.match(seedreamPrompt, /不使用参考图/);
+  assert.match(seedreamPrompt, /ONEIRO Seedream v2\.2/);
+  assert.match(seedreamPrompt, /低明度主导色场/);
+  assert.match(seedreamPrompt, /明确冷暖或互补对撞色/);
+  assert.match(seedreamPrompt, /高饱和焦点/);
+  assert.match(seedreamPrompt, /不超过3%/);
+  assert.match(seedreamPrompt, /近黑线稿/);
+  assert.match(seedreamPrompt, /暖纸支撑色/);
+  assert.match(seedreamPrompt, /45–60%/);
+  assert.match(seedreamPrompt, /35–50%主动留白/);
+  assert.match(seedreamPrompt, /若梦境明确给出场所.*普通空间容器/);
+  assert.match(seedreamPrompt, /若未说明地点.*不新增房间、家具、景观或人物/);
+  assert.match(seedreamPrompt, /一个被平静对待的异常关系/);
+  assert.match(seedreamPrompt, /构图方案“off_center_diagonal”/);
+  assert.match(seedreamPrompt, /不照搬任何既有场景/);
+  assert.match(seedreamPrompt, /一条斜向路径/);
+  assert.match(seedreamPrompt, /边缘裁切/);
+  assert.match(seedreamPrompt, /手工压力墨线、哑光平涂、轻微印刷颗粒和干刷断点，非写实高对比/);
+  assert.match(seedreamPrompt, /不得替换成相近物种或物品/);
+  assert.match(seedreamPrompt, /不使用排线、素描阴影、密集短线或逐根毛发/);
+  assert.match(seedreamPrompt, /大剪影与少量必要结构线/);
+  assert.match(seedreamPrompt, /匿名背影、侧背、小尺度或裁切剪影/);
   assert.match(seedreamPrompt, /只画梦境事实中明确出现/);
   assert.match(seedreamPrompt, /无边框、标题、文字、数字或水印/);
-  assert.equal(visualPlanner.styleVersionForPreset('production'), 'oneiro-seedream-dream-v2.1');
+  assert.doesNotMatch(seedreamPrompt, /美术馆|河流|椅子|钴蓝\/群青、朱红、暖赭黄、深绿|朱红只作/);
+  assert.match(seedreamPrompt, /废弃车站|海中铁轨|铁轨通向海里|提着灯/);
+  assert.doesNotMatch(seedreamPrompt, /屋顶|没有寄出的信|下雨/);
+  assert.ok(seedreamPrompt.includes(visualPlan.palette.dominant));
+  assert.ok(seedreamPrompt.includes(visualPlan.palette.accent));
+  assert.ok(seedreamPrompt.includes(visualPlan.palette.focal));
+  assert.ok(seedreamPrompt.includes(visualPlan.palette.outline));
+  assert.ok(seedreamPrompt.includes(visualPlan.palette.paper));
+  assert.match(sadnessSeedreamPrompt, /构图方案“vertical_drift”/);
+  assert.match(sadnessSeedreamPrompt, /不照搬任何既有场景/);
+  assert.ok(sadnessSeedreamPrompt.includes(sadnessPlan.palette.dominant));
+  assert.ok(sadnessSeedreamPrompt.includes(sadnessPlan.palette.accent));
+  assert.ok(sadnessSeedreamPrompt.includes(sadnessPlan.palette.focal));
+  assert.match(sadnessSeedreamPrompt, /屋顶|没有寄出的信|下雨/);
+  assert.doesNotMatch(sadnessSeedreamPrompt, /废弃车站|海中铁轨|铁轨通向海里|美术馆|河流|椅子/);
+  assert.notEqual(visualPlan.palette.dominant, sadnessPlan.palette.dominant);
+  assert.notEqual(visualPlan.composition.id, sadnessPlan.composition.id);
+  assert.notEqual(seedreamPrompt, sadnessSeedreamPrompt);
+  assert.equal(visualPlanner.styleVersionForPreset('production'), 'oneiro-seedream-dream-v2.2');
   assert.equal(
     crypto.createHash('sha256').update(compiledPrompt).digest('hex'),
     'a654063f41d75140ef2025eeba4bd6571af5f12f6ee16b42eea3a929e70ecdbf',
@@ -344,7 +390,7 @@ async function run() {
   assert.equal(result.ok, true);
   assert.equal(result.status, 'succeeded');
   assert.ok(result.fileID, 'legacy Seedream calls should transparently finalize when budget allows');
-  assert.equal(result.styleVersion, 'oneiro-seedream-dream-v2.1');
+  assert.equal(result.styleVersion, 'oneiro-seedream-dream-v2.2');
   assert.equal(result.visualPlan.palette.id, 'anxiety');
   assert.equal(result.qualityCheck.checks.output_aspect_ratio_3_4, true);
   assert.equal(state.requestBodies[state.requestBodies.length - 1].model, 'doubao-seedream-5-0-lite-260128');
@@ -359,7 +405,7 @@ async function run() {
     'legacy Seedream clients must use the compact production prompt'
   );
   assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /核心事件/);
-  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /ONEIRO v2\.1 内测确认画风/);
+  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /ONEIRO Seedream v2\.2/);
   assert.doesNotMatch(state.requestBodies[state.requestBodies.length - 1].prompt, /fixed red-and-blue pairing|tarot-inspired/);
 
   result = await imageFunction.main({

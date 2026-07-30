@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const STYLE_VERSION = 'oneiro-seedream-dream-v2.1';
+const STYLE_VERSION = 'oneiro-seedream-dream-v2.2';
 const INTERNAL_TEST_STYLE_VERSION = 'oneiro-internal-test-style-v1.4';
 const STYLE_PRESETS = {
   production: {
@@ -21,6 +21,7 @@ const EMOTION_PALETTES = {
     keywords: ['焦虑', '紧张', '害怕', '恐惧', '不安', '压迫', '窒息', '追赶'],
     dominant: 'deep ink green #104A43',
     accent: 'burnt orange #C9682E',
+    focal: 'signal yellow #E7C94A',
     auxiliary: ['pale cyan #9DD7D4'],
     outline: 'green-black ink #111916',
     paper: 'warm paper cream #F0DFB8'
@@ -30,7 +31,8 @@ const EMOTION_PALETTES = {
     keywords: ['怀旧', '想念', '童年', '小时候', '故乡', '旧', '回忆', '以前'],
     dominant: 'warm ochre #D9A33A',
     accent: 'muted teal #4B9290',
-    auxiliary: ['burnt orange #B85A31', 'grass green #6E8A45'],
+    focal: 'burnt orange #B85A31',
+    auxiliary: ['grass green #6E8A45'],
     outline: 'warm black ink #1C1A18',
     paper: 'aged cream #F1E1BE'
   },
@@ -39,7 +41,8 @@ const EMOTION_PALETTES = {
     keywords: ['兴奋', '期待', '开心', '快乐', '激动', '自由', '飞翔', '惊喜'],
     dominant: 'terracotta orange #C96532',
     accent: 'pale cyan #94D0D1',
-    auxiliary: ['lemon yellow #E7C94A', 'deep green #1C4C43'],
+    focal: 'lemon yellow #E7C94A',
+    auxiliary: ['deep green #1C4C43'],
     outline: 'near-black indigo #121525',
     paper: 'clean warm cream #F6E8C8'
   },
@@ -48,7 +51,8 @@ const EMOTION_PALETTES = {
     keywords: ['悲伤', '难过', '失落', '孤独', '哭', '离开', '消失', '告别'],
     dominant: 'deep indigo #2B3D67',
     accent: 'warm cream #E9D2A4',
-    auxiliary: ['muted coral #B96750', 'ink green #1A4A40'],
+    focal: 'carmine coral #C94F3D',
+    auxiliary: ['ink green #1A4A40'],
     outline: 'near-black blue #151923',
     paper: 'milk cream #EFE3C9'
   },
@@ -57,7 +61,8 @@ const EMOTION_PALETTES = {
     keywords: ['愤怒', '生气', '发火', '争吵', '冲突', '破坏', '攻击'],
     dominant: 'vermilion #D33D29',
     accent: 'electric blue #2D68C4',
-    auxiliary: ['burnt orange #DA6A2C', 'deep ink #1A1A19'],
+    focal: 'signal yellow #E7C94A',
+    auxiliary: ['burnt orange #DA6A2C'],
     outline: 'charcoal black #151311',
     paper: 'warm paper #F1DFBC'
   },
@@ -66,7 +71,8 @@ const EMOTION_PALETTES = {
     keywords: ['神秘', '未知', '陌生', '奇怪', '诡异', '迷雾', '夜晚', '秘密'],
     dominant: 'deep ink green #164F46',
     accent: 'golden yellow #D6A62E',
-    auxiliary: ['deep violet #4D4165', 'pale cyan #9CBEC0'],
+    focal: 'coral orange #D95B3D',
+    auxiliary: ['deep violet #4D4165'],
     outline: 'green-black ink #111916',
     paper: 'antique ivory #EEE0BE'
   },
@@ -75,7 +81,8 @@ const EMOTION_PALETTES = {
     keywords: ['治愈', '安心', '平静', '温暖', '轻松', '安全', '拥抱', '回家'],
     dominant: 'sage green #6B9A70',
     accent: 'warm orange #D77540',
-    auxiliary: ['clear light blue #74B9C1', 'warm yellow #E4C25E'],
+    focal: 'warm yellow #E4C25E',
+    auxiliary: ['clear light blue #74B9C1'],
     outline: 'soft near-black #1B2420',
     paper: 'cream white #F4E8CD'
   }
@@ -369,6 +376,7 @@ function normalizeVisualPlan(rawPlan, context) {
       emotion_label: palette.label,
       dominant: palette.dominant,
       accent: palette.accent,
+      focal: palette.focal,
       auxiliary: palette.auxiliary,
       outline: palette.outline,
       paper: palette.paper
@@ -377,6 +385,14 @@ function normalizeVisualPlan(rawPlan, context) {
 }
 
 function paletteList(palette) {
+  return [palette.dominant, palette.accent, palette.focal]
+    .concat(palette.auxiliary || [])
+    .concat([palette.outline, palette.paper])
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+function legacyPaletteList(palette) {
   return [palette.dominant, palette.accent]
     .concat(palette.auxiliary || [])
     .concat([palette.outline, palette.paper])
@@ -412,7 +428,7 @@ function internalCompositionInstruction(plan) {
 }
 
 function buildInternalTestGenerationPrompt(plan) {
-  const palette = paletteList(plan.palette);
+  const palette = legacyPaletteList(plan.palette);
   const anomaly = plan.anomalies[0] || 'none beyond the supplied dream facts; do not invent one';
   const hiddenInstruction = plan.hidden_symbol
     ? 'include ' + plan.hidden_symbol + ' only once and very subtly'
@@ -445,7 +461,7 @@ function buildGenerationPrompt(plan, stylePreset) {
   if (normalizeStylePreset(stylePreset) === 'internal_test') {
     return buildInternalTestGenerationPrompt(plan);
   }
-  const palette = paletteList(plan.palette);
+  const palette = legacyPaletteList(plan.palette);
   const anomaly = plan.anomalies[0] || 'none beyond the supplied dream facts; do not invent one';
   const hiddenInstruction = plan.hidden_symbol
     ? 'include ' + plan.hidden_symbol + ' only once and very subtly'
@@ -475,30 +491,42 @@ function buildGenerationPrompt(plan, stylePreset) {
   ].join('\n');
 }
 
+function seedreamCompositionGrammar(composition) {
+  const id = composition && composition.id;
+  const grammars = {
+    off_center_diagonal: '主体偏离中心并被边缘局部裁切；用一条斜向路径从主要动作连接异常；前景边缘安静、中景动作集中、远景稀疏。',
+    threshold_depth: '主体靠近梦中已出现的偏置前景结构；由该结构把视线拉向远处异常；大前景、压缩中景和微小远景依次展开。',
+    cropped_closeup: '梦中已出现的动作或物体被边缘大幅裁切；该近景锚点指向孤立异常；夸张前景、窄中景和近乎空白的远景形成层级。',
+    split_distance: '两个不等的状态在画面两端分开；两者之间的距离成为视觉路径；近处锚点、开放中段和远处小锚点依次展开。',
+    low_horizon: '主体放在低处一侧；视线从低处主体垂直拉向异常；低处前景压缩，上部空间安静且占主导。',
+    vertical_drift: '主体偏向一侧，已出现的物体沿纵向漂移；一条断续竖向节奏穿过动作；裁切近景、主体动作和稀疏远景依次展开。'
+  };
+  return grammars[id] || '主体偏离中心；用一条明确路径连接主要动作和异常；前景锚点、中景动作、远景结果依次展开。';
+}
+
 function buildSeedreamGenerationPrompt(plan, stylePreset) {
   const anomaly = clean(plan.anomalies[0] || '没有额外异常，不要自行添加', 120);
+  const palette = plan.palette || {};
+  const anchors = uniqueStrings([plan.main_event].concat(plan.preserve_elements || []), 3, 72);
+  const composition = plan.composition || {};
   const hiddenSymbol = plan.hidden_symbol
     ? '隐藏符号“' + clean(plan.hidden_symbol, 50) + '”只出现一次且非常隐蔽。'
     : '不要自行添加隐藏符号。';
   const style = normalizeStylePreset(stylePreset) === 'internal_test'
     ? '极简手绘内测画风：单一大色场、匿名剪影人物、粗细变化明显的单线墨迹、少量套色偏移与纸张颗粒。'
-    : 'ONEIRO v2.1 内测确认画风：满版连续大面积哑光色场，安静低密度空间约 40–50%。色彩只用钴蓝/群青、朱红、暖赭黄、深绿、近黑、暖纸的角色关系：钴蓝/群青、深绿或暖赭黄承托单一主色场，朱红只作叙事焦点和关键动作，其他颜色仅作少量结构，近黑为墨线，暖纸仅作内含色块；不平均分配颜色。人物只作匿名、背影或侧背剪影。所有轮廓使用单条手绘墨线，粗细变化、略弯、轻微错位；少物件。拒绝商业矢量、规则透视、重复纹理、渐变、发光和投影。';
+    : 'ONEIRO Seedream v2.2：手工压力墨线、哑光平涂、轻微印刷颗粒和干刷断点，非写实高对比；轮廓略弯、粗细不均、允许轻微套印错位，拒绝光滑商业矢量。';
 
   return [
-    '创作一张原创竖版 3:4 梦境叙事插画；画面全出血，无边框、标题、文字、数字或水印。',
-    '梦境事实：' + clean(plan.raw_text, 220) + '。',
-    '核心事件：' + clean(plan.main_event, 140) + '。场景：' + clean(plan.setting, 80) + '。',
-    '情绪：' + clean(plan.emotion.join('、'), 70) + '，强度 ' + plan.emotion_intensity.toFixed(2) + '。',
-    '必须保留：' + clean(plan.preserve_elements.join('、') || plan.main_event, 130) + '。',
+    '不使用参考图。创作原创竖版3:4梦境叙事插画，满版出血，无边框、标题、文字、数字或水印。',
+    '梦境事实：' + clean(plan.raw_text, 160).replace(/[。！？!?]+$/, '') + '。只画梦境事实中明确出现的人、地点、物体和动作；不确定细节省略。关键物体保留最基本的类别轮廓和结构，不得替换成相近物种或物品。',
+    '核心事件：' + clean(plan.main_event, 110) + '。场景：' + clean(plan.setting, 70) + '。情绪：' + clean(plan.emotion.join('、'), 45) + '。',
+    '叙事锚点仅保留2–3个：' + (anchors.join('、') || '核心事件') + '。',
     '唯一超现实规则：' + anomaly + '；它必须真实改变动作、距离或空间结构，不能只是装饰。',
-    '构图：' + clean([
-      plan.composition.subject_position,
-      plan.composition.visual_flow,
-      plan.composition.negative_space
-    ].join('；'), 150) + '。只保留一个焦点和 2–3 个叙事锚点；其余区域保持安静、低密度。',
-    style,
-    '人物若出现，画成无五官、无写实关节和衣褶的匿名剪影。只画梦境事实中明确出现的人、地点、物体和动作；不确定的细节宁可省略。' + hiddenSymbol,
-    '避免写实、3D、光泽、渐变、发光、卡牌框、塔罗装饰、通用紫色幻想、平滑矢量、对称海报、重复纹理和无依据的月亮、时钟、眼睛、花朵、动物或第二个人物。'
+    '构图方案“' + clean(composition.id, 40) + '”：若梦境明确给出场所，先建立普通空间容器；若未说明地点，只用无指向性的平面色块空间，不新增房间、家具、景观或人物。再放入一个被平静对待的异常关系；以前景锚点、中景动作、远景结果组织三层；' + seedreamCompositionGrammar(composition) + '保持约35–50%主动留白，至少一个已出现的结构或物体被画面边缘裁切，缩小后仍读得出清楚剪影和事件；不照搬任何既有场景。',
+    '关系型配色，共4–6色：低明度主导色场“' + clean(palette.dominant, 50) + '”覆盖约45–60%；明确冷暖或互补对撞色“' + clean(palette.accent, 50) + '”引导动作或视觉路径；高饱和焦点“' + clean(palette.focal, 50) + '”局部不超过3%；辅助结构色“' + clean((palette.auxiliary || []).join('、'), 90) + '”；近黑线稿“' + clean(palette.outline, 50) + '”；暖纸支撑色“' + clean(palette.paper, 50) + '”。不平均分配，不固定任何色相组合或人物服装颜色。',
+    style + ' 画面以少数宽阔、不规则的大平面承重，只在边缘留下克制的手工痕迹；不使用排线、素描阴影、密集短线或逐根毛发。动物、植物和复杂建筑也归纳成清楚的大剪影与少量必要结构线。',
+    '人物若出现，画成无五官、无写实关节和衣褶的匿名背影、侧背、小尺度或裁切剪影。' + hiddenSymbol,
+    '避免写实、3D、光泽、渐变、发光、卡牌框、塔罗装饰、通用紫色幻想、平滑矢量、规则透视、对称海报、重复纹理，以及无依据的月亮、时钟、眼睛、花朵、动物或第二个人物。'
   ].join('\n');
 }
 
