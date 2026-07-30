@@ -187,7 +187,7 @@ const cloud = {
 
 const profileMain = loadCloudFunction('miniprogram/cloudfunctions/profileMemory/index.js', cloud);
 const firstDraft = await profileMain({ action: 'generate', changeReason: '三条新梦' });
-assert.equal(firstDraft.ok, true);
+assert.equal(firstDraft.ok, true, JSON.stringify(firstDraft));
 assert.equal(firstDraft.snapshot.status, 'confirmed');
 assert.equal(firstDraft.snapshot.isCurrent, true);
 assert.equal(firstDraft.snapshot.version, 1);
@@ -237,13 +237,23 @@ const state = await profileMain({ action: 'get' });
 assert.equal(state.current._id, thirdDraft.snapshot._id);
 assert.equal(state.history.find((item: Row) => item._id === firstDraft.snapshot._id).isCurrent, false);
 
+// Early snapshots used profileText without summary. The response must remain
+// displayable without mutating the legacy database record.
+database.rows.profile_snapshots.push({
+  _id: 'legacy-profile-text', openid: 'user-a', version: 98, status: 'superseded', isCurrent: false,
+  profileText: '只存在 profileText 的旧阶段画像', createdAt: now, updatedAt: now
+});
+const profileTextState = await profileMain({ action: 'get' });
+assert.equal(profileTextState.history.find((item: Row) => item._id === 'legacy-profile-text')?.summary, '只存在 profileText 的旧阶段画像');
+assert.equal(database.rows.profile_snapshots.find((item: Row) => item._id === 'legacy-profile-text')?.summary, undefined);
+
 database.rows.profile_snapshots.push({
   _id: 'legacy-draft', openid: 'user-a', version: 99, status: 'draft', isCurrent: false,
   summary: '旧草稿应归入历史', createdAt: now, updatedAt: now
 });
 const legacyState = await profileMain({ action: 'get' });
-assert.equal(legacyState.latestDraft, null);
-assert.equal(legacyState.history.find((item: Row) => item._id === 'legacy-draft')?.status, 'superseded');
+assert.equal(legacyState.latestDraft?._id, 'legacy-draft');
+assert.equal(legacyState.history.find((item: Row) => item._id === 'legacy-draft')?.status, 'draft');
 const migrated = await profileMain({ action: 'generate', changeReason: '迁移旧草稿' });
 assert.equal(migrated.snapshot.status, 'confirmed');
 assert.equal(migrated.snapshot.isCurrent, true);
@@ -259,6 +269,31 @@ assert.equal(restored.snapshot.derivedFromSnapshotId, firstDraft.snapshot._id);
 assert.equal(restored.snapshot.changeReason, '从 V1 回溯');
 assert.equal(database.rows.profile_snapshots.find((item: Row) => item._id === migrated.snapshot._id)?.isCurrent, false);
 assert.equal(database.rows.profile_memory_state[0].currentSnapshotId, restored.snapshot._id);
+
+const portraitsBeforeConcurrentEdit = database.rows.profile_snapshots.length;
+database.beforeTransaction(() => {
+  database.rows.profile_snapshots.forEach((item: Row) => { item.isCurrent = false; });
+  database.rows.profile_snapshots.push({
+    _id: 'portrait-concurrent-user-edit',
+    openid: 'user-a',
+    version: 7,
+    status: 'confirmed',
+    isCurrent: true,
+    summary: '用户在生成过程中保存的新画像',
+    profileText: '用户在生成过程中保存的新画像',
+    userEdited: true,
+    sourceRefs: [],
+    createdAt: now,
+    updatedAt: new Date(now.getTime() + 1000),
+  });
+  database.rows.profile_memory_state[0].currentSnapshotId = 'portrait-concurrent-user-edit';
+  database.rows.profile_memory_state[0].nextVersion = 8;
+});
+const concurrentEditPortrait = await profileMain({ action: 'generate', changeReason: '并发编辑回归' });
+assert.equal(concurrentEditPortrait.ok, false);
+assert.equal(concurrentEditPortrait.reason, 'sources_changed');
+assert.equal(database.rows.profile_snapshots.length, portraitsBeforeConcurrentEdit + 1);
+assert.equal(database.rows.profile_memory_state[0].currentSnapshotId, 'portrait-concurrent-user-edit');
 
 currentOpenId = 'user-b';
 const crossUser = await profileMain({ action: 'save', snapshotId: secondDraft.snapshot._id, snapshot: { summary: '越权' } });
@@ -316,6 +351,29 @@ assert.equal(pendingContractDreamWrite.ok, true);
 const storedPendingDream = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-pending-contract');
 assert.equal(storedPendingDream.status, 'pending');
 assert.equal(storedPendingDream.result, null);
+const readyRevisionWrite = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract',
+  dreamText: '等待云端模型解读',
+  status: 'ready',
+  result: { title: '已完成', symbols: ['云端模型'] },
+  interpretationRevision: 1,
+  createdAt: now,
+} });
+assert.equal(readyRevisionWrite.ok, true);
+const stalePendingWrite = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract',
+  dreamText: '等待云端模型解读',
+  status: 'pending',
+  result: null,
+  interpretationRevision: 1,
+  createdAt: now,
+} });
+assert.equal(stalePendingWrite.ok, false);
+assert.equal(stalePendingWrite.reason, 'stale_interpretation_write');
+const storedReadyDream = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-pending-contract');
+assert.equal(storedReadyDream.status, 'ready');
+assert.equal(storedReadyDream.result.title, '已完成');
+
 database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => item.localId !== 'dream-pending-contract');
 const archiveList = await saveDreamMain({ action: 'list' });
 assert.equal(archiveList.ok, true);

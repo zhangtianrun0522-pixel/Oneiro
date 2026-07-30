@@ -96,31 +96,6 @@ type CanvasFrameModule = {
   ) => void;
 };
 
-type ProfileOracleModule = {
-  personalizeDreamResult: (
-    result: Record<string, any>,
-    profile: {
-      nickname: string;
-      birthDate: string;
-      birthTime?: string;
-      birthPlace?: string;
-    },
-    index: number
-  ) => Record<string, any> & {
-    card_no: string;
-    profile_summary: string;
-    metaphysical_resonance: string;
-    metaphysical_basis: string;
-    birth_profile: {
-      nickname: string;
-      zodiac: string;
-      element: string;
-      chineseZodiac: string;
-      timeBranch: string;
-    };
-  };
-};
-
 type ContentSafetyModule = {
   validateDreamText: (value: string) => {
     safe: boolean;
@@ -207,6 +182,7 @@ type WxMock = {
   failNextInterpret: boolean;
   failNextPortraitToggle: boolean;
   failNextPortraitSave: boolean;
+  failNextPortraitGenerate: boolean;
   profilePortraitSummary: string;
   canvasTexts: string[][];
   cloud?: Record<string, any>;
@@ -276,6 +252,7 @@ function createWxMock(): WxMock {
     failNextInterpret: false,
     failNextPortraitToggle: false,
     failNextPortraitSave: false,
+    failNextPortraitGenerate: false,
     profilePortraitSummary: '近期梦境反复出现学校、追逐与期限感。',
     canvasTexts: [],
     getStorageSync(key) {
@@ -478,7 +455,7 @@ function createWxMock(): WxMock {
             ok: true,
             provider: 'mock-cloud',
             model: 'mock-grounded-model',
-            promptVersion: 'oneiro-grounded-reading-v0.5.0',
+            promptVersion: 'oneiro-freeform-reading-v0.3',
             schemaVersion: 'dream-entry-v0.2',
             result: {
               title: '云影',
@@ -547,6 +524,11 @@ function createWxMock(): WxMock {
       }
       if (options.name === 'profileMemory') {
         if (options.data?.action === 'generate') {
+          if (wx.failNextPortraitGenerate) {
+            wx.failNextPortraitGenerate = false;
+            options.success({ result: { ok: false, reason: 'mock_generate_failed' } });
+            return;
+          }
           options.success({
             result: {
               ok: true,
@@ -760,7 +742,6 @@ function loadPage(
 
 const acceptance = loadCommonJS<AcceptanceModule>('miniprogram/utils/acceptanceDream.js');
 const contentSafety = loadCommonJS<ContentSafetyModule>('miniprogram/utils/contentSafety.js');
-const profileOracle = loadCommonJS<ProfileOracleModule>('miniprogram/utils/profileOracle.js');
 const dreamArtifacts = loadCommonJS<DreamArtifactsModule>('miniprogram/utils/dreamArtifacts.js');
 const dreamMemory = loadCommonJS<DreamMemoryModule>('miniprogram/utils/dreamMemory.js');
 const canvasFrame = loadCommonJS<CanvasFrameModule>('miniprogram/utils/canvasFrame.js');
@@ -1008,9 +989,8 @@ for (const [path, expected] of [
   ['miniprogram/cloudfunctions/interpretDream/index.js', "reading_hook"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "alternative_reading"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "loadDreamMemory"],
-  ['miniprogram/cloudfunctions/interpretDream/index.js', "memory_reflection"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "cultural_symbolism"],
-  ['miniprogram/cloudfunctions/interpretDream/index.js', "loadConfirmedPortrait"],
+  ['miniprogram/cloudfunctions/interpretDream/index.js', "loadCurrentPortrait"],
   ['miniprogram/cloudfunctions/interpretDream/package.json', "lunar-javascript"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "OPENAI_IMAGE_API_KEY"],
   ['miniprogram/cloudfunctions/generateDreamImage/index.js', "OPENAI_IMAGE_ENDPOINT_URL"],
@@ -1047,6 +1027,11 @@ assertNotIncludes('miniprogram/pages/home/index.js', 'buildLocalDreamResult');
 assertNotIncludes('miniprogram/pages/home/index.js', 'createLocalResult');
 assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'cloudbase-static-fallback');
 assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'INTERPRET_STRICT_AI');
+assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'inferLiteralVisuals');
+assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'buildPsychologicalFallback');
+assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'buildCulturalSymbolismFallback');
+assert.equal(fs.existsSync('miniprogram/utils/localDreamOracle.js'), false);
+assert.equal(fs.existsSync('miniprogram/utils/profileOracle.js'), false);
 
 const modelDreamFixture = Object.assign({}, acceptance.acceptanceDreamResult, {
   title: '云影',
@@ -1075,36 +1060,10 @@ assert.equal(crossDreamInsights.recurringSymbols[0].count, 3);
 assert.equal(crossDreamInsights.recurringPeople[0].label, '老师');
 assert.equal(crossDreamInsights.monthlyCard.eligible, true);
 const portraitDraft = dreamMemory.buildProfileDraft({ nickname: 'Runtu' }, memoryFixture, 2, '三条新梦');
-assert.equal(portraitDraft.status, 'draft');
+assert.equal(portraitDraft.status, 'confirmed');
 assert.equal(portraitDraft.version, 2);
 assert.ok(portraitDraft.summary.includes('学校'));
 assert.equal(portraitDraft.sourceRefs.length, 3);
-
-const personalized = profileOracle.personalizeDreamResult(
-  modelDreamFixture,
-  {
-    nickname: 'Runtu',
-    birthDate: '1998-01-01',
-    birthTime: '08:30',
-    birthPlace: 'Shanghai',
-  },
-  7
-);
-
-assert.equal(personalized.card_no, 'NO. 007');
-assert.equal(personalized.birth_profile.nickname, 'Runtu');
-assert.equal(personalized.birth_profile.zodiac, '摩羯');
-assert.ok(personalized.profile_summary.includes('Runtu'));
-assert.ok(personalized.profile_summary.includes('虎生肖'));
-assert.ok(personalized.metaphysical_resonance.includes('追逐'));
-assert.ok(personalized.metaphysical_resonance.includes('学校'));
-assert.ok(personalized.metaphysical_resonance.includes('辰时'));
-assert.ok(personalized.metaphysical_basis.includes('非完整出生背景计算'));
-assert.ok(personalized.metaphysical_resonance.length > 20);
-assert.ok(personalized.card_insight.length > 10);
-assert.ok(personalized.card_insight.includes('门'));
-assert.ok(personalized.oracle.length > 10);
-assert.ok(personalized.oracle.includes('摩羯'));
 
 const wx = createWxMock();
 const cloudBase = loadCommonJS<CloudBaseModule>('miniprogram/utils/cloudBase.js', { wx });
@@ -1159,7 +1118,6 @@ const pageModules = {
   '../../utils/analytics': analytics,
   '../../utils/cloudBase': cloudBase,
   '../../utils/contentSafety': contentSafety,
-  '../../utils/profileOracle': profileOracle,
   '../../utils/dreamArtifacts': dreamArtifacts,
   '../../utils/dreamMemory': dreamMemory,
   '../../utils/canvasFrame': canvasFrame,
@@ -1266,6 +1224,58 @@ assert.equal(profilePage.data.memoryState.current.version, 2);
 assert.equal(profilePage.data.memoryState.pastHistory.some((item: Record<string, any>) => item.version === 1 && item.status === 'superseded'), true);
 assert.equal(profilePage.data.memoryState.current.summary, '这是我确认过措辞的阶段画像。');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'profileMemory' && call.data.action === 'save'));
+
+// A usable cached current portrait must not generate again merely because the
+// get request has no newer state. Legacy template text does trigger exactly
+// one replacement, and the explicit refresh remains available afterwards.
+const generatePortraitCalls = () => wx.cloudCalls.filter((call) => call.name === 'profileMemory' && call.data.action === 'generate').length;
+const validPortraitGenerateCount = generatePortraitCalls();
+const validPortraitPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+validPortraitPage.onLoad();
+assert.equal(generatePortraitCalls(), validPortraitGenerateCount);
+const userEditedMetaState = wx.storage['oneiro:profileMemory'] as Record<string, any>;
+userEditedMetaState.current = Object.assign({}, userEditedMetaState.current, {
+  summary: '这是我基于近期经历写下的一份阶段性观察。',
+  profileText: '这是我基于近期经历写下的一份阶段性观察。',
+  userEdited: true,
+});
+wx.storage['oneiro:profileMemory'] = userEditedMetaState;
+const userEditedMetaPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+userEditedMetaPage.onLoad();
+assert.equal(generatePortraitCalls(), validPortraitGenerateCount);
+const legacyState = wx.storage['oneiro:profileMemory'] as Record<string, any>;
+legacyState.current = Object.assign({}, legacyState.current, {
+  summary: '这是一份基于近期梦境与生活记录形成的阶段性观察，供你确认、修改或拒绝。',
+  profileText: '',
+  userEdited: null,
+  userEditedOriginal: null,
+});
+wx.storage['oneiro:profileMemory'] = legacyState;
+const legacyPortraitPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+legacyPortraitPage.onLoad();
+assert.equal(generatePortraitCalls(), validPortraitGenerateCount + 1);
+assert.equal(legacyPortraitPage.data.memoryState.current.summary, wx.profilePortraitSummary);
+assert.equal(legacyPortraitPage.data.memoryState.history.filter((item: Record<string, any>) => item.isCurrent === true).length, 1);
+legacyPortraitPage.refreshPortrait();
+assert.equal(generatePortraitCalls(), validPortraitGenerateCount + 2);
+
+const profileTextOnlyState = wx.storage['oneiro:profileMemory'] as Record<string, any>;
+profileTextOnlyState.current = Object.assign({}, profileTextOnlyState.current, {
+  summary: '',
+  profileText: '只存在 profileText 的旧阶段画像',
+});
+wx.storage['oneiro:profileMemory'] = profileTextOnlyState;
+wx.failNextPortraitGenerate = true;
+const profileTextOnlyPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+profileTextOnlyPage.onLoad();
+assert.equal(profileTextOnlyPage.data.memoryState.current.summary, '只存在 profileText 的旧阶段画像');
+assert.equal(profileTextOnlyPage.data.memoryState.current.profileText, '只存在 profileText 的旧阶段画像');
+profileTextOnlyPage.refreshPortrait();
+assert.equal(profileTextOnlyPage.data.portraitGenerateFailed, true);
+assert.equal(profileTextOnlyPage.data.memoryState.current.summary, '只存在 profileText 的旧阶段画像');
+profileTextOnlyPage.refreshPortrait();
+assert.equal(profileTextOnlyPage.data.portraitGenerateFailed, false);
+assert.equal(profileTextOnlyPage.data.memoryState.current.summary, wx.profilePortraitSummary);
 // home 与 new-dream 已合并：首页本身就是采集页，不再有二次跳转
 const newDreamPage = homePage;
 newDreamPage.generateDreamCard();
@@ -1350,7 +1360,7 @@ assert.equal(archiveAfterDream[0].interpretationProvider, 'mock-cloud');
 assert.equal(archiveAfterDream[0].status, 'ready');
 assert.equal(archiveAfterDream[0].dreamFacts.places[0], '学校');
 assert.equal(archiveAfterDream[0].interpretationMeta.schemaVersion, 'dream-entry-v0.2');
-assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-grounded-reading-v0.5.0');
+assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.3');
 assert.equal(archiveAfterDream[0].result.title, '云影');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream'));
 assert.equal(
