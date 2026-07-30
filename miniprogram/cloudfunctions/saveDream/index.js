@@ -211,6 +211,7 @@ async function cancelDreamImageQualityJobs(openid, localDreamId) {
       await db.collection('image_generation_jobs').doc(job._id).update({ data: {
         status: 'cancelled',
         cancel_requested: true,
+        provider_image_url: '',
         updated_at: new Date(),
         finished_at: new Date()
       } });

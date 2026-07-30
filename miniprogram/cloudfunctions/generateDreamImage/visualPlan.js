@@ -475,6 +475,36 @@ function buildGenerationPrompt(plan, stylePreset) {
   ].join('\n');
 }
 
+function buildSeedreamGenerationPrompt(plan, stylePreset) {
+  const palette = paletteList(plan.palette);
+  const anomaly = clean(plan.anomalies[0] || '没有额外异常，不要自行添加', 120);
+  const hiddenSymbol = plan.hidden_symbol
+    ? '隐藏符号“' + clean(plan.hidden_symbol, 50) + '”只出现一次且非常隐蔽。'
+    : '不要自行添加隐藏符号。';
+  const style = normalizeStylePreset(stylePreset) === 'internal_test'
+    ? '极简手绘内测画风：单一大色场、匿名剪影人物、粗细变化明显的单线墨迹、少量套色偏移与纸张颗粒。'
+    : 'ONEIRO 粗粝丝网印刷与孔版印刷画风：高饱和哑光色块、粗细变化的手绘墨线、轻微套色偏移和纸张颗粒，安静而超现实。';
+
+  return [
+    '创作一张原创竖版 3:4 梦境叙事插画；画面全出血，无边框、标题、文字、数字或水印。',
+    '梦境事实：' + clean(plan.raw_text, 220) + '。',
+    '核心事件：' + clean(plan.main_event, 140) + '。场景：' + clean(plan.setting, 80) + '。',
+    '情绪：' + clean(plan.emotion.join('、'), 70) + '，强度 ' + plan.emotion_intensity.toFixed(2) + '。',
+    '必须保留：' + clean(plan.preserve_elements.join('、') || plan.main_event, 130) + '。',
+    '唯一超现实规则：' + anomaly + '；它必须真实改变动作、距离或空间结构，不能只是装饰。',
+    '构图：' + clean([
+      plan.composition.subject_position,
+      plan.composition.visual_flow,
+      plan.composition.negative_space
+    ].join('；'), 150) + '。只保留一个焦点、2–3 个叙事锚点和大面积留白。',
+    '配色：以 ' + clean(palette[0], 45) + ' 为主色场，以 ' + clean(palette[1], 45) +
+      ' 表现动作，其余仅少量使用 ' + clean(palette.slice(2).join('、'), 90) + '。',
+    style,
+    '人物若出现，画成无五官、无写实关节和衣褶的匿名剪影。只画梦境事实中明确出现的人、地点、物体和动作；不确定的细节宁可省略。' + hiddenSymbol,
+    '避免写实、3D、光泽、渐变、发光、卡牌框、塔罗装饰、通用紫色幻想、平滑矢量、对称海报、重复纹理和无依据的月亮、时钟、眼睛、花朵、动物或第二个人物。'
+  ].join('\n');
+}
+
 function buildPlanQualityCheck(plan) {
   const palette = paletteList(plan.palette);
   const recognizableCount = 1 + Math.min(plan.anomalies.length, 1) + plan.preserve_elements.length + (plan.hidden_symbol ? 1 : 0);
@@ -519,6 +549,7 @@ module.exports = {
   normalizeStylePreset: normalizeStylePreset,
   styleVersionForPreset: styleVersionForPreset,
   buildGenerationPrompt: buildGenerationPrompt,
+  buildSeedreamGenerationPrompt: buildSeedreamGenerationPrompt,
   buildInternalTestGenerationPrompt: buildInternalTestGenerationPrompt,
   buildPlanQualityCheck: buildPlanQualityCheck,
   paletteList: paletteList

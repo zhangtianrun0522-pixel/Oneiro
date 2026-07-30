@@ -257,13 +257,93 @@ function generateDreamImage(prompt, dreamId, theme, visualPlan, options, callbac
     callback = options;
     options = null;
   }
-  return callCloudFunction('generateDreamImage', {
+  var payload = {
     prompt: prompt || '',
     dreamId: dreamId || '',
     theme: theme || 'mist',
     visualPlan: visualPlan && typeof visualPlan === 'object' ? visualPlan : null,
     forceRefresh: !!(options && options.forceRefresh)
-  }, callback);
+  };
+  if (payload.forceRefresh) {
+    payload.requestId = 'refresh-' + String(Date.now()) + '-' + Math.random().toString(36).slice(2, 10);
+  }
+  var startPollAttempts = 0;
+  var finalizePollAttempts = 0;
+  var maxStartPollAttempts = 21;
+  var maxFinalizePollAttempts = 16;
+
+  function finish(result) {
+    if (callback) callback(result);
+  }
+
+  function finalize(jobId) {
+    callCloudFunction('generateDreamImage', {
+      action: 'finalizePrimaryImage',
+      jobId: jobId,
+      dreamId: payload.dreamId
+    }, function (result) {
+      if (result && result.ok && result.fileID && result.imageUrl) {
+        finish(result);
+        return;
+      }
+      if (
+        result &&
+        (result.status === 'provider_ready' || result.status === 'finalizing' || (result.status === 'succeeded' && result.fileID)) &&
+        finalizePollAttempts < maxFinalizePollAttempts
+      ) {
+        finalizePollAttempts += 1;
+        setTimeout(function () { finalize(jobId); }, 1200);
+        return;
+      }
+      if (
+        result &&
+        (
+          result.reason === 'cloud_result_expired' ||
+          result.reason === 'cloud_call_failed' ||
+          result.reason === 'temp_url_failed'
+        ) &&
+        finalizePollAttempts < maxFinalizePollAttempts
+      ) {
+        finalizePollAttempts += 1;
+        setTimeout(function () { finalize(jobId); }, 1200);
+        return;
+      }
+      finish(result || { ok: false, reason: 'primary_finalize_failed' });
+    });
+  }
+
+  function start() {
+    callCloudFunction('generateDreamImage', Object.assign({ action: 'startPrimaryImage' }, payload), function (result) {
+      if (result && result.ok && result.fileID && result.imageUrl) {
+        finish(result);
+        return;
+      }
+      if (result && result.jobId && (result.status === 'provider_ready' || result.status === 'submitting' || result.status === 'finalizing')) {
+        if (result.status === 'provider_ready') {
+          finalize(result.jobId);
+        } else if (startPollAttempts < maxStartPollAttempts) {
+          startPollAttempts += 1;
+          setTimeout(start, 3000);
+        } else {
+          finish({ ok: false, reason: 'primary_generation_pending', status: result.status });
+        }
+        return;
+      }
+      if (
+        result &&
+        (result.reason === 'cloud_result_expired' || result.reason === 'cloud_call_failed') &&
+        startPollAttempts < maxStartPollAttempts
+      ) {
+        startPollAttempts += 1;
+        setTimeout(start, 3000);
+        return;
+      }
+      finish(result || { ok: false, reason: 'primary_generation_failed' });
+    });
+  }
+
+  start();
+  return true;
 }
 
 // Optional progressive-quality contract. Older deployments do not understand

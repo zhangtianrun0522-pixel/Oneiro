@@ -650,6 +650,10 @@ function createWxMock(): WxMock {
           });
           return;
         }
+        if (options.data?.action === 'startPrimaryImage') {
+          options.success({ result: { ok: true, status: 'provider_ready', jobId: 'primary-mock' } });
+          return;
+        }
         options.success({
           result: {
             ok: true,
@@ -1308,13 +1312,14 @@ resultPage.toggleDreamCard();
 assert.equal(resultPage.data.cardFlipped, false);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'generateDreamImage'));
 assert.equal(
-  wx.cloudCalls.find((call) => call.name === 'generateDreamImage')?.data?.theme,
+  wx.cloudCalls.find((call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage')?.data?.theme,
   'shadow'
 );
 assert.equal(
-  wx.cloudCalls.find((call) => call.name === 'generateDreamImage')?.data?.visualPlan?.main_event,
+  wx.cloudCalls.find((call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage')?.data?.visualPlan?.main_event,
   '梦者在学校里被追赶并错过考试'
 );
+assert.ok(wx.cloudCalls.some((call) => call.name === 'generateDreamImage' && call.data?.action === 'finalizePrimaryImage'));
 resultPage.data.dream.result = Object.assign({}, resultPage.data.dream.result, {
   imageUrl: 'https://expired.example.com/image.png',
   image_file_id: 'cloud://expired/image.png',
@@ -1323,7 +1328,7 @@ resultPage.data.dream.result = Object.assign({}, resultPage.data.dream.result, {
   fileId: 'cloud://expired/file-id-lower.png'
 });
 resultPage.retryDreamImage();
-const retryImageCall = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && !call.data?.action).slice(-1)[0];
+const retryImageCall = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage').slice(-1)[0];
 assert.equal(retryImageCall?.data?.forceRefresh, true);
 assert.equal(resultPage.data.dream.result.image_file_id, 'cloud://mock/generated-dream-images/mock.png');
 assert.equal(resultPage.data.dream.result.imageFileId, '');

@@ -32,6 +32,10 @@ const NANO_BANANA_SUBMIT_TIMEOUT_MS = 46000;
 // "image provider timeout"，看起来像"出图反复失败"。
 // 42 秒是在 FUNCTION_BUDGET_MS(55s) 内为下载(≤12s)+上传云存储留出余量的取值。
 const SEEDREAM_SUBMIT_TIMEOUT_MS = 42000;
+const PRIMARY_SEEDREAM_SUBMIT_TIMEOUT_MS = 54000;
+const PRIMARY_SUBMIT_LEASE_MS = 60000;
+const PRIMARY_FINALIZE_LEASE_MS = 65000;
+const PRIMARY_FINALIZE_MAX_RETRIES = 2;
 // 同步小图模型（gpt-image 等）保持原来的快速失败超时，不被 seedream 的
 // 长耗时拖累
 const SYNC_IMAGE_SUBMIT_TIMEOUT_MS = 12000;
@@ -598,9 +602,7 @@ async function reserveImage(key, fileID, cloudPath, generationPrompt, visualPlan
     created_at: db.serverDate()
   };
 
-  if (typeof db.runTransaction !== 'function') {
-    return false;
-  }
+  if (typeof db.runTransaction !== 'function') throw new Error('database transactions unavailable');
 
   try {
     const created = await db.runTransaction(async function (transaction) {
@@ -619,7 +621,7 @@ async function reserveImage(key, fileID, cloudPath, generationPrompt, visualPlan
     });
     return !!(created && created._id);
   } catch (error) {
-    return false;
+    throw error;
   }
 }
 
@@ -828,6 +830,13 @@ function qualityJobId(openid, sourceDreamId, generationPrompt, config) {
     .digest('hex').slice(0, 48);
 }
 
+function primaryJobId(openid, sourceDreamId, key, model, refreshRequestId) {
+  return 'primary-' + crypto.createHash('sha256')
+    .update([openid, sourceDreamId, key, model, refreshRequestId || 'stable'].join('|'))
+    .digest('hex')
+    .slice(0, 48);
+}
+
 function qualityJobStatus(body) {
   const payload = body && body.data && !Array.isArray(body.data) && typeof body.data === 'object'
     ? Object.assign({}, body, body.data)
@@ -928,7 +937,9 @@ function buildGenerationContext(prompt, theme, requestedVisualPlan, dream, reque
       theme: theme
     }
   );
-  const generationPrompt = visualPlanner.buildGenerationPrompt(visualPlan, stylePreset);
+  const generationPrompt = isSeedreamModel(config.model)
+    ? visualPlanner.buildSeedreamGenerationPrompt(visualPlan, stylePreset)
+    : visualPlanner.buildGenerationPrompt(visualPlan, stylePreset);
   return {
     stylePreset: stylePreset,
     styleVersion: styleVersion,
@@ -941,42 +952,62 @@ function buildGenerationContext(prompt, theme, requestedVisualPlan, dream, reque
 
 async function finalizeImageResult(image, config, context, theme, openid, sourceDreamId, dream, startedAt) {
   let buffer;
-  if (image && image.b64) {
-    buffer = Buffer.from(image.b64, 'base64');
-  } else if (image && image.url) {
-    buffer = await requestBuffer(image.url, Math.min(config.timeoutMs, 12000));
-  } else {
-    throw new Error('image provider response did not include image data');
+  try {
+    if (image && image.b64) {
+      buffer = Buffer.from(image.b64, 'base64');
+    } else if (image && image.url) {
+      buffer = await requestBuffer(image.url, Math.min(config.timeoutMs, 12000));
+    } else {
+      throw new Error('image provider response did not include image data');
+    }
+  } catch (error) {
+    throw withErrorStage(error, 'download');
   }
 
   const format = detectImageFormat(buffer);
   const qualityCheck = buildImageQualityCheck(context.visualPlan, buffer, format.extension);
   const cloudPath = 'generated-dream-images/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + format.extension;
-  const upload = await cloud.uploadFile({ cloudPath: cloudPath, fileContent: buffer });
-  const reserved = await reserveImage(
-    context.key,
-    upload.fileID,
-    cloudPath,
-    context.generationPrompt,
-    context.visualPlan,
-    qualityCheck,
-    theme,
-    config.model,
-    format.extension,
-    buffer.length,
-    openid,
-    sourceDreamId,
-    dream,
-    context.stylePreset,
-    context.styleVersion
-  );
+  let upload;
+  try {
+    upload = await cloud.uploadFile({ cloudPath: cloudPath, fileContent: buffer });
+  } catch (error) {
+    throw withErrorStage(error, 'upload');
+  }
+  let reserved;
+  try {
+    reserved = await reserveImage(
+      context.key,
+      upload.fileID,
+      cloudPath,
+      context.generationPrompt,
+      context.visualPlan,
+      qualityCheck,
+      theme,
+      config.model,
+      format.extension,
+      buffer.length,
+      openid,
+      sourceDreamId,
+      dream,
+      context.stylePreset,
+      context.styleVersion
+    );
+  } catch (error) {
+    await deleteUploadedFile(upload.fileID);
+    throw withErrorStage(error, 'reserve');
+  }
 
   if (!reserved) {
     await deleteUploadedFile(upload.fileID);
     return { ok: false, reason: 'dream_not_found' };
   }
 
-  const tempUrlRes = await cloud.getTempFileURL({ fileList: [upload.fileID] });
+  let tempUrlRes;
+  try {
+    tempUrlRes = await cloud.getTempFileURL({ fileList: [upload.fileID] });
+  } catch (error) {
+    tempUrlRes = null;
+  }
   const tempUrl = tempUrlRes && tempUrlRes.fileList && tempUrlRes.fileList[0]
     ? tempUrlRes.fileList[0].tempFileURL
     : '';
@@ -1099,6 +1130,317 @@ async function claimQualityJob(db, jobId, data) {
     await claim(db);
   }
   return { claimed: claimed, existing: existing };
+}
+
+async function primaryJobResult(job) {
+  if (!job || job.status !== 'succeeded' || !job.file_id) return null;
+  let urls;
+  try {
+    urls = await cloud.getTempFileURL({ fileList: [job.file_id] });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 'failed',
+      jobId: job._id || '',
+      reason: 'temp_url_failed',
+      stage: 'temp-url',
+      fileID: job.file_id
+    };
+  }
+  const item = urls && urls.fileList && urls.fileList[0];
+  if (!usableTempFileItem(item)) {
+    return {
+      ok: false,
+      status: 'failed',
+      jobId: job._id || '',
+      reason: 'temp_url_failed',
+      stage: 'temp-url',
+      fileID: job.file_id
+    };
+  }
+  return {
+    ok: true,
+    status: 'succeeded',
+    jobId: job._id || '',
+    provider: job.provider || 'openai',
+    providerConfigured: true,
+    model: job.model || '',
+    fileID: job.file_id,
+    imageUrl: item.tempFileURL,
+    cacheHit: false,
+    stylePreset: job.style_preset || 'production',
+    styleVersion: job.style_version || STYLE_VERSION,
+    theme: job.theme || 'mist',
+    imageFormat: job.image_format || '',
+    imageBytes: Number(job.image_bytes || 0),
+    visualPlan: job.visual_plan || null,
+    qualityCheck: job.quality_check || null,
+    referenceImageCount: Number(job.reference_count || 0)
+  };
+}
+
+async function writePrimaryJob(db, jobId, data, predicate) {
+  let written = false;
+  const write = async function (scope) {
+    const current = await getDocument(scope.collection('image_generation_jobs'), jobId);
+    if (!current || (predicate && !predicate(current))) return;
+    await scope.collection('image_generation_jobs').doc(jobId).update({ data: data });
+    written = true;
+  };
+  if (typeof db.runTransaction === 'function') {
+    await db.runTransaction(function (transaction) { return write(transaction); });
+  } else {
+    await write(db);
+  }
+  return written;
+}
+
+async function preparePrimaryContext(event, openid) {
+  const sourceDreamId = String((event && event.dreamId) || '').trim().slice(0, 100);
+  if (!sourceDreamId) return { error: { ok: false, reason: 'missing_dream_id' } };
+  const dream = await findOwnedDream(openid, sourceDreamId);
+  if (!dream) return { error: { ok: false, reason: 'dream_not_found' } };
+  const prompt = String((event && event.prompt) || '').trim();
+  const theme = normalizeTheme(String((event && event.theme) || 'mist').trim());
+  const visualPlan = event && event.visualPlan && typeof event.visualPlan === 'object' ? event.visualPlan : null;
+  if (!prompt && !String(dream.dreamText || '').trim() && !visualPlan) {
+    return { error: { ok: false, reason: 'missing_dream_content' } };
+  }
+  const config = configuredProvider();
+  return {
+    sourceDreamId: sourceDreamId,
+    dream: dream,
+    prompt: prompt,
+    theme: theme,
+    visualPlan: visualPlan,
+    config: config,
+    context: buildGenerationContext(prompt, theme, visualPlan, dream, event && event.stylePreset, config, 0)
+  };
+}
+
+async function submitPrimarySeedream(config, generationPrompt) {
+  const response = await requestJson(config.endpointUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + config.apiKey,
+      'Content-Type': 'application/json'
+    }
+  }, JSON.stringify({
+    model: config.model,
+    prompt: generationPrompt,
+    size: config.size,
+    sequential_image_generation: 'disabled',
+    stream: false,
+    response_format: 'url',
+    watermark: false
+  }), Math.min(PRIMARY_SEEDREAM_SUBMIT_TIMEOUT_MS, config.timeoutMs));
+  const image = extractImage(response.body);
+  if (!image || !image.url) throw new Error('seedream response did not include image url');
+  return image.url;
+}
+
+function primaryJobContext(job) {
+  return {
+    stylePreset: job.style_preset || 'production',
+    styleVersion: job.style_version || STYLE_VERSION,
+    visualPlan: job.visual_plan || {},
+    generationPrompt: job.generation_prompt || '',
+    referenceCount: Number(job.reference_count || 0),
+    key: job.context_key || cacheKey(job.generation_prompt || '', job.model || '', job.style_version || STYLE_VERSION, 0)
+  };
+}
+
+async function startPrimaryImage(event, openid) {
+  const prepared = await preparePrimaryContext(event, openid);
+  if (prepared.error) return prepared.error;
+  const { sourceDreamId, dream, prompt, theme, visualPlan, config, context } = prepared;
+  if (!isSeedreamModel(config.model)) {
+    return generateImage(prompt, theme, visualPlan, openid, sourceDreamId, dream, event && event.stylePreset, [], event && event.forceRefresh === true);
+  }
+  if (config.provider !== 'openai' || !config.apiKey) {
+    return { ok: false, reason: 'missing_api_key', provider: config.provider, providerConfigured: false };
+  }
+  const refreshRequestId = event && event.forceRefresh === true
+    ? String(event.requestId || '').trim().replace(/[^a-zA-Z0-9_-]+/g, '').slice(0, 64)
+    : '';
+  const jobId = primaryJobId(openid, sourceDreamId, context.key, config.model, refreshRequestId);
+  const db = cloud.database();
+  const cached = event && event.forceRefresh === true ? null : await cachedImage(context.key, openid, sourceDreamId);
+  if (cached) return Object.assign({ ok: true, status: 'succeeded', jobId: jobId, provider: config.provider, model: config.model, cacheHit: true }, cached);
+
+  let claimed = false;
+  let existing;
+  const submitLeaseToken = crypto.randomBytes(12).toString('hex');
+  await db.runTransaction(async function (transaction) {
+    const jobs = transaction.collection('image_generation_jobs');
+    existing = await getDocument(jobs, jobId);
+    if (existing && existing.kind !== 'seedream_primary') return;
+    if (existing && existing.status === 'failed' && event && event.forceRefresh === true) {
+      await jobs.doc(jobId).update({ data: {
+        status: 'submitting', reason: '', stage: '', provider_image_url: '', finalize_attempts: 0,
+        submit_lease_token: submitLeaseToken, submit_lease_until_ms: Date.now() + PRIMARY_SUBMIT_LEASE_MS,
+        finalize_lease_until_ms: 0, cancel_requested: false,
+        updated_at: db.serverDate(), finished_at: null
+      } });
+      claimed = true;
+      return;
+    }
+    if (
+      existing &&
+      existing.status === 'submitting' &&
+      Number(existing.submit_lease_until_ms || 0) <= Date.now()
+    ) {
+      const expired = {
+        status: 'failed',
+        reason: 'submit_lease_expired',
+        stage: 'submit',
+        submit_lease_until_ms: 0,
+        updated_at: db.serverDate(),
+        finished_at: db.serverDate()
+      };
+      await jobs.doc(jobId).update({ data: expired });
+      existing = Object.assign({}, existing, expired);
+      return;
+    }
+    if (existing) return;
+    await jobs.doc(jobId).set({ data: {
+      kind: 'seedream_primary', openid: openid, sourceDreamId: sourceDreamId,
+      dreamRecordId: dream._id, status: 'submitting', provider: config.provider, model: config.model,
+      generation_prompt: context.generationPrompt.slice(0, 6000), context_key: context.key,
+      visual_plan: context.visualPlan, style_preset: context.stylePreset, style_version: context.styleVersion,
+      theme: theme, reference_count: 0, finalize_attempts: 0,
+      submit_lease_token: submitLeaseToken, submit_lease_until_ms: Date.now() + PRIMARY_SUBMIT_LEASE_MS,
+      created_at: db.serverDate(), updated_at: db.serverDate()
+    } });
+    claimed = true;
+  });
+  if (!claimed) {
+    const current = existing || await getDocument(db.collection('image_generation_jobs'), jobId);
+    if (!current || current.kind !== 'seedream_primary') return { ok: false, reason: 'primary_job_conflict' };
+    const complete = await primaryJobResult(Object.assign({ _id: jobId }, current));
+    if (complete) return complete;
+    return { ok: current.status !== 'failed', status: current.status || 'submitting', jobId: jobId, reason: current.reason || '' };
+  }
+  try {
+    const providerUrl = await submitPrimarySeedream(config, context.generationPrompt);
+    const stored = await writePrimaryJob(db, jobId, {
+      status: 'provider_ready', provider_image_url: providerUrl, submit_lease_until_ms: 0, updated_at: db.serverDate()
+    }, function (job) {
+      return job.kind === 'seedream_primary' && job.status === 'submitting' &&
+        job.submit_lease_token === submitLeaseToken && !job.cancel_requested;
+    });
+    if (!stored) {
+      const current = await getDocument(db.collection('image_generation_jobs'), jobId);
+      return {
+        ok: false,
+        status: current && current.status || 'failed',
+        jobId: jobId,
+        reason: current && current.reason || 'primary_submit_stale',
+        stage: 'submit'
+      };
+    }
+    return { ok: true, status: 'provider_ready', jobId: jobId, provider: config.provider, model: config.model };
+  } catch (error) {
+    const reason = qualityDiagnosticCode(error);
+    await writePrimaryJob(db, jobId, {
+      status: 'failed', reason: reason, stage: 'submit', submit_lease_until_ms: 0,
+      updated_at: db.serverDate(), finished_at: db.serverDate()
+    }, function (job) {
+      return job.kind === 'seedream_primary' && job.status === 'submitting' &&
+        job.submit_lease_token === submitLeaseToken && !job.cancel_requested;
+    });
+    return { ok: false, status: 'failed', jobId: jobId, reason: reason, stage: 'submit' };
+  }
+}
+
+async function finalizePrimaryImage(event, openid) {
+  const jobId = String((event && event.jobId) || '').trim();
+  const sourceDreamId = String((event && event.dreamId) || '').trim().slice(0, 100);
+  if (!jobId || !sourceDreamId) return { ok: false, reason: 'missing_primary_job' };
+  const db = cloud.database();
+  let job = await getDocument(db.collection('image_generation_jobs'), jobId);
+  if (!job || job.kind !== 'seedream_primary' || job.openid !== openid || job.sourceDreamId !== sourceDreamId) {
+    return { ok: false, reason: 'primary_job_not_found' };
+  }
+  job._id = jobId;
+  const complete = await primaryJobResult(job);
+  if (complete) return complete;
+  if (job.status === 'failed' || job.status === 'cancelled') return { ok: false, status: job.status, jobId: jobId, reason: job.reason || 'primary_finalize_failed', stage: job.stage || 'download' };
+
+  let leased = false;
+  const finalizeLeaseToken = crypto.randomBytes(12).toString('hex');
+  await db.runTransaction(async function (transaction) {
+    const current = await getDocument(transaction.collection('image_generation_jobs'), jobId);
+    if (!current || current.kind !== 'seedream_primary' || current.openid !== openid || current.sourceDreamId !== sourceDreamId) return;
+    const leaseExpired = Number(current.finalize_lease_until_ms || 0) <= Date.now();
+    if (current.status === 'provider_ready' || (current.status === 'finalizing' && leaseExpired)) {
+      await transaction.collection('image_generation_jobs').doc(jobId).update({ data: {
+        status: 'finalizing', finalize_lease_token: finalizeLeaseToken,
+        finalize_lease_until_ms: Date.now() + PRIMARY_FINALIZE_LEASE_MS, updated_at: db.serverDate()
+      } });
+      job = Object.assign({}, current, {
+        _id: jobId,
+        status: 'finalizing',
+        finalize_lease_token: finalizeLeaseToken
+      });
+      leased = true;
+    }
+  });
+  if (!leased) return { ok: true, status: job.status || 'finalizing', jobId: jobId };
+
+  const dream = await findOwnedDream(openid, sourceDreamId);
+  if (!dream) {
+    await writePrimaryJob(db, jobId, {
+      status: 'cancelled',
+      reason: 'dream_not_found',
+      provider_image_url: '',
+      updated_at: db.serverDate(),
+      finished_at: db.serverDate()
+    });
+    return { ok: false, status: 'cancelled', jobId: jobId, reason: 'dream_not_found' };
+  }
+  const config = configuredProvider();
+  try {
+    const result = await finalizeImageResult({ url: job.provider_image_url }, config, primaryJobContext(job), job.theme || 'mist', openid, sourceDreamId, dream, Date.now());
+    if (!result.ok) {
+      await writePrimaryJob(db, jobId, {
+        status: 'cancelled',
+        reason: result.reason || 'dream_not_found',
+        provider_image_url: '',
+        updated_at: db.serverDate(),
+        finished_at: db.serverDate()
+      });
+      return Object.assign({}, result, { status: 'cancelled', jobId: jobId });
+    }
+    const completed = await writePrimaryJob(db, jobId, {
+      status: 'succeeded', file_id: result.fileID, image_format: result.imageFormat, image_bytes: result.imageBytes,
+      quality_check: result.qualityCheck, provider_image_url: '', finalize_lease_until_ms: 0,
+      updated_at: db.serverDate(), finished_at: db.serverDate()
+    }, function (current) {
+      return current.kind === 'seedream_primary' && current.status === 'finalizing' &&
+        current.finalize_lease_token === finalizeLeaseToken && !current.cancel_requested;
+    });
+    if (!completed) {
+      await deleteUploadedFile(result.fileID);
+      return { ok: false, status: 'cancelled', jobId: jobId, reason: 'dream_not_found' };
+    }
+    return Object.assign({}, result, { status: 'succeeded', jobId: jobId });
+  } catch (error) {
+    const attempts = Number(job.finalize_attempts || 0) + 1;
+    const retryable = attempts <= PRIMARY_FINALIZE_MAX_RETRIES;
+    const reason = qualityDiagnosticCode(error);
+    const stage = String(error && error.stage || 'download');
+    const updated = await writePrimaryJob(db, jobId, {
+      status: retryable ? 'provider_ready' : 'failed', finalize_attempts: attempts, reason: reason, stage: stage,
+      provider_image_url: retryable ? job.provider_image_url : '', finalize_lease_until_ms: 0,
+      updated_at: db.serverDate(), finished_at: retryable ? null : db.serverDate()
+    }, function (current) {
+      return current.kind === 'seedream_primary' && current.status === 'finalizing' &&
+        current.finalize_lease_token === finalizeLeaseToken && !current.cancel_requested;
+    });
+    if (!updated) return { ok: false, status: 'cancelled', jobId: jobId, reason: 'dream_not_found' };
+    return { ok: false, status: retryable ? 'provider_ready' : 'failed', jobId: jobId, reason: reason, stage: stage };
+  }
 }
 
 async function prepareQualityContext(event, openid) {
@@ -1542,6 +1884,14 @@ exports.main = async function (event) {
   const wxContext = cloud.getWXContext ? cloud.getWXContext() : {};
   const openid = String((wxContext && wxContext.OPENID) || '');
 
+  if (action === 'startPrimaryImage') {
+    return startPrimaryImage(event, openid);
+  }
+
+  if (action === 'finalizePrimaryImage') {
+    return finalizePrimaryImage(event, openid);
+  }
+
   if (action === 'startQuality' || action === 'image2.start') {
     try {
       return await startQualityJob(event, openid);
@@ -1593,6 +1943,8 @@ exports.main = async function (event) {
       aspectRatio: config.aspectRatio,
       quality: config.quality,
       requestTimeoutMs: config.timeoutMs,
+      primaryPipeline: 'seedream_two_stage_v1',
+      primarySubmitTimeoutMs: PRIMARY_SEEDREAM_SUBMIT_TIMEOUT_MS,
       styleVersion: STYLE_VERSION,
       stylePresets: visualPlanner.STYLE_PRESETS,
       supportedThemes: Object.keys(LEGACY_THEMES),

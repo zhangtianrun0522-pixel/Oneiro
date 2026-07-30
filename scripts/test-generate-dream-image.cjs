@@ -14,6 +14,7 @@ const png = Buffer.concat([
 png.writeUInt32BE(768, 16);
 png.writeUInt32BE(1024, 20);
 const state = {
+  openid: 'owner',
   dream: null,
   deletion: false,
   transactionDeletion: false,
@@ -22,7 +23,10 @@ const state = {
   deletedFiles: [],
   requestBodies: [],
   generatedAssets: [],
-  streamResponse: false
+  jobs: {},
+  streamResponse: false,
+  providerImageUrl: '',
+  cancelPrimaryDuringUpload: false
 };
 
 function queryResult(collection, query) {
@@ -51,9 +55,21 @@ function collection(name, transaction) {
         get: async function () {
           if (name === 'deletion_jobs') return { data: state.transactionDeletion ? { _id: id } : null };
           if (name === 'dream_entries') return { data: state.dream && id === state.dream._id ? state.dream : null };
+          if (name === 'image_generation_jobs') return { data: state.jobs[id] || null };
           return { data: null };
         },
-        add: async function () { return { _id: 'asset-1' }; }
+        add: async function () { return { _id: 'asset-1' }; },
+        set: async function (input) {
+          if (input.data && Object.prototype.hasOwnProperty.call(input.data, '_id')) {
+            throw new Error('document.set cannot update _id');
+          }
+          if (name === 'image_generation_jobs') state.jobs[id] = Object.assign({ _id: id }, input.data);
+          return { _id: id };
+        },
+        update: async function (input) {
+          if (name === 'image_generation_jobs' && state.jobs[id]) state.jobs[id] = Object.assign({}, state.jobs[id], input.data);
+          return {};
+        }
       };
     },
     add: async function () {
@@ -66,7 +82,7 @@ function collection(name, transaction) {
 const cloud = {
   DYNAMIC_CURRENT_ENV: 'test',
   init: function () {},
-  getWXContext: function () { return { OPENID: 'owner' }; },
+  getWXContext: function () { return { OPENID: state.openid }; },
   database: function () {
     return {
       collection: function (name) { return collection(name, false); },
@@ -76,7 +92,20 @@ const cloud = {
       }
     };
   },
-  uploadFile: async function () { state.uploaded += 1; return { fileID: 'cloud://image-1' }; },
+  uploadFile: async function () {
+    state.uploaded += 1;
+    if (state.cancelPrimaryDuringUpload) {
+      Object.keys(state.jobs).forEach(function (jobId) {
+        if (state.jobs[jobId] && state.jobs[jobId].status === 'finalizing') {
+          state.jobs[jobId] = Object.assign({}, state.jobs[jobId], {
+            status: 'cancelled',
+            cancel_requested: true
+          });
+        }
+      });
+    }
+    return { fileID: 'cloud://image-1' };
+  },
   deleteFile: async function (input) { state.deletedFiles.push(input.fileList[0]); },
   getTempFileURL: async function (input) {
     return {
@@ -112,7 +141,13 @@ function fakeRequest(options, callback) {
       return;
     }
     process.nextTick(function () {
-      response.emit('data', Buffer.from(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] })));
+      if (options.method === 'GET' && state.providerImageUrl) {
+        response.emit('data', png);
+      } else if (state.providerImageUrl) {
+        response.emit('data', Buffer.from(JSON.stringify({ data: [{ url: state.providerImageUrl }] })));
+      } else {
+        response.emit('data', Buffer.from(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] })));
+      }
       response.emit('end');
     });
   };
@@ -153,6 +188,7 @@ async function run() {
     symbols: ['车站', '海', '灯']
   });
   const compiledPrompt = visualPlanner.buildGenerationPrompt(visualPlan);
+  const seedreamPrompt = visualPlanner.buildSeedreamGenerationPrompt(visualPlan);
   const internalTestPrompt = visualPlanner.buildGenerationPrompt(visualPlan, 'internal-test');
   const healingPlan = visualPlanner.normalizeVisualPlan({ emotion: ['平静', '安心'] }, {
     dreamText: '我回到温暖的家，坐在窗边慢慢呼吸。',
@@ -213,6 +249,12 @@ async function run() {
   });
   assert.equal(visualPlan.composition.id, 'off_center_diagonal');
   assert.match(compiledPrompt, /rough screenprint and risograph texture/);
+  assert.ok(seedreamPrompt.length < 1800, 'Seedream prompt should stay concise enough for synchronous generation');
+  assert.match(seedreamPrompt, /核心事件/);
+  assert.match(seedreamPrompt, /唯一超现实规则/);
+  assert.match(seedreamPrompt, /粗粝丝网印刷与孔版印刷画风/);
+  assert.match(seedreamPrompt, /只画梦境事实中明确出现/);
+  assert.match(seedreamPrompt, /无边框、标题、文字、数字或水印/);
   assert.equal(
     crypto.createHash('sha256').update(compiledPrompt).digest('hex'),
     'a654063f41d75140ef2025eeba4bd6571af5f12f6ee16b42eea3a929e70ecdbf',
@@ -356,6 +398,93 @@ async function run() {
   assert.equal(result.reason, 'provider_timeout');
   assert.equal(result.stage, 'submit');
   assert.ok(Date.now() - timeoutStartedAt < 1500, 'absolute timeout must stop an active response stream');
+
+  delete process.env.OPENAI_IMAGE_ENDPOINT_URL;
+  delete process.env.OPENAI_IMAGE_MODEL;
+  state.providerImageUrl = 'https://provider.example.com/seedream.png';
+  state.jobs = {};
+  const submitBeforePrimary = state.providerCalls;
+  const uploadsBeforePrimary = state.uploaded;
+  const primaryStart = await imageFunction.main({ action: 'startPrimaryImage', prompt: 'primary', dreamId: 'dream-1', visualPlan: visualPlan });
+  assert.equal(primaryStart.ok, true);
+  assert.equal(primaryStart.status, 'provider_ready');
+  assert.ok(primaryStart.jobId);
+  assert.equal(state.providerCalls, submitBeforePrimary + 1, 'primary stage one submits once');
+  assert.equal(state.uploaded, uploadsBeforePrimary, 'primary stage one must not upload');
+  assert.equal(state.jobs[primaryStart.jobId].kind, 'seedream_primary');
+  assert.equal(state.jobs[primaryStart.jobId].provider_image_url, state.providerImageUrl);
+  assert.equal(primaryStart.provider_image_url, undefined, 'provider URL must stay server-side');
+
+  const duplicateStart = await imageFunction.main({ action: 'startPrimaryImage', prompt: 'primary', dreamId: 'dream-1', visualPlan: visualPlan });
+  assert.equal(duplicateStart.jobId, primaryStart.jobId);
+  assert.equal(state.providerCalls, submitBeforePrimary + 1, 'duplicate start must not submit again');
+
+  const ownerBeforeFinalize = state.openid;
+  state.openid = 'other-owner';
+  const foreignFinalize = await imageFunction.main({ action: 'finalizePrimaryImage', jobId: primaryStart.jobId, dreamId: 'dream-1' });
+  assert.equal(foreignFinalize.reason, 'primary_job_not_found');
+  state.openid = ownerBeforeFinalize;
+
+  const primaryFinal = await imageFunction.main({ action: 'finalizePrimaryImage', jobId: primaryStart.jobId, dreamId: 'dream-1' });
+  assert.equal(primaryFinal.ok, true);
+  assert.equal(primaryFinal.status, 'succeeded');
+  assert.ok(primaryFinal.fileID);
+  assert.ok(state.uploaded > uploadsBeforePrimary, 'primary finalization uploads exactly after provider readiness');
+
+  const callsBeforeFreshPrimary = state.providerCalls;
+  const freshPrimary = await imageFunction.main({
+    action: 'startPrimaryImage',
+    prompt: 'primary',
+    dreamId: 'dream-1',
+    visualPlan: visualPlan,
+    forceRefresh: true,
+    requestId: 'fresh-primary-1'
+  });
+  assert.equal(freshPrimary.status, 'provider_ready');
+  assert.notEqual(freshPrimary.jobId, primaryStart.jobId, 'forceRefresh after success must create a fresh paid job');
+  assert.equal(state.providerCalls, callsBeforeFreshPrimary + 1);
+
+  state.dream = Object.assign({}, state.dream, { localId: 'dream-cancel', _id: 'record-cancel' });
+  const cancelStart = await imageFunction.main({
+    action: 'startPrimaryImage',
+    prompt: 'cancel-race',
+    dreamId: 'dream-cancel',
+    visualPlan: visualPlan
+  });
+  state.cancelPrimaryDuringUpload = true;
+  const cancelledFinalize = await imageFunction.main({
+    action: 'finalizePrimaryImage',
+    jobId: cancelStart.jobId,
+    dreamId: 'dream-cancel'
+  });
+  state.cancelPrimaryDuringUpload = false;
+  assert.equal(cancelledFinalize.status, 'cancelled');
+  assert.equal(state.jobs[cancelStart.jobId].status, 'cancelled', 'finalizer must not overwrite deletion cancellation');
+  assert.ok(state.deletedFiles.includes('cloud://image-1'), 'lost finalization lease must delete its uploaded file');
+
+  state.dream = Object.assign({}, state.dream, { localId: 'dream-2', _id: 'record-2' });
+  const failedStart = await imageFunction.main({ action: 'startPrimaryImage', prompt: 'retry', dreamId: 'dream-2', visualPlan: visualPlan });
+  state.jobs[failedStart.jobId] = Object.assign({}, state.jobs[failedStart.jobId], { status: 'failed', reason: 'provider_timeout' });
+  const callsBeforeForceRefresh = state.providerCalls;
+  const forcedStart = await imageFunction.main({ action: 'startPrimaryImage', prompt: 'retry', dreamId: 'dream-2', visualPlan: visualPlan, forceRefresh: true });
+  assert.equal(forcedStart.status, 'provider_ready');
+  assert.equal(state.providerCalls, callsBeforeForceRefresh + 1, 'forceRefresh retries a failed deterministic job');
+  state.jobs[forcedStart.jobId] = Object.assign({}, state.jobs[forcedStart.jobId], {
+    status: 'submitting',
+    submit_lease_until_ms: 0
+  });
+  const callsBeforeExpiredLease = state.providerCalls;
+  const expiredSubmit = await imageFunction.main({
+    action: 'startPrimaryImage',
+    prompt: 'retry',
+    dreamId: 'dream-2',
+    visualPlan: visualPlan
+  });
+  assert.equal(expiredSubmit.status, 'failed');
+  assert.equal(expiredSubmit.reason, 'submit_lease_expired');
+  assert.equal(state.providerCalls, callsBeforeExpiredLease, 'expired submit lease must fail closed without another paid request');
+  state.dream = Object.assign({}, state.dream, { localId: 'dream-1', _id: 'record-1' });
+  state.providerImageUrl = '';
 
   console.log('generateDreamImage visual-plan, authorization and deletion-race regressions passed');
 }
