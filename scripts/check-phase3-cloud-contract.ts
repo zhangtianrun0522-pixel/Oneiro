@@ -304,6 +304,19 @@ database.rows.profile_snapshots.push({
 });
 
 const saveDreamMain = loadCloudFunction('miniprogram/cloudfunctions/saveDream/index.js', cloud);
+const pendingContractDreamWrite = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract',
+  dreamText: '等待云端模型解读',
+  status: 'pending',
+  result: null,
+  interpretationError: 'ai_provider_error',
+  createdAt: now,
+} });
+assert.equal(pendingContractDreamWrite.ok, true);
+const storedPendingDream = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-pending-contract');
+assert.equal(storedPendingDream.status, 'pending');
+assert.equal(storedPendingDream.result, null);
+database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => item.localId !== 'dream-pending-contract');
 const archiveList = await saveDreamMain({ action: 'list' });
 assert.equal(archiveList.ok, true);
 assert.equal(archiveList.dreams.length, 2);

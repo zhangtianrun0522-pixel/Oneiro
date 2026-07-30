@@ -10,7 +10,6 @@ function emptyAiHealth() {
     model: '',
     baseUrlHost: '',
     requestTimeoutMs: 0,
-    strictAi: false,
     fallbackProvider: ''
   };
 }

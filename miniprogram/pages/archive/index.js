@@ -79,11 +79,19 @@ function buildTimelineGroups(records) {
 
 function normalizeCloudDream(item) {
   var facts = item && item.dreamFacts ? item.dreamFacts : {};
+  var status = String((item && item.status) || 'ready');
+  var result = status === 'ready' &&
+    item &&
+    item.result &&
+    typeof item.result === 'object' &&
+    Object.keys(item.result).length
+    ? item.result
+    : null;
   return {
     id: String((item && (item.localId || item.id)) || ''),
     dreamText: String((item && item.dreamText) || ''),
-    status: String((item && item.status) || 'ready'),
-    result: item && item.result ? item.result : null,
+    status: status,
+    result: result,
     thumbnailPath: String((item && item.thumbnailPath) || ''),
     dreamFacts: {
       people: facts.people || [],

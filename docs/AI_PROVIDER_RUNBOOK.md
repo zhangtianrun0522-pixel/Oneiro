@@ -18,7 +18,7 @@ This runbook covers the last manual CloudBase steps required before the Mini Pro
   "hasApiKey": true,
   "model": "deepseek-v4-flash",
   "requestTimeoutMs": 30000,
-  "fallbackProvider": "cloudbase-static-fallback"
+  "fallbackProvider": "none"
 }
 ```
 
@@ -42,13 +42,7 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 INTERPRET_TIMEOUT_MS=30000
 ```
 
-Optional strict mode:
-
-```text
-INTERPRET_STRICT_AI=1
-```
-
-Leave `INTERPRET_STRICT_AI` unset for MVP testing. Without strict mode, provider failures return `cloudbase-static-fallback` so the Mini Program flow still works.
+There is no local semantic fallback or strict-mode switch. Provider failures return a retryable error without a generated result; the original dream stays saved for a later retry.
 
 ## Configure OpenAI-Compatible Provider
 
@@ -162,7 +156,7 @@ Run a normal Mini Program flow:
 7. Confirm result copy feels specific to the submitted dream, not generic fallback copy.
 8. Confirm share-card generation still returns `/pages/share/index?id=...`.
 
-If `interpretationProvider` is `cloudbase-static-fallback`, the cloud function reached the provider boundary but the provider call failed.
+If `interpretationError` is `ai_provider_error`, the cloud function reached the provider boundary but did not receive a valid model result. The original dream remains saved and can be retried.
 
 ## Failure Triage
 
@@ -177,7 +171,7 @@ If `interpretationProvider` is `cloudbase-static-fallback`, the cloud function r
 - For DeepSeek, set `DEEPSEEK_API_KEY`.
 - For OpenAI-compatible providers, set `OPENAI_COMPATIBLE_API_KEY` or one of the accepted aliases.
 
-`providerConfigured: true` but generated dreams show `cloudbase-static-fallback`
+`providerConfigured: true` but dreams remain pending with `ai_provider_error`
 
 - Check provider base URL, model name, quota, network access, and JSON response format support.
 - Confirm `INTERPRET_TIMEOUT_MS` is lower than or equal to the CloudBase function timeout.
@@ -185,7 +179,7 @@ If `interpretationProvider` is `cloudbase-static-fallback`, the cloud function r
 
 `providerConfigured: true` but generated dreams fail instead of falling back
 
-- Check whether `INTERPRET_STRICT_AI=1` is set. For MVP testing, leave it unset.
+- Check provider credentials, outbound access, timeout, and response JSON validity.
 
 ## Local Safety Checks
 

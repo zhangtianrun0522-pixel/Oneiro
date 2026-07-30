@@ -1,11 +1,8 @@
-var acceptance = require('../../utils/acceptanceDream');
 var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
 var contentSafety = require('../../utils/contentSafety');
 var dreamMemory = require('../../utils/dreamMemory');
-var localDreamOracle = require('../../utils/localDreamOracle');
 var tabNav = require('../../utils/tabNav');
-var acceptanceDreamResult = acceptance.acceptanceDreamResult;
 var recorderManager = wx.getRecorderManager();
 var recorderListenersBound = false;
 var activeRecorderPage = null;
@@ -79,23 +76,6 @@ function analysisStageForElapsed(elapsedMs) {
   return 4;
 }
 
-function createLocalResult(dreamText, profile, cardIndex) {
-  var localResult = localDreamOracle.buildLocalDreamResult(acceptanceDreamResult, dreamText);
-  localResult.card_no = 'NO. ' + String(cardIndex).padStart(3, '0');
-  localResult.profile_summary = '本地解读';
-  localResult.bazi_chart = {
-    available: false,
-    precision: 'cloud_unavailable',
-    summary: '本次未生成出生节律参考。',
-    basis: '背景计算暂时不可用，不使用语言模型猜测结果。'
-  };
-  localResult.metaphysical_resonance = '';
-  localResult.metaphysical_basis = '';
-  localResult.mirror = '一种可能是：' + localResult.mirror + '这也可能只是偶然的梦中组合，目前还不足以下结论。';
-  localResult.possible_connections = [localResult.mirror].filter(Boolean);
-  return localResult;
-}
-
 function normalizeFactList(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -106,57 +86,17 @@ function normalizeFactList(value) {
   }).filter(Boolean).slice(0, 6);
 }
 
-function normalizeDreamFacts(result, dreamText) {
+function normalizeDreamFacts(result) {
   var facts = result && result.dream_facts ? result.dream_facts : {};
-  var symbols = result && Array.isArray(result.symbols) ? result.symbols : [];
-  var text = String(dreamText || '');
-  var people = normalizeFactList(facts.people);
-  var places = normalizeFactList(facts.places);
-  var objects = normalizeFactList(facts.objects);
-  var actions = normalizeFactList(facts.actions);
-  var transitions = normalizeFactList(facts.transitions || facts.events);
-  var emotions = normalizeFactList(facts.emotions);
-  var timeSense = normalizeFactList(facts.time_sense || facts.timeSense);
-
-  if (!places.length) {
-    places = symbols.filter(function (symbol) {
-      return /学校|家屋|图书馆|清水/.test(String(symbol));
-    }).slice(0, 4);
-  }
-  if (!objects.length) {
-    objects = symbols.filter(function (symbol) {
-      return /钥匙|门|月光|鸟/.test(String(symbol));
-    }).slice(0, 4);
-  }
-  if (!actions.length) {
-    actions = symbols.filter(function (symbol) {
-      return /追逐|坠落/.test(String(symbol));
-    }).slice(0, 4);
-  }
-  if (!people.length) {
-    ['妈妈', '爸爸', '父亲', '母亲', '同学', '老师', '陌生人'].forEach(function (person) {
-      if (text.indexOf(person) >= 0 && people.indexOf(person) < 0) people.push(person);
-    });
-  }
-  if (!emotions.length) {
-    ['害怕', '紧张', '焦虑', '难过', '安心', '平静', '孤独', '兴奋', '愤怒'].forEach(function (emotion) {
-      if (text.indexOf(emotion) >= 0) emotions.push(emotion);
-    });
-  }
-  if (!timeSense.length) {
-    ['清晨', '白天', '黄昏', '夜晚', '深夜', '小时候'].forEach(function (time) {
-      if (text.indexOf(time) >= 0) timeSense.push(time);
-    });
-  }
 
   return {
-    people: people,
-    places: places,
-    objects: objects,
-    actions: actions,
-    transitions: transitions,
-    emotions: emotions,
-    time_sense: timeSense
+    people: normalizeFactList(facts.people),
+    places: normalizeFactList(facts.places),
+    objects: normalizeFactList(facts.objects),
+    actions: normalizeFactList(facts.actions),
+    transitions: normalizeFactList(facts.transitions || facts.events),
+    emotions: normalizeFactList(facts.emotions),
+    time_sense: normalizeFactList(facts.time_sense || facts.timeSense)
   };
 }
 
@@ -821,11 +761,34 @@ Page({
           return;
         }
 
-        var result = cloudResult && cloudResult.result
-          ? cloudResult.result
-          : createLocalResult(dreamText, profile, cardIndex);
-        var source = cloudResult && cloudResult.result ? 'cloud' : 'local';
-        var provider = cloudResult && cloudResult.provider ? cloudResult.provider : source;
+        if (!cloudResult || !cloudResult.ok || !cloudResult.result) {
+          pendingDream.status = 'pending';
+          pendingDream.result = null;
+          pendingDream.interpretationSource = 'cloud';
+          pendingDream.interpretationProvider = cloudResult && cloudResult.provider
+            ? cloudResult.provider
+            : '';
+          pendingDream.interpretationError = String(
+            cloudResult && (cloudResult.reason || cloudResult.message) || 'ai_provider_error'
+          ).slice(0, 300);
+          pendingDream.updatedAt = new Date().toISOString();
+          app.globalData.currentDream = pendingDream;
+          upsertLocalDream(pendingDream);
+          cloudBase.saveDream(pendingDream);
+          analytics.trackEvent('interpretation_failed', {
+            dreamId: dreamId,
+            reason: pendingDream.interpretationError,
+            retryable: cloudResult ? cloudResult.retryable !== false : true
+          });
+          cloudBase.flushEvents(analytics.getEvents());
+          that.stopAnalysisProgress();
+          wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dreamId) });
+          return;
+        }
+
+        var result = cloudResult.result;
+        var source = 'cloud';
+        var provider = cloudResult.provider || 'cloud';
         var dream;
 
         result.card_no = result.card_no || 'NO. ' + String(cardIndex).padStart(3, '0');
@@ -836,7 +799,7 @@ Page({
           dreamText: dreamText,
           status: 'ready',
           result: result,
-          dreamFacts: normalizeDreamFacts(result, dreamText),
+          dreamFacts: normalizeDreamFacts(result),
           interpretationSource: source,
           interpretationProvider: provider,
           interpretationError: cloudResult && !cloudResult.result
@@ -844,8 +807,8 @@ Page({
             : '',
           interpretationMeta: {
             schemaVersion: (cloudResult && cloudResult.schemaVersion) || 'dream-entry-v0.2',
-            promptVersion: (cloudResult && cloudResult.promptVersion) || 'local-oracle-v1',
-            model: (cloudResult && cloudResult.model) || ''
+            promptVersion: cloudResult.promptVersion || '',
+            model: cloudResult.model || ''
           },
           feedback: '',
           createdAt: createdAt,

@@ -45,10 +45,6 @@
       <text class="panel-value">{{aiHealth.requestTimeoutMs}}</text>
     </view>
     <view class="panel-row">
-      <text class="panel-label">strictAi</text>
-      <text class="panel-value">{{aiHealth.strictAi ? 'true' : 'false'}}</text>
-    </view>
-    <view class="panel-row">
       <text class="panel-label">fallback</text>
       <text class="panel-value">{{aiHealth.fallbackProvider || '-'}}</text>
     </view>

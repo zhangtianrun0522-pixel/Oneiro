@@ -133,7 +133,7 @@ Do not treat the build as real-AI ready if any of these are true:
 
 - `interpretDream` timeout is lower than its configured provider request budget.
 - Diagnostics shows `providerConfigured: false`.
-- Smoke test returns `cloudbase-static`, `static_provider`, or `cloudbase-static-fallback`.
+- Smoke test returns the configured model provider, or a clear `static_provider` / provider error without a locally generated interpretation.
 - Result card keeps showing only the fallback symbolic card art after `generateDreamImage` is configured.
 - Normal dream records still show `interpretationProvider: cloudbase-static`.
 - Cross-session share path cannot read its CloudBase payload.

@@ -21,6 +21,12 @@ type InterpretDreamModule = {
     baziChart: unknown,
     lifeNote: unknown
   ) => Record<string, any>;
+  validateAiSemanticPayload?: (
+    raw: Record<string, unknown>,
+    dreamText: string,
+    baziChart: unknown
+  ) => void;
+  buildBaziChart?: (profile: Record<string, unknown>) => Record<string, any>;
 };
 
 function read(relativePath: string): string {
@@ -35,6 +41,13 @@ function assertIncludes(relativePath: string, expected: string): void {
   assert.ok(
     read(relativePath).includes(expected),
     `${relativePath} should include ${expected}`
+  );
+}
+
+function assertNotIncludes(relativePath: string, unexpected: string): void {
+  assert.ok(
+    !read(relativePath).includes(unexpected),
+    `${relativePath} should not include ${unexpected}`
   );
 }
 
@@ -169,7 +182,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false): 
   };
 
   const source = exposeParser
-    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.normalizeGroundedSymbols = normalizeGroundedSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;'
+    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.normalizeGroundedSymbols = normalizeGroundedSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.buildBaziChart = buildBaziChart;'
     : read(interpretDreamPath);
   vm.runInNewContext(source, sandbox, { filename: interpretDreamPath });
   return commonJsModule.exports;
@@ -200,7 +213,7 @@ for (const expected of [
   'baseUrlHost',
   'healthCheck',
   'smokeTest',
-  'cloudbase-static-fallback',
+  "fallbackProvider: 'none'",
   'response_format',
   'lunar-javascript',
   'true_solar_time',
@@ -237,11 +250,14 @@ for (const expected of [
   'AI SMOKE TEST',
   '/pages/diagnostics/index',
   'interpretationProvider',
-  'cloudbase-static-fallback',
+  '"fallbackProvider": "none"',
   'Failure Triage',
 ]) {
   assertIncludes('docs/AI_PROVIDER_RUNBOOK.md', expected);
 }
+
+assertNotIncludes(interpretDreamPath, 'cloudbase-static-fallback');
+assertNotIncludes(interpretDreamPath, 'INTERPRET_STRICT_AI');
 
 for (const expected of [
   'function aiHealth',
@@ -320,7 +336,7 @@ assert.equal(staticHealth.provider, 'cloudbase-static');
 assert.equal(staticHealth.providerConfigured, false);
 assert.equal(staticHealth.hasApiKey, false);
 assert.equal(staticHealth.requestTimeoutMs, 30000);
-assert.equal(staticHealth.fallbackProvider, 'cloudbase-static-fallback');
+assert.equal(staticHealth.fallbackProvider, 'none');
 
 const deepseekHealth = await loadInterpretDream({
   INTERPRET_PROVIDER: 'deepseek',
@@ -357,94 +373,10 @@ const staticInterpretation = await loadInterpretDream({}).main({
   profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛', gender: 'male' },
   cardIndex: 3,
 });
-assert.equal(staticInterpretation.ok, true);
-assert.equal(staticInterpretation.provider, 'cloudbase-static');
-assert.equal((staticInterpretation.result as Record<string, unknown>).card_no, 'NO. 003');
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.available, true);
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.precision, 'true_solar_time');
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.location.name, '青岛');
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.calculationVersion, 'bazi-v0.6-engine');
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.birthGender, 'male');
-assert.ok(Array.isArray((staticInterpretation.result as Record<string, any>).bazi_chart.chartProfile.pillarDetails));
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.chartProfile.pillarDetails.length, 4);
-assert.ok((staticInterpretation.result as Record<string, any>).bazi_chart.chartProfile.elementCounts);
-assert.ok(Array.isArray((staticInterpretation.result as Record<string, any>).bazi_chart.chartProfile.hiddenStems.year));
-assert.ok((staticInterpretation.result as Record<string, any>).bazi_chart.chartProfile.strengthEvidence);
-assert.ok(Array.isArray((staticInterpretation.result as Record<string, any>).bazi_chart.chartProfile.pillarDetails[0].hiddenTenGods));
-assert.ok((staticInterpretation.result as Record<string, any>).bazi_chart.chartDetails);
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.chartDetails.naYin.year, '城头土');
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.chartDetails.diShi.time, '冠带');
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.chartDetails.lifePalaces.mingGong, '壬申');
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.chartDetails.luckCycles.gender, 'male');
-assert.equal((staticInterpretation.result as Record<string, any>).bazi_chart.chartDetails.luckCycles.cycles[0].ganZhi, '丙寅');
-assert.match(String((staticInterpretation.result as Record<string, unknown>).metaphysical_resonance || ''), /这次梦调动|出生节律/);
-const metaphysicalReading = (staticInterpretation.result as Record<string, any>).metaphysical_reading;
-assert.ok(metaphysicalReading.temperament.length > 20);
-assert.ok(metaphysicalReading.dream_echo.length > 20);
-assert.ok(metaphysicalReading.tension.length > 20);
-assert.ok(metaphysicalReading.rhythm.length > 20);
-assert.ok(metaphysicalReading.basis.length > 20);
-assert.match(String((staticInterpretation.result as Record<string, unknown>).cultural_symbolism || ''), /文化象征/);
-assert.match(String((staticInterpretation.result as Record<string, unknown>).underneath || ''), /这次梦/);
-assert.notEqual(
-  String((staticInterpretation.result as Record<string, unknown>).cultural_symbolism || ''),
-  String((staticInterpretation.result as Record<string, unknown>).underneath || '')
-);
-assert.doesNotMatch(
-  String((staticInterpretation.result as Record<string, unknown>).metaphysical_resonance || ''),
-  /四柱|八字|日主|五行|排盘|命盘|命理|命格|运势|吉凶/
-);
-
-const rainDesertInterpretation = await loadInterpretDream({}).main({
-  dreamText: '我梦见沙漠里开始下暴雨',
-  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
-  cardIndex: 4,
-});
-const rainDesertResult = rainDesertInterpretation.result as Record<string, any>;
-assert.ok(rainDesertResult.symbols.includes('暴雨'));
-assert.ok(rainDesertResult.symbols.includes('沙漠'));
-assert.ok(!rainDesertResult.symbols.includes('清水'));
-assert.ok(rainDesertResult.dream_facts.places.includes('沙漠'));
-assert.ok(rainDesertResult.dream_facts.objects.includes('暴雨'));
-const rainDesertText = JSON.stringify({
-  dream_translation: rainDesertResult.dream_translation,
-  reading_hook: rainDesertResult.reading_hook,
-  underneath: rainDesertResult.underneath,
-  cultural_symbolism: rainDesertResult.cultural_symbolism,
-  metaphysical_reading: rainDesertResult.metaphysical_reading,
-});
-assert.doesNotMatch(rainDesertText, /清水|另一个细节|第二个人/);
-const rainPsychological = String(rainDesertResult.underneath || '');
-assert.match(rainPsychological, /沙漠/);
-assert.match(rainPsychological, /暴雨/);
-assert.match(rainPsychological, /可能|也许|如果|是否/);
-assert.match(rainPsychological, /工作|关系|创作|资源|压力|承担/);
-assert.ok(Array.isArray(rainDesertResult.possible_connections));
-assert.ok(rainDesertResult.possible_connections.length >= 2);
-rainDesertResult.possible_connections.forEach((connection: unknown) => {
-  const text = String(connection || '');
-  assert.match(text, /沙漠|暴雨/);
-  assert.match(text, /工作|关系|创作|资源|压力|边界|承担/);
-});
-assert.match(String(rainDesertResult.one_small_act || ''), /列出|写下|标记|处理/);
-const rainMetaphysical = rainDesertResult.metaphysical_reading;
-assert.match(String(rainMetaphysical.temperament || ''), /出生节律|调动|承受边界/);
-assert.match(String(rainMetaphysical.dream_echo || ''), /沙漠/);
-assert.match(String(rainMetaphysical.dream_echo || ''), /暴雨/);
-assert.match(String(rainMetaphysical.tension || ''), /沙漠/);
-assert.match(String(rainMetaphysical.tension || ''), /暴雨/);
-assert.match(String(rainMetaphysical.tension || ''), /承接|挡|边界|阈值|决定/);
-assert.match(String(rainMetaphysical.rhythm || ''), /沙漠|暴雨/);
-assert.match(String(rainMetaphysical.rhythm || ''), /列|处理|承接|拒绝/);
-
-const peachInterpretation = await loadInterpretDream({}).main({
-  dreamText: '我梦见西红柿里爆出了一颗水蜜桃',
-  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
-  cardIndex: 6,
-});
-const peachResult = peachInterpretation.result as Record<string, any>;
-assert.ok(!peachResult.symbols.includes('清水'));
-assert.doesNotMatch(JSON.stringify(peachResult), /清水|水面|水意象|水的意象/);
+assert.equal(staticInterpretation.ok, false);
+assert.equal(staticInterpretation.reason, 'ai_provider_error');
+assert.equal(staticInterpretation.retryable, true);
+assert.equal(Object.prototype.hasOwnProperty.call(staticInterpretation, 'result'), false);
 
 const exposedInterpretDream = loadInterpretDream({}, true);
 const normalizeGroundedSymbols = exposedInterpretDream.normalizeGroundedSymbols;
@@ -453,25 +385,62 @@ assert.deepEqual(
   normalizeGroundedSymbols(['水蜜桃'], '我梦见西红柿里爆出了一颗水蜜桃', ['清水']),
   ['水蜜桃']
 );
-assert.deepEqual(
-  normalizeGroundedSymbols(undefined, '我梦见自己站在水里，看着河水涨起', ['清水']),
-  ['清水']
+assert.equal(
+  normalizeGroundedSymbols(['清水'], '我梦见自己站在水里，看着河水涨起', ['清水']).length,
+  0
 );
-for (const falseWaterText of ['我去了上海', '墙上挂着海报', '我在看海报', '河马跑过河南']) {
-  assert.ok(!normalizeGroundedSymbols(['清水'], falseWaterText, ['未命名场景']).includes('清水'));
-}
 
 const normalizeAiResult = exposedInterpretDream.normalizeAiResult;
 assert.ok(normalizeAiResult);
-const modelFirstPeach = normalizeAiResult(
-  {
-    symbols: ['西红柿', '水蜜桃'],
-    card_theme_label: '未命名场景',
-    dream_facts: {
-      objects: ['西红柿', '水蜜桃'],
-      actions: ['爆出'],
-    },
+const validateAiSemanticPayload = exposedInterpretDream.validateAiSemanticPayload;
+assert.ok(validateAiSemanticPayload);
+assert.throws(
+  () => validateAiSemanticPayload({}, '我梦见西红柿里爆出了一颗水蜜桃', null),
+  /missing semantic fields/
+);
+const completeModelPayload = {
+  title: '桃心',
+  card_theme: 'shadow',
+  card_theme_label: '西红柿',
+  emotional_weather: '惊讶里带着一点好奇。',
+  oracle: '先确认这次变化对你意味着什么，不急着把它定性。',
+  card_insight: '西红柿里突然出现水蜜桃，让熟悉事物发生了意外变化。',
+  dream_translation: '你看见西红柿里爆出一颗水蜜桃，画面停在变化发生的一刻。',
+  reading_hook: '西红柿的外壳与水蜜桃的出现形成了清楚转折。',
+  cultural_symbolism: '西红柿与水蜜桃在这里构成一组关于果实变化的共同意象。',
+  underneath: '西红柿里出现水蜜桃，也许对应工作中某件熟悉事情突然显露不同结果。',
+  possible_connections: [
+    '西红柿里出现水蜜桃，可能对应工作中熟悉流程出现意外结果。',
+    '西红柿与水蜜桃的变化也可能与最近一个项目方向的调整有关。'
+  ],
+  mirror: '熟悉外表里出现了不同内容。',
+  alternative_reading: '这也可能只是两种水果在梦里的偶然组合。',
+  integration_question: '最近哪件熟悉的事出现了意外结果？',
+  one_small_act: '记下一次意外变化',
+  image: '西红柿裂开，露出一颗水蜜桃。',
+  image_prompt: 'A tomato opens to reveal a peach.',
+  visual_plan: {
+    main_event: '西红柿里爆出水蜜桃',
+    setting: '梦中画面'
   },
+  dream_facts: {
+    objects: ['西红柿', '水蜜桃'],
+    actions: ['爆出']
+  },
+  symbols: ['西红柿', '水蜜桃'],
+  echo: '先看看变化本身。',
+  omens: {
+    lucky_color_name: '桃红',
+    reason: '对应梦里突然出现的水蜜桃。'
+  }
+};
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  completeModelPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  null
+));
+const modelFirstPeach = normalizeAiResult(
+  completeModelPayload,
   '我梦见西红柿里爆出了一颗水蜜桃',
   {},
   6,
@@ -484,61 +453,19 @@ assert.deepEqual(modelFirstPeach.symbols, ['西红柿', '水蜜桃']);
 assert.equal(modelFirstPeach.card_theme_label, '西红柿');
 assert.doesNotMatch(JSON.stringify(modelFirstPeach), /未命名场景|清水|水面|水意象|水的意象/);
 
-const waterBodyInterpretation = await loadInterpretDream({}).main({
-  dreamText: '我梦见自己站在水里，看着河水涨起',
-  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
-  cardIndex: 7,
+const buildBaziChart = exposedInterpretDream.buildBaziChart;
+assert.ok(buildBaziChart);
+const baziChart = buildBaziChart({
+  nickname: 'Runtu',
+  birthDate: '1998-01-01',
+  birthTime: '08:30',
+  birthPlace: '青岛',
+  gender: 'male',
 });
-assert.ok((waterBodyInterpretation.result as Record<string, any>).symbols.includes('清水'));
-for (const explicitWaterText of ['我梦见一座水库', '我打了一桶井水', '浴缸里装满了水']) {
-  const explicitWaterInterpretation = await loadInterpretDream({}).main({
-    dreamText: explicitWaterText,
-    profile: {},
-    cardIndex: 8,
-  });
-  assert.ok((explicitWaterInterpretation.result as Record<string, any>).symbols.includes('清水'));
-}
-
-const snowRoseInterpretation = await loadInterpretDream({}).main({
-  dreamText: '我梦见沙漠里开始下暴雪，然后沙地里长出了玫瑰花',
-  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
-  cardIndex: 5,
-});
-const snowRoseResult = snowRoseInterpretation.result as Record<string, any>;
-assert.ok(snowRoseResult.symbols.includes('沙漠'));
-assert.ok(snowRoseResult.symbols.includes('暴雪'));
-assert.ok(snowRoseResult.symbols.includes('玫瑰'));
-assert.ok(snowRoseResult.dream_facts.places.includes('沙漠'));
-assert.ok(snowRoseResult.dream_facts.objects.includes('暴雪'));
-assert.ok(snowRoseResult.dream_facts.objects.includes('玫瑰花'));
-assert.ok(snowRoseResult.dream_facts.actions.some((item: string) => /下暴雪/.test(item)));
-assert.ok(snowRoseResult.dream_facts.transitions.some((item: string) => /暴雪/.test(item) && /长出|玫瑰/.test(item)));
-const snowRoseText = JSON.stringify({
-  dream_translation: snowRoseResult.dream_translation,
-  reading_hook: snowRoseResult.reading_hook,
-  underneath: snowRoseResult.underneath,
-  cultural_symbolism: snowRoseResult.cultural_symbolism,
-  metaphysical_reading: snowRoseResult.metaphysical_reading,
-});
-assert.match(snowRoseText, /沙漠/);
-assert.match(snowRoseText, /暴雪/);
-assert.match(snowRoseText, /玫瑰/);
-assert.doesNotMatch(String(snowRoseResult.underneath || ''), /只留下一个清晰的落点/);
-assert.doesNotMatch(String(snowRoseResult.cultural_symbolism || ''), /各自代表什么/);
-assert.match(String(snowRoseResult.metaphysical_reading.dream_echo || ''), /沙漠/);
-assert.match(String(snowRoseResult.metaphysical_reading.dream_echo || ''), /暴雪/);
-assert.match(String(snowRoseResult.metaphysical_reading.dream_echo || ''), /玫瑰/);
-assert.match(String(snowRoseResult.metaphysical_reading.rhythm || ''), /工作|关系|创作|验证/);
-
-const missingProfileInterpretation = await loadInterpretDream({}).main({
-  dreamText: '我梦见在月光下的图书馆找到一把银色钥匙',
-  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30' },
-  cardIndex: 3,
-});
-assert.equal(missingProfileInterpretation.ok, true);
-assert.equal((missingProfileInterpretation.result as Record<string, any>).bazi_chart.available, false);
-assert.equal(String((missingProfileInterpretation.result as Record<string, unknown>).metaphysical_resonance || ''), '');
-assert.equal(String((missingProfileInterpretation.result as Record<string, unknown>).metaphysical_basis || ''), '');
+assert.equal(baziChart.available, true);
+assert.equal(baziChart.precision, 'true_solar_time');
+assert.equal(baziChart.location.name, '青岛');
+assert.equal(baziChart.calculationVersion, 'bazi-v0.6-engine');
 
 const staticDreamChat = await loadInterpretDream({}).main({
   chatAboutDream: true,
@@ -551,10 +478,9 @@ const staticDreamChat = await loadInterpretDream({}).main({
   messages: [],
   userMessage: '我最近确实很怕赶不上期限。',
 });
-assert.equal(staticDreamChat.ok, true);
-assert.equal(staticDreamChat.provider, 'cloudbase-static');
-assert.equal(staticDreamChat.fallback, true);
-assert.match(String(staticDreamChat.reply || ''), /学校/);
+assert.equal(staticDreamChat.ok, false);
+assert.equal(staticDreamChat.reason, 'ai_provider_unavailable');
+assert.equal(staticDreamChat.retryable, true);
 
 const missingKeyFallback = await loadInterpretDream({
   INTERPRET_PROVIDER: 'deepseek',
@@ -563,21 +489,11 @@ const missingKeyFallback = await loadInterpretDream({
   profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
   cardIndex: 4,
 });
-assert.equal(missingKeyFallback.ok, true);
-assert.equal(missingKeyFallback.provider, 'cloudbase-static-fallback');
+assert.equal(missingKeyFallback.ok, false);
+assert.equal(missingKeyFallback.reason, 'ai_provider_error');
+assert.equal(missingKeyFallback.retryable, true);
 assert.match(String(missingKeyFallback.provider_error || ''), /Missing API key/);
-assert.equal((missingKeyFallback.result as Record<string, unknown>).card_no, 'NO. 004');
-
-const strictMissingKey = await loadInterpretDream({
-  INTERPRET_PROVIDER: 'deepseek',
-  INTERPRET_STRICT_AI: '1',
-}).main({
-  dreamText: '我梦见在月光下的图书馆找到一把银色钥匙',
-  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
-  cardIndex: 5,
-});
-assert.equal(strictMissingKey.ok, false);
-assert.equal(strictMissingKey.reason, 'ai_provider_error');
+assert.equal(Object.prototype.hasOwnProperty.call(missingKeyFallback, 'result'), false);
 
 const safetyBlock = await loadInterpretDream({
   INTERPRET_PROVIDER: 'deepseek',

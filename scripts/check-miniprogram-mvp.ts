@@ -59,24 +59,6 @@ type AcceptanceModule = {
   };
 };
 
-type LocalOracleModule = {
-  buildLocalDreamResult: (
-    baseResult: AcceptanceModule['acceptanceDreamResult'],
-    dreamText: string
-  ) => AcceptanceModule['acceptanceDreamResult'] & {
-    card_theme: string;
-    card_theme_label: string;
-    card_insight: string;
-    emotional_weather: string;
-    dream_translation: string;
-    underneath: string;
-    mirror: string;
-    integration_question: string;
-    one_small_act: string;
-    oracle: string;
-  };
-};
-
 type DreamArtifactsModule = {
   computeArchetype: (archive: unknown[]) => {
     eligible: boolean;
@@ -116,7 +98,7 @@ type CanvasFrameModule = {
 
 type ProfileOracleModule = {
   personalizeDreamResult: (
-    result: ReturnType<LocalOracleModule['buildLocalDreamResult']>,
+    result: Record<string, any>,
     profile: {
       nickname: string;
       birthDate: string;
@@ -124,7 +106,7 @@ type ProfileOracleModule = {
       birthPlace?: string;
     },
     index: number
-  ) => ReturnType<LocalOracleModule['buildLocalDreamResult']> & {
+  ) => Record<string, any> & {
     card_no: string;
     profile_summary: string;
     metaphysical_resonance: string;
@@ -222,6 +204,7 @@ type WxMock = {
   cloudCalls: Array<Record<string, any>>;
   cloudUploads: Array<Record<string, any>>;
   blockNextInterpret: boolean;
+  failNextInterpret: boolean;
   failNextPortraitToggle: boolean;
   failNextPortraitSave: boolean;
   profilePortraitSummary: string;
@@ -290,6 +273,7 @@ function createWxMock(): WxMock {
     cloudCalls: [],
     cloudUploads: [],
     blockNextInterpret: false,
+    failNextInterpret: false,
     failNextPortraitToggle: false,
     failNextPortraitSave: false,
     profilePortraitSummary: '近期梦境反复出现学校、追逐与期限感。',
@@ -459,8 +443,7 @@ function createWxMock(): WxMock {
               model: 'mock-model',
               baseUrlHost: 'mock.example.com',
               requestTimeoutMs: 30000,
-              strictAi: false,
-              fallbackProvider: 'cloudbase-static-fallback',
+              fallbackProvider: 'none',
             },
           });
           return;
@@ -473,6 +456,19 @@ function createWxMock(): WxMock {
               blocked: true,
               reason: 'self_harm',
               message: '这个梦里有很重的痛感。请先联系身边可信任的人，或当地紧急支持；Oneiro 暂不解读这类内容。',
+            },
+          });
+          return;
+        }
+        if (wx.failNextInterpret) {
+          wx.failNextInterpret = false;
+          options.success({
+            result: {
+              ok: false,
+              provider: 'mock-cloud',
+              reason: 'ai_provider_error',
+              retryable: true,
+              provider_error: 'mock provider unavailable',
             },
           });
           return;
@@ -764,7 +760,6 @@ function loadPage(
 
 const acceptance = loadCommonJS<AcceptanceModule>('miniprogram/utils/acceptanceDream.js');
 const contentSafety = loadCommonJS<ContentSafetyModule>('miniprogram/utils/contentSafety.js');
-const localOracle = loadCommonJS<LocalOracleModule>('miniprogram/utils/localDreamOracle.js');
 const profileOracle = loadCommonJS<ProfileOracleModule>('miniprogram/utils/profileOracle.js');
 const dreamArtifacts = loadCommonJS<DreamArtifactsModule>('miniprogram/utils/dreamArtifacts.js');
 const dreamMemory = loadCommonJS<DreamMemoryModule>('miniprogram/utils/dreamMemory.js');
@@ -923,7 +918,6 @@ for (const [path, expected] of [
   ['miniprogram/pages/home/index.js', "validateDreamText"],
   ['miniprogram/pages/home/index.js', "interpretDream"],
   ['miniprogram/pages/home/index.js', "cloudResult.blocked"],
-  ['miniprogram/pages/home/index.js', "createLocalResult"],
   ['miniprogram/pages/home/index.js', "saveDream"],
   ['miniprogram/pages/home/index.js', "dream_saved_before_interpretation"],
   ['miniprogram/pages/home/index.js', "dream_submit"],
@@ -931,7 +925,7 @@ for (const [path, expected] of [
   ['miniprogram/pages/home/index.js', "interpretationProvider"],
   ['miniprogram/pages/home/index.js', "provider: provider"],
   ['miniprogram/pages/home/index.js', "wx.showModal"],
-  ['miniprogram/pages/home/index.js', "buildLocalDreamResult"],
+  ['miniprogram/pages/home/index.js', "interpretation_failed"],
   ['miniprogram/pages/home/index.js', "pages/result/index?id="],
   ['miniprogram/pages/home/index.js', "dream_start"],
   ['miniprogram/pages/home/index.js', "share_landing_view"],
@@ -945,10 +939,12 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.js', "generated_image_load_fail"],
   ['miniprogram/pages/result/index.js', "imageErrorMessage"],
   ['miniprogram/pages/result/index.js', "retryDreamImage"],
+  ['miniprogram/pages/result/index.js', "retryInterpretation"],
   ['miniprogram/pages/result/index.js', "dream_chat_open"],
   ['miniprogram/pages/result/index.js', "dream_refine_success"],
   ['miniprogram/pages/result/index.js', "dream_deleted"],
   ['miniprogram/pages/result/index.wxml', "重新生成画面"],
+  ['miniprogram/pages/result/index.wxml', "重新解读"],
   ['miniprogram/pages/result/index.js', "result_view"],
   ['miniprogram/pages/result/index.js', "image_success"],
   ['miniprogram/pages/result/index.js', "export_success"],
@@ -999,8 +995,8 @@ for (const [path, expected] of [
   ['miniprogram/cloudfunctions/interpretDream/index.js', "DEEPSEEK_API_KEY"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "OPENAI_COMPATIBLE_API_KEY"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "response_format"],
-  ['miniprogram/cloudfunctions/interpretDream/index.js', "cloudbase-static-fallback"],
-  ['miniprogram/cloudfunctions/interpretDream/index.js', "INTERPRET_STRICT_AI"],
+  ['miniprogram/cloudfunctions/interpretDream/index.js', "fallbackProvider: 'none'"],
+  ['miniprogram/cloudfunctions/interpretDream/index.js', "retryable: true"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "normalizeAiResult"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "healthCheck"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "providerConfigured"],
@@ -1046,29 +1042,19 @@ assert.equal(contentSafety.validateDreamText('我梦见自己不想活了').safe
 assert.equal(contentSafety.validateDreamText('我梦见医生给我诊断癌症').safe, false);
 assert.equal(read('miniprogram/cloudfunctions/interpretDream/index.js').includes('profile.confirmedPortrait.themes'), false);
 assert.equal(read('miniprogram/cloudfunctions/interpretDream/index.js').includes('profile.confirmedPortrait.traits'), false);
+assertNotIncludes('miniprogram/pages/home/index.js', 'localDreamOracle');
+assertNotIncludes('miniprogram/pages/home/index.js', 'buildLocalDreamResult');
+assertNotIncludes('miniprogram/pages/home/index.js', 'createLocalResult');
+assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'cloudbase-static-fallback');
+assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'INTERPRET_STRICT_AI');
 
-const chaseDream = localOracle.buildLocalDreamResult(
-  acceptance.acceptanceDreamResult,
-  '我梦见自己在学校考试迟到，被一个黑影追着跑，怎么也找不到出口。'
-);
-const homeDream = localOracle.buildLocalDreamResult(
-  acceptance.acceptanceDreamResult,
-  '我回到老家的厨房，外面一直下雨，妈妈站在门口等我。'
-);
-const peachDream = localOracle.buildLocalDreamResult(
-  acceptance.acceptanceDreamResult,
-  '我梦见西红柿里爆出了一颗水蜜桃。'
-);
-const waterBodyDream = localOracle.buildLocalDreamResult(
-  acceptance.acceptanceDreamResult,
-  '我梦见自己站在水里，看着河水涨起。'
-);
-const falseWaterDreams = ['我去了上海。', '墙上挂着海报。', '我在看海报。', '河马跑过河南。'].map((dreamText) =>
-  localOracle.buildLocalDreamResult(acceptance.acceptanceDreamResult, dreamText)
-);
-const explicitWaterDreams = ['我梦见一座水库。', '我打了一桶井水。', '浴缸里装满了水。'].map((dreamText) =>
-  localOracle.buildLocalDreamResult(acceptance.acceptanceDreamResult, dreamText)
-);
+const modelDreamFixture = Object.assign({}, acceptance.acceptanceDreamResult, {
+  title: '云影',
+  card_theme: 'shadow',
+  card_theme_label: '追逐',
+  symbols: ['追逐', '学校', '门'],
+  dream_translation: '我梦见自己在学校考试迟到，被一个黑影追着跑，怎么也找不到出口。',
+});
 
 const memoryFixture = [1, 2, 3].map((index) => ({
   id: `memory-${index}`,
@@ -1094,27 +1080,8 @@ assert.equal(portraitDraft.version, 2);
 assert.ok(portraitDraft.summary.includes('学校'));
 assert.equal(portraitDraft.sourceRefs.length, 3);
 
-assert.notEqual(chaseDream.title, acceptance.acceptanceDreamResult.title);
-assert.notEqual(homeDream.title, acceptance.acceptanceDreamResult.title);
-assert.notDeepEqual(chaseDream.symbols, homeDream.symbols);
-assert.notEqual(chaseDream.card_theme, homeDream.card_theme);
-assert.equal(chaseDream.card_theme, 'shadow');
-assert.equal(homeDream.card_theme, 'tide');
-assert.equal(chaseDream.card_theme_label, '追逐');
-assert.ok(chaseDream.symbols.includes('追逐'));
-assert.ok(chaseDream.symbols.includes('学校'));
-assert.ok(homeDream.symbols.includes('暴雨'));
-assert.ok(!homeDream.symbols.includes('清水'));
-assert.ok(homeDream.symbols.includes('家屋'));
-assert.ok(!peachDream.symbols.includes('清水'));
-assert.ok(waterBodyDream.symbols.includes('清水'));
-assert.ok(falseWaterDreams.every((dream) => !dream.symbols.includes('清水')));
-assert.ok(explicitWaterDreams.every((dream) => dream.symbols.includes('清水')));
-assert.ok(chaseDream.dream_translation.includes('学校考试迟到'));
-assert.ok(homeDream.dream_translation.includes('老家的厨房'));
-
 const personalized = profileOracle.personalizeDreamResult(
-  chaseDream,
+  modelDreamFixture,
   {
     nickname: 'Runtu',
     birthDate: '1998-01-01',
@@ -1192,7 +1159,6 @@ const pageModules = {
   '../../utils/analytics': analytics,
   '../../utils/cloudBase': cloudBase,
   '../../utils/contentSafety': contentSafety,
-  '../../utils/localDreamOracle': localOracle,
   '../../utils/profileOracle': profileOracle,
   '../../utils/dreamArtifacts': dreamArtifacts,
   '../../utils/dreamMemory': dreamMemory,
@@ -1314,6 +1280,49 @@ const archiveAfterBlockedDream = wx.storage['oneiro:dreamArchive'] as unknown as
 assert.equal(archiveAfterBlockedDream.length, 1);
 assert.equal(archiveAfterBlockedDream[0].status, 'blocked');
 assert.ok(archiveAfterBlockedDream[0].dreamText.includes('安静的湖'));
+wx.failNextInterpret = true;
+newDreamPage.onDreamInput({
+  detail: { value: '我梦见一盏灯在空房间里忽明忽暗。' },
+});
+newDreamPage.generateDreamCard();
+const archiveAfterProviderError = wx.storage['oneiro:dreamArchive'] as unknown as Array<Record<string, any>>;
+const providerErrorDream = archiveAfterProviderError.find((dream) => dream.dreamText.includes('空房间'));
+assert.ok(providerErrorDream);
+assert.equal(providerErrorDream.status, 'pending');
+assert.equal(providerErrorDream.result, null);
+assert.equal(providerErrorDream.interpretationError, 'ai_provider_error');
+
+const pendingResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+pendingResultPage.onLoad({ id: providerErrorDream.id });
+assert.equal(pendingResultPage.data.interpretationUnavailable, true);
+assert.equal(pendingResultPage.data.dream.result.title, '尚未解读');
+assert.equal(pendingResultPage.pendingInterpretationDream.result, null);
+assert.equal(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === providerErrorDream.id)?.result,
+  null
+);
+wx.failNextInterpret = true;
+pendingResultPage.retryInterpretation();
+assert.equal(pendingResultPage.data.retryingInterpretation, false);
+assert.equal(pendingResultPage.pendingInterpretationDream.result, null);
+assert.equal(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === providerErrorDream.id)?.result,
+  null
+);
+assert.equal(
+  last(wx.cloudCalls.filter((call) => call.name === 'saveDream')).data.dream.result,
+  null
+);
+pendingResultPage.retryInterpretation();
+assert.equal(pendingResultPage.data.retryingInterpretation, false);
+assert.equal(pendingResultPage.data.interpretationUnavailable, false);
+assert.equal(pendingResultPage.pendingInterpretationDream, null);
+assert.equal(pendingResultPage.data.dream.status, 'ready');
+assert.equal(pendingResultPage.data.dream.result.title, '云影');
+assert.equal(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === providerErrorDream.id)?.result?.title,
+  '云影'
+);
 newDreamPage.onDreamInput({
   detail: { value: '我梦见自己在学校考试迟到，被一个黑影追着跑，怎么也找不到出口。' },
 });
@@ -1321,7 +1330,7 @@ newDreamPage.generateDreamCard();
 
 const archiveAfterDream = wx.storage['oneiro:dreamArchive'] as unknown as Array<Record<string, any>>;
 assert.ok(Array.isArray(archiveAfterDream));
-assert.equal(archiveAfterDream.length, 2);
+assert.equal(archiveAfterDream.length, 3);
 assert.ok(app.globalData.currentDream);
 assert.ok(last(wx.navigations).startsWith('/pages/result/index?id='));
 assert.ok(archiveAfterDream[0].result.symbols.includes('追逐'));
@@ -1506,7 +1515,7 @@ assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data.ac
 wx.storage['oneiro:dreamArchive'] = [
   {
     dreamText: '旧梦',
-    result: chaseDream,
+    result: modelDreamFixture,
   },
 ];
 const archivePage = loadPage('miniprogram/pages/archive/index.js', pageModules, wx, app);

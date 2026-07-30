@@ -71,7 +71,8 @@
 
     <!-- 未生成解读时直接说明，不藏在折叠里 -->
     <view wx:if="{{interpretationUnavailable}}" class="reading-block">
-      <text class="reading-copy">本次未生成解读，原梦仍已保存。你可以保留记录，或直接删除。</text>
+      <text class="reading-copy">本次未生成解读，原梦仍已保存。语义识别只由云端大模型完成，不使用本地关键词替代。</text>
+      <button class="image-retry" loading="{{retryingInterpretation}}" disabled="{{retryingInterpretation}}" bindtap="retryInterpretation">重新解读</button>
     </view>
 
     <!-- 第二层：三个视角，设计稿里没有分组标题，三个 block 直接平铺 -->

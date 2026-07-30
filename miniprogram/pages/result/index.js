@@ -1,7 +1,6 @@
 const { acceptanceDreamResult, acceptanceDreamText } = require('../../utils/acceptanceDream');
 const analytics = require('../../utils/analytics');
 const cloudBase = require('../../utils/cloudBase');
-const { buildLocalDreamResult } = require('../../utils/localDreamOracle');
 var tabNav = require('../../utils/tabNav');
 
 var CARD_WIDTH = 900;
@@ -121,6 +120,16 @@ function persistLocalDream(dream) {
   wx.setStorageSync('oneiro:dreamArchive', archive.map(function (item) {
     return item.id === dream.id ? dream : item;
   }));
+}
+
+function cardIndexForDream(dream) {
+  var archive = (wx.getStorageSync('oneiro:dreamArchive') || []).slice().sort(function (a, b) {
+    return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+  });
+  var index = archive.findIndex(function (item) {
+    return item && dream && item.id === dream.id;
+  });
+  return index >= 0 ? index + 1 : 1;
 }
 
 function scrubLocalPortraitSource(dreamId) {
@@ -503,6 +512,7 @@ Page({
     showMoreActions: false,
     possibleConnections: [],
     interpretationUnavailable: true,
+    retryingInterpretation: false,
     refineAnswer: '',
     refining: false,
     dream: {
@@ -540,7 +550,7 @@ Page({
       dream = {
         dreamText: acceptanceDreamText,
         profile: wx.getStorageSync('oneiro:lastProfile') || app.globalData.lastProfile,
-        result: buildLocalDreamResult(acceptanceDreamResult, acceptanceDreamText),
+        result: JSON.parse(JSON.stringify(acceptanceDreamResult)),
         createdAt: new Date().toISOString()
       };
     } else {
@@ -552,9 +562,13 @@ Page({
       return;
     }
 
-    var interpretationUnavailable = !dream.result;
+    var interpretationUnavailable = dream.status !== 'ready' ||
+      !dream.result ||
+      typeof dream.result !== 'object' ||
+      !Object.keys(dream.result).length;
     if (interpretationUnavailable) {
-      dream.result = {
+      this.pendingInterpretationDream = dream;
+      dream = Object.assign({}, dream, { result: {
         title: '尚未解读',
         card_no: '',
         card_theme: 'mist',
@@ -564,7 +578,9 @@ Page({
         possible_connections: [],
         mirror: '',
         integration_question: ''
-      };
+      } });
+    } else {
+      this.pendingInterpretationDream = null;
     }
     var displayTimestamp = dream.createdAt
       ? formatCardTimestamp(new Date(dream.createdAt))
@@ -631,6 +647,74 @@ Page({
     this.redirectingHome = true;
     this.setData({ entryReady: false });
     tabNav.switchTab('pages/home/index');
+  },
+
+  retryInterpretation: function () {
+    var that = this;
+    var dream = this.pendingInterpretationDream || this.data.dream;
+    var app = getApp();
+    var profile;
+    var cardIndex;
+
+    if (this.data.retryingInterpretation || !dream || !dream.dreamText) return;
+    profile = wx.getStorageSync('oneiro:lastProfile') || app.globalData.lastProfile || {};
+    cardIndex = cardIndexForDream(dream);
+    this.setData({ retryingInterpretation: true });
+
+    cloudBase.interpretDream(dream.dreamText, profile, cardIndex, function (cloudResult) {
+      if (!cloudResult || !cloudResult.ok || !cloudResult.result) {
+        dream.status = 'pending';
+        dream.result = null;
+        dream.interpretationError = String(
+          cloudResult && (cloudResult.reason || cloudResult.message) || 'ai_provider_error'
+        ).slice(0, 300);
+        dream.updatedAt = new Date().toISOString();
+        that.pendingInterpretationDream = dream;
+        persistLocalDream(dream);
+        cloudBase.saveDream(dream);
+        that.setData({ retryingInterpretation: false });
+        wx.showToast({ title: '解读暂不可用，请稍后再试', icon: 'none' });
+        analytics.trackEvent('interpretation_retry_failed', {
+          dreamId: dream.id || '',
+          reason: dream.interpretationError
+        });
+        return;
+      }
+
+      dream.status = 'ready';
+      dream.result = cloudResult.result;
+      dream.dreamFacts = cloudResult.result.dream_facts || {
+        people: [], places: [], objects: [], actions: [], transitions: [], emotions: [], time_sense: []
+      };
+      dream.interpretationSource = 'cloud';
+      dream.interpretationProvider = cloudResult.provider || 'cloud';
+      dream.interpretationError = '';
+      dream.interpretationMeta = {
+        schemaVersion: cloudResult.schemaVersion || 'dream-entry-v0.2',
+        promptVersion: cloudResult.promptVersion || '',
+        model: cloudResult.model || ''
+      };
+      dream.updatedAt = new Date().toISOString();
+      that.pendingInterpretationDream = null;
+      app.globalData.currentDream = dream;
+      persistLocalDream(dream);
+      cloudBase.saveDream(dream);
+      that.setData({
+        retryingInterpretation: false,
+        interpretationUnavailable: false,
+        dream: dream,
+        cardBackInsight: cardBackInsight(dream.result),
+        possibleConnections: Array.isArray(dream.result.possible_connections)
+          ? dream.result.possible_connections
+          : [dream.result.mirror].filter(Boolean),
+        imageQualityStatus: dream.result.image_quality_status || 'idle'
+      });
+      analytics.trackEvent('interpretation_retry_success', {
+        dreamId: dream.id || '',
+        provider: cloudResult.provider || ''
+      });
+      that.requestDreamImage();
+    });
   },
 
   restoreSavedDreamImage: function (dream) {

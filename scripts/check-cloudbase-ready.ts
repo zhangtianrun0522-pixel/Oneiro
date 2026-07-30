@@ -100,7 +100,6 @@ assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'image_generation_jobs');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'INTERPRET_PROVIDER');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'DEEPSEEK_API_KEY');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'OPENAI_COMPATIBLE_API_KEY');
-assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'cloudbase-static-fallback');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'healthCheck');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'providerConfigured');
 assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', 'OPENAI_IMAGE_API_KEY');

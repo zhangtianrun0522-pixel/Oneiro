@@ -91,7 +91,7 @@ OPENAI_COMPATIBLE_MODEL=<model-name>
 
 Compatibility aliases are also accepted for the OpenAI-compatible path: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, or `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`.
 
-Keep provider keys server-side in CloudBase only. Do not put them in Mini Program source files, `project.config.json`, or frontend storage. If the provider is unavailable, missing a key, times out, or returns malformed JSON, `interpretDream` returns `provider: cloudbase-static-fallback` with the same dream-card schema so the user flow does not break. Set `INTERPRET_STRICT_AI=1` only when you intentionally want provider failures to stop cloud interpretation and let the Mini Program local fallback take over.
+Keep provider keys server-side in CloudBase only. Do not put them in Mini Program source files, `project.config.json`, or frontend storage. Dream semantics are model-only: if the provider is unavailable, missing a key, times out, or returns malformed JSON, `interpretDream` returns a retryable error without `result`. The original dream remains saved, and the result page offers “重新解读”. No local keyword classifier generates substitute symbols or interpretations.
 
 The deployed `interpretDream` function now reports a 60-second timeout, safely above the configured 30-second provider request budget.
 
@@ -104,7 +104,7 @@ wx.cloud.callFunction({
 });
 ```
 
-The response intentionally does not expose secrets. It reports `provider`, `providerConfigured`, `hasApiKey`, `model`, `baseUrlHost`, `requestTimeoutMs`, `strictAi`, and `fallbackProvider`. Before real AI setup it should report `provider: cloudbase-static` and `providerConfigured: false`. After real AI setup it should report `provider: deepseek` or `provider: openai-compatible` and `providerConfigured: true`.
+The response intentionally does not expose secrets. It reports `provider`, `providerConfigured`, `hasApiKey`, `model`, `baseUrlHost`, `requestTimeoutMs`, and `fallbackProvider`. `fallbackProvider` is `none`. Before real AI setup it should report `provider: cloudbase-static` and `providerConfigured: false`; interpretation requests fail retryably rather than fabricating local results. After real AI setup it should report `provider: deepseek` or `provider: openai-compatible` and `providerConfigured: true`.
 
 ## Real AI Image Provider
 
@@ -205,7 +205,7 @@ Then list deployed functions:
 8. Navigate manually to `/pages/diagnostics/index` and confirm CloudBase health is `ok`; the default compile entry must remain `pages/home/index`.
 9. Call `interpretDream` with `{ healthCheck: true }` and confirm AI provider configuration. Before AI env setup it should show `provider: cloudbase-static` and `providerConfigured: false`; after setup it should show `provider: deepseek` or `provider: openai-compatible` and `providerConfigured: true`.
 10. After `providerConfigured: true`, tap `AI SMOKE TEST` once on the diagnostics page and confirm it returns `ok: true` with the real provider. This sends one provider request.
-11. Confirm `interpretDream` returns a result and blocks unsafe dream text. Latest verified provider before AI env setup: `cloudbase-static`. After configuring a real provider, confirm the returned provider is `deepseek` or `openai-compatible`; if it returns `cloudbase-static-fallback`, check the provider env vars and outbound network access.
+11. Confirm `interpretDream` returns a result and blocks unsafe dream text. Before AI env setup, confirm it returns a retryable `ai_provider_error` without `result`. After configuring a real provider, confirm the returned provider is `deepseek` or `openai-compatible`.
 12. Confirm `dream_entries` stores `dreamFacts`, `interpretationMeta`, and each submitted feedback value; then verify deletion removes only the current user's matching `localId`.
 13. Confirm result-page Canvas generation stays local until the user explicitly prepares sharing, and that `createShareCard` stores no client-provided file id.
 14. Confirm `createShareCard` writes to `share_pages`. Latest verified id: `8efe4ec36a2d157f00e7eb1f668ea360`.

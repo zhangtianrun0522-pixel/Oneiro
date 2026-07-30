@@ -11,9 +11,9 @@ const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 // Full grounded readings include the birth-rhythm context and a larger JSON
 // response. The previous 18s deadline regularly cut off otherwise healthy
-// requests, which then surfaced a generic static fallback to the user.
+// requests before the model response could be validated.
 const DEFAULT_TIMEOUT_MS = 30000;
-const PROMPT_VERSION = 'oneiro-grounded-reading-v0.8.0';
+const PROMPT_VERSION = 'oneiro-grounded-reading-v0.9.0';
 const SCHEMA_VERSION = 'dream-entry-v0.2';
 
 function effectiveTimeoutMs() {
@@ -87,9 +87,12 @@ const SYSTEM_PROMPT = [
   'JSON 字段必须包含：',
   '{',
   '  "title": "2-4字诗意梦卡标题",',
+  '  "card_theme": "shadow|falling|tide|hearth|archive|threshold|moon|mist 之一，由模型根据本梦选择",',
+  '  "card_theme_label": "直接取自梦境原文的一个主题短词",',
   '  "dream_facts": { "people": [], "places": [], "objects": [], "actions": [], "transitions": [], "emotions": [], "time_sense": [] },',
   '  "symbols": ["3-5个梦中核心象征短词"],',
   '  "emotional_weather": "一句话描述梦的情绪天气",',
+  '  "oracle": "一句克制的可能性提醒，不预测、不诊断",',
   '  "card_insight": "一句收藏卡摘要，必须引用一个梦中细节",',
   '  "dream_translation": "2-3句话复述梦中发生的事和情绪，不加推测",',
   '  "reading_hook": "一条有张力的观察：同时引用两个具体梦中细节，指出它们之间的矛盾或转折，禁止只写“压力很大”这类泛化句子",',
@@ -157,53 +160,9 @@ function buildInterpretationSystemPrompt(baziChart) {
   ].join('\n');
 }
 
-const symbolRules = [
-  { label: '暴雨', titleWord: '雨', theme: 'tide', keywords: ['暴雨', '大雨', '下暴雨', '下雨', '雨'], meaning: '暴雨把情绪从背景推到眼前，带来突然、密集而难以忽略的变化。' },
-  { label: '暴雪', titleWord: '雪', theme: 'tide', keywords: ['暴雪', '大雪', '下暴雪', '下大雪', '下雪', '飘雪', '雪'], meaning: '暴雪把视野、路径和原有秩序一起遮住，也让环境的变化变得无法忽略。' },
-  { label: '清水', titleWord: '潮', theme: 'tide', keywords: ['清水', '海', '河', '湖', '溪', '江', '池'], meaning: '水代表正在浮上来的情绪、直觉和记忆；只有原文明确出现水体时才使用这一标签。' },
-  { label: '沙漠', titleWord: '漠', theme: 'mist', keywords: ['沙漠', '荒漠', '沙丘'], meaning: '沙漠常把空旷、资源稀薄和等待变化的处境压缩成一幅画面。' },
-  { label: '玫瑰', titleWord: '花', theme: 'hearth', keywords: ['玫瑰花', '玫瑰', '花朵', '鲜花'], meaning: '玫瑰把美感、欲望、照料与刺痛放在同一朵花里；它从哪里出现，比花本身更重要。' },
-  { label: '门', titleWord: '门', theme: 'threshold', keywords: ['门', '入口', '出口', '房间', '走廊'], meaning: '门代表阶段转换，也代表你对未知选择的试探。' },
-  { label: '钥匙', titleWord: '钥', theme: 'threshold', keywords: ['钥匙', '锁', '密码'], meaning: '钥匙象征解决问题的线索，或你已经拥有但尚未使用的能力。' },
-  { label: '追逐', titleWord: '影', theme: 'shadow', keywords: ['追', '跑', '逃', '躲', '怪物'], meaning: '追逐常把压力、未处理的责任或被压住的愿望具象化。' },
-  { label: '坠落', titleWord: '坠', theme: 'falling', keywords: ['掉下', '坠落', '摔', '悬崖', '失重'], meaning: '坠落代表失控感，也可能是从旧支撑里脱落出来。' },
-  { label: '学校', titleWord: '课', theme: 'archive', keywords: ['学校', '考试', '老师', '同学', '作业'], meaning: '学校让评价感、表现压力和旧身份重新浮现。' },
-  { label: '家屋', titleWord: '屋', theme: 'hearth', keywords: ['家', '房子', '卧室', '厨房', '老家'], meaning: '家屋对应内在安全感、亲密关系和自我边界。' },
-  { label: '月光', titleWord: '月', theme: 'moon', keywords: ['月', '月亮', '月光', '夜晚', '星星'], meaning: '月光代表直觉、梦性和那些尚未被白天语言解释的感受。' },
-  { label: '鸟', titleWord: '羽', theme: 'moon', keywords: ['鸟', '飞', '翅膀', '羽毛'], meaning: '鸟象征表达、离开和更高视角。' },
-  { label: '图书馆', titleWord: '书', theme: 'archive', keywords: ['书', '图书馆', '书架', '文字'], meaning: '书与图书馆代表记忆、知识系统和正在被整理的答案。' }
-];
-
-const themePriority = {
-  shadow: 1,
-  falling: 2,
-  tide: 3,
-  hearth: 4,
-  archive: 5,
-  threshold: 6,
-  moon: 7,
-  mist: 8
-};
-
-const allowedThemes = Object.keys(themePriority);
+const allowedThemes = ['shadow', 'falling', 'tide', 'hearth', 'archive', 'threshold', 'moon', 'mist'];
 
 const db = cloud.database ? cloud.database() : null;
-
-const zodiacs = [
-  ['摩羯', '01-20'],
-  ['水瓶', '02-19'],
-  ['双鱼', '03-21'],
-  ['白羊', '04-20'],
-  ['金牛', '05-21'],
-  ['双子', '06-22'],
-  ['巨蟹', '07-23'],
-  ['狮子', '08-23'],
-  ['处女', '09-23'],
-  ['天秤', '10-24'],
-  ['天蝎', '11-23'],
-  ['射手', '12-22'],
-  ['摩羯', '12-32']
-];
 
 const highRiskPatterns = [
   {
@@ -256,114 +215,6 @@ function validateDreamText(value) {
   return { safe: true, reason: '', message: '' };
 }
 
-function containsAny(text, keywords) {
-  return keywords.some(function (keyword) {
-    return text.indexOf(keyword) !== -1;
-  });
-}
-
-const explicitWaterBodyPatterns = [
-  /清水|海水|海边|海里|海中|海面|海上|海底|海岸|海滩|海洋|河水|河里|河中|河面|河边|河上|河底|河岸|河流|河道|湖水|湖里|湖中|湖面|湖边|湖上|湖底|湖岸|湖畔|湖泊|溪水|溪流|小溪|江水|江里|江中|江面|江边|江上|江底|江岸|池塘|池水|水池|泳池|鱼池|池里|池中|池面|池边|泉水|井水|水井|瀑布|水库|水面|水中|水里|水下|积水|洪水|涨水|水位|水流|水渠|水沟|水塘|水湾|水岸|水边|水底|水草|水淹|水没|水漫|水退|水涨|热水|冷水|温水|开水/,
-  /(?:梦见|看见|望着|面对|走向|来到|站在|漂在|沉入|跃入|一片|一条|一座|无边的|辽阔的)(?:了)?(?:大)?(?:海|河|湖|江)(?:[，。！？、\s]|$)/,
-  /(?:大海|出海|入海|看海|望海|小河|大河|过河|长江|大江|过江)(?:[，。！？、\s]|$)/,
-  /(?:浴缸|杯子?|碗|盆|桶|水槽|地上|路上|屋里|房里)(?:里|中|内|上)?(?:装满|盛满|都是|有|积着|流着)?(?:了)?水(?:[，。！？、\s]|$)/
-];
-
-function matchExplicitWaterBody(text) {
-  const source = String(text || '');
-  let index;
-  for (index = 0; index < explicitWaterBodyPatterns.length; index += 1) {
-    const match = source.match(explicitWaterBodyPatterns[index]);
-    if (match) return match;
-  }
-  return null;
-}
-
-function hasExplicitWaterBody(text) {
-  return !!matchExplicitWaterBody(text);
-}
-
-function matchesSymbolRule(source, rule) {
-  return rule.label === '清水'
-    ? hasExplicitWaterBody(source)
-    : containsAny(source, rule.keywords);
-}
-
-function pickSymbols(text) {
-  const source = String(text || '');
-  const matches = symbolRules.map(function (rule, ruleIndex) {
-    const keywordMatch = rule.keywords.slice().sort(function (a, b) {
-      return b.length - a.length;
-    }).find(function (keyword) {
-      return source.indexOf(keyword) !== -1;
-    });
-    const waterBodyMatch = rule.label === '清水'
-      ? matchExplicitWaterBody(source)
-      : null;
-    const matchedKeyword = waterBodyMatch
-      ? waterBodyMatch[0]
-      : keywordMatch;
-    return matchedKeyword
-      ? Object.assign({}, rule, {
-          matchedKeyword: matchedKeyword,
-          matchedIndex: waterBodyMatch ? waterBodyMatch.index : source.indexOf(matchedKeyword),
-          ruleIndex: ruleIndex
-        })
-      : null;
-  }).filter(Boolean).sort(function (a, b) {
-    return a.matchedIndex - b.matchedIndex || b.matchedKeyword.length - a.matchedKeyword.length || a.ruleIndex - b.ruleIndex;
-  });
-
-  const uniqueMatches = [];
-  const seenLabels = {};
-  matches.forEach(function (match) {
-    if (!seenLabels[match.label]) {
-      seenLabels[match.label] = true;
-      uniqueMatches.push(match);
-    }
-  });
-
-  if (!uniqueMatches.length) {
-    uniqueMatches.push({
-      label: '未命名场景',
-      titleWord: '梦',
-      theme: 'mist',
-      meaning: '这个梦的重点不在具体物件，而在它留下的整体感受。'
-    });
-  }
-
-  return uniqueMatches.slice(0, 5);
-}
-
-function pickThemeSymbol(symbols) {
-  return symbols.slice().sort(function (a, b) {
-    return (themePriority[a.theme] || themePriority.mist) - (themePriority[b.theme] || themePriority.mist);
-  })[0];
-}
-
-function zodiacFor(birthDate) {
-  const parts = String(birthDate || '').split('-');
-  const monthDay = parts.length >= 3 ? parts[1] + '-' + parts[2] : '01-01';
-  let i;
-
-  for (i = 0; i < zodiacs.length; i += 1) {
-    if (monthDay < zodiacs[i][1]) {
-      return zodiacs[i][0];
-    }
-  }
-
-  return '摩羯';
-}
-
-function titleFor(symbols) {
-  return symbols.length >= 2 ? symbols[0].titleWord + symbols[1].titleWord : symbols[0].titleWord + '牌';
-}
-
-function compactDream(text) {
-  const cleaned = String(text || '').replace(/\s+/g, '');
-  return cleaned.length > 42 ? cleaned.slice(0, 42) + '...' : cleaned;
-}
-
 function asString(value, fallback, maxLength) {
   const limit = maxLength || 700;
   const text = typeof value === 'string' ? value.trim() : '';
@@ -394,22 +245,14 @@ function asStringArray(value, fallback, maxItems, maxLength) {
   return items.length ? items : fallback.slice(0, maxItems);
 }
 
-function normalizeGroundedSymbols(value, dreamText, fallback) {
+function normalizeGroundedSymbols(value, dreamText) {
   const source = String(dreamText || '');
-  const fallbackItems = Array.isArray(fallback) ? fallback : [];
-  const literalCandidates = [];
-  symbolRules.forEach(function (rule) {
-    if (matchesSymbolRule(source, rule) && literalCandidates.indexOf(rule.label) < 0) {
-      literalCandidates.push(rule.label);
-    }
-  });
   const items = Array.isArray(value) ? value.filter(function (item) {
     const candidate = String(item || '').trim();
     if (!candidate) return false;
-    return source.indexOf(candidate) !== -1 || fallbackItems.indexOf(candidate) !== -1 || literalCandidates.indexOf(candidate) !== -1;
+    return source.indexOf(candidate) !== -1;
   }) : [];
-  const normalized = asStringArray(items, [], 5, 32);
-  return normalized.length ? normalized : fallbackItems.slice(0, 5);
+  return asStringArray(items, [], 5, 32);
 }
 
 function repairDreamTerms(value, dreamText) {
@@ -417,92 +260,13 @@ function repairDreamTerms(value, dreamText) {
   let text = typeof value === 'string' ? value.trim() : '';
   if (!text) return '';
 
-  if (!hasExplicitWaterBody(source)) {
-    const replacement = source.includes('水蜜桃') ? '水蜜桃' : '梦中画面';
-    text = text.replace(/清水|水面|水意象|水的意象/g, replacement);
-  }
-
   if (!source.includes('另一个人')) {
     text = text.replace(/另一个人|第二个人|另一个细节/g, '这处梦中细节');
   }
   return text;
 }
 
-const literalVisualVocabulary = {
-  people: ['另一个我', '陌生人', '奶奶', '爷爷', '妈妈', '爸爸', '父亲', '母亲', '前任', '伴侣', '同事', '同学', '老师', '孩子', '黑影', '影子'],
-  places: ['废弃车站', '童年房间', '图书馆', '办公室', '橘子园', '果园', '车站', '月台', '站台', '学校', '教室', '走廊', '沙漠', '沙地', '森林', '房间', '厨房', '医院', '海边', '屋顶', '街道', '电梯', '桥', '海', '河', '湖', '山'],
-  objects: ['橘子树', '透明的鱼', '珊瑚灯', '童年窗户', '窗户', '铁轨', '暴雨', '暴雪', '大雨', '大雪', '雨', '雪', '玫瑰花', '玫瑰', '花朵', '鲜花', '橘子', '灯', '门', '钥匙', '箱子', '镜子', '手机', '鞋', '车', '船', '鱼', '鸟', '月亮', '太阳', '桌子', '杯子', '信']
-};
-
-function inferLiteralVisuals(dreamText) {
-  const text = String(dreamText || '');
-  const result = { people: [], places: [], objects: [] };
-
-  Object.keys(literalVisualVocabulary).forEach(function (key) {
-    const matches = literalVisualVocabulary[key].map(function (item) {
-      return { item: item, index: text.indexOf(item) };
-    }).filter(function (match) {
-      return match.index >= 0;
-    }).sort(function (a, b) {
-      return a.index - b.index || b.item.length - a.item.length;
-    });
-
-    matches.forEach(function (match) {
-      const covered = result[key].some(function (existing) {
-        return existing.indexOf(match.item) >= 0 || match.item.indexOf(existing) >= 0;
-      });
-      if (!covered && result[key].length < 6) result[key].push(match.item);
-    });
-  });
-
-  result.objects = result.objects.filter(function (item) {
-    return !result.places.some(function (place) {
-      return place !== item && place.indexOf(item) >= 0;
-    });
-  });
-
-  return result;
-}
-
-function inferRealityBreakingRule(dreamText) {
-  const transitions = inferDreamTransitions(dreamText);
-  if (transitions.length) return transitions[0];
-  return String(dreamText || '').split(/[。！？!?]/).map(function (item) {
-    return item.trim();
-  }).filter(Boolean).filter(function (item) {
-    return /通向|伸进|悬在|悬浮|漂浮|飞起来|没有脸|变成|另一个我|无限|不断变长|倒置|倒着|消失|天空下着|下暴雪|下大雪|长出|生长|开出|开花|绽放/.test(item);
-  })[0] || '';
-}
-
-function inferDreamTransitions(dreamText) {
-  return String(dreamText || '').split(/[。！？!?]/).map(function (item) {
-    return item.trim();
-  }).filter(function (item) {
-    if (!item) return false;
-    const hasWeatherChange = /下暴雪|下大雪|下雪|飘雪|暴雨|下雨|洪水|起雾/.test(item);
-    const hasAppearanceChange = /长出|生长|开出|开花|绽放|出现|变成|融化|消失/.test(item);
-    return hasWeatherChange && hasAppearanceChange;
-  }).slice(0, 2);
-}
-
-function inferDreamActions(dreamText) {
-  const source = String(dreamText || '');
-  const actions = [];
-  const patterns = [
-    /(?:开始|突然)?下(?:起)?暴雪/,
-    /(?:开始|突然)?下(?:起)?大雪/,
-    /(?:开始|突然)?下(?:起)?雪/,
-    /(?:沙地|沙漠|土地|地面)[^。！？!?]{0,12}(?:长出|生长|开出|开花|绽放)[^。！？!?]{0,12}/,
-    /(?:长出|生长|开出|开花|绽放)[^。！？!?]{0,12}/
-  ];
-  patterns.forEach(function (pattern) {
-    const match = source.match(pattern);
-    if (match && match[0] && actions.indexOf(match[0]) < 0) actions.push(match[0]);
-  });
-  return actions.slice(0, 6);
-}
-
-function groundedFactArray(value, dreamText, fallback, maxItems, maxLength) {
+function groundedFactArray(value, dreamText, maxItems, maxLength) {
   const source = String(dreamText || '');
   const candidates = asStringArray(value, [], maxItems || 6, maxLength || 50).map(function (item) {
     return repairDreamTerms(item, source);
@@ -515,53 +279,21 @@ function groundedFactArray(value, dreamText, fallback, maxItems, maxLength) {
       return part.length >= 2 && source.indexOf(part) !== -1;
     });
   });
-  return grounded.length ? grounded : (Array.isArray(fallback) ? fallback.slice(0, maxItems || 6) : []);
+  return grounded;
 }
 
-function normalizeDreamFacts(rawFacts, dreamText, symbols) {
+function normalizeDreamFacts(rawFacts, dreamText) {
   const raw = rawFacts && typeof rawFacts === 'object' ? rawFacts : {};
   const text = String(dreamText || '');
-  const labels = Array.isArray(symbols) ? symbols : [];
-  const literalVisuals = inferLiteralVisuals(text);
-  const inferredActions = inferDreamActions(text);
-  const inferredTransitions = inferDreamTransitions(text);
-  const facts = {
-    people: groundedFactArray(raw.people, text, literalVisuals.people, 6, 30),
-    places: groundedFactArray(raw.places, text, literalVisuals.places, 6, 40),
-    objects: groundedFactArray(raw.objects, text, literalVisuals.objects, 6, 40),
-    actions: groundedFactArray(raw.actions, text, inferredActions, 6, 50),
-    transitions: groundedFactArray(raw.transitions || raw.events, text, inferredTransitions, 3, 120),
+  return {
+    people: groundedFactArray(raw.people, text, 6, 30),
+    places: groundedFactArray(raw.places, text, 6, 40),
+    objects: groundedFactArray(raw.objects, text, 6, 40),
+    actions: groundedFactArray(raw.actions, text, 6, 50),
+    transitions: groundedFactArray(raw.transitions || raw.events, text, 3, 120),
     emotions: asStringArray(raw.emotions, [], 6, 30),
     time_sense: asStringArray(raw.time_sense || raw.timeSense, [], 6, 30)
   };
-
-  if (!facts.places.length) facts.places = literalVisuals.places.slice(0, 6);
-  if (!facts.objects.length) facts.objects = literalVisuals.objects.slice(0, 6);
-  if (!facts.actions.length) facts.actions = labels.filter(function (item) { return /追逐|坠落/.test(item); });
-  if (!facts.transitions.length) facts.transitions = inferredTransitions.slice(0, 3);
-  literalVisuals.places.forEach(function (item) {
-    if (text.indexOf(item) >= 0 && facts.places.indexOf(item) < 0 && facts.places.length < 6) facts.places.push(item);
-  });
-  literalVisuals.objects.forEach(function (item) {
-    if (text.indexOf(item) >= 0 && facts.objects.indexOf(item) < 0 && facts.objects.length < 6) facts.objects.push(item);
-  });
-  inferredActions.forEach(function (item) {
-    if (facts.actions.indexOf(item) < 0 && facts.actions.length < 6) facts.actions.push(item);
-  });
-  inferredTransitions.forEach(function (item) {
-    if (facts.transitions.indexOf(item) < 0 && facts.transitions.length < 3) facts.transitions.push(item);
-  });
-  literalVisuals.people.forEach(function (item) {
-    if (text.indexOf(item) >= 0 && facts.people.indexOf(item) < 0 && facts.people.length < 6) facts.people.push(item);
-  });
-  ['害怕', '紧张', '焦虑', '难过', '安心', '平静', '孤独', '兴奋', '愤怒'].forEach(function (item) {
-    if (text.indexOf(item) >= 0 && facts.emotions.indexOf(item) < 0 && facts.emotions.length < 6) facts.emotions.push(item);
-  });
-  ['清晨', '白天', '黄昏', '夜晚', '深夜', '小时候'].forEach(function (item) {
-    if (text.indexOf(item) >= 0 && facts.time_sense.indexOf(item) < 0 && facts.time_sense.length < 6) facts.time_sense.push(item);
-  });
-
-  return facts;
 }
 
 function normalizeTheme(value, fallback) {
@@ -623,30 +355,18 @@ function uniqueVisualElements(value, maxItems) {
   }).slice(0, maxItems);
 }
 
-function fallbackCompositionId(dreamText) {
-  const text = String(dreamText || '');
-  let score = 0;
-  let index;
-  for (index = 0; index < text.length; index += 1) score = (score + text.charCodeAt(index)) % 997;
-  return visualCompositionIds[score % visualCompositionIds.length];
-}
-
 function normalizeVisualPlan(rawPlan, dreamText, dreamFacts, symbols) {
   const raw = rawPlan && typeof rawPlan === 'object' ? rawPlan : {};
-  const hasStructuredPlan = Object.keys(raw).length > 0;
   const facts = dreamFacts || {};
-  const literalVisuals = inferLiteralVisuals(dreamText);
   const characters = asWeightedCharacters(raw.characters);
   const objects = asWeightedObjects(raw.objects);
-  const fallbackEmotions = Array.isArray(facts.emotions) && facts.emotions.length ? facts.emotions : ['神秘'];
-  const emotions = asStringArray(raw.emotion || raw.emotions, fallbackEmotions, 3, 30);
-  const inferredAnomaly = inferRealityBreakingRule(dreamText);
-  const anomalies = asStringArray(raw.anomalies || [raw.anomaly], inferredAnomaly ? [inferredAnomaly] : [], 1, 120);
+  const emotions = asStringArray(raw.emotion || raw.emotions, facts.emotions || [], 3, 30);
+  const anomalies = asStringArray(raw.anomalies || [raw.anomaly], [], 1, 120);
   const rawComposition = raw.composition && typeof raw.composition === 'object' ? raw.composition : {};
   const requestedComposition = asString(rawComposition.template || rawComposition.id, '', 40);
   const compositionId = visualCompositionIds.indexOf(requestedComposition) >= 0
     ? requestedComposition
-    : fallbackCompositionId(dreamText);
+    : 'off_center_diagonal';
   const candidates = [];
 
   asStringArray(raw.preserve_elements || raw.visual_elements, [], 4, 80).forEach(function (item) {
@@ -657,38 +377,28 @@ function normalizeVisualPlan(rawPlan, dreamText, dreamFacts, symbols) {
   ['people', 'objects', 'places'].forEach(function (key) {
     (Array.isArray(facts[key]) ? facts[key] : []).forEach(function (item) { candidates.push(item); });
   });
-  if (hasStructuredPlan) {
-    (Array.isArray(symbols) ? symbols : []).forEach(function (item) { candidates.push(item); });
-  } else {
-    literalVisuals.people.concat(literalVisuals.places).concat(literalVisuals.objects).forEach(function (item) {
-      candidates.push(item);
-    });
-  }
+  (Array.isArray(symbols) ? symbols : []).forEach(function (item) { candidates.push(item); });
 
   const preserveElements = uniqueVisualElements(candidates, 4);
   const visualSymbols = uniqueVisualElements(raw.symbols || symbols, 5);
-  const hiddenSymbol = asString(raw.hidden_symbol, '', 80) || (hasStructuredPlan ? visualSymbols.filter(function (item) {
-    return preserveElements.indexOf(item) < 0;
-  })[0] || '' : '');
+  const hiddenSymbol = asString(raw.hidden_symbol, '', 80);
   const actions = Array.isArray(facts.actions) ? facts.actions : [];
   const transitions = Array.isArray(facts.transitions) ? facts.transitions : [];
   const places = Array.isArray(facts.places) ? facts.places : [];
-  const fallbackPeople = Array.isArray(facts.people) && facts.people.length ? facts.people : literalVisuals.people;
-  const fallbackObjects = Array.isArray(facts.objects) && facts.objects.length ? facts.objects : literalVisuals.objects;
-  const normalizedCharacters = characters.length ? characters : fallbackPeople.slice(0, 3).map(function (item, index) {
+  const normalizedCharacters = characters.length ? characters : (facts.people || []).slice(0, 3).map(function (item, index) {
     return { role: index === 0 ? '主体' : '人物', description: item, importance: index === 0 ? 1 : 0.7 };
   });
-  const normalizedObjects = objects.length ? objects : fallbackObjects.slice(0, 4).map(function (item, index) {
+  const normalizedObjects = objects.length ? objects : (facts.objects || []).slice(0, 4).map(function (item, index) {
     return { name: item, importance: Math.max(0.55, 0.9 - index * 0.1), visualizable: true };
   });
 
   return {
     version: 'oneiro-visual-plan-v1',
     raw_text: String(dreamText || '').slice(0, 1200),
-    main_event: asString(raw.main_event || raw.mainEvent, transitions[0] || actions[0] || compactDream(dreamText) || '梦者遇见一个不合常理的变化', 180),
+    main_event: asString(raw.main_event || raw.mainEvent, transitions[0] || actions[0] || '', 180),
     emotion: emotions,
     emotion_intensity: Math.min(1, Math.max(0, Number(raw.emotion_intensity || raw.emotionIntensity) || 0.65)),
-    setting: asString(raw.setting, places[0] || literalVisuals.places[0] || '未定义的梦境空间', 100),
+    setting: asString(raw.setting, places[0] || '', 100),
     characters: normalizedCharacters,
     objects: normalizedObjects,
     anomalies: anomalies,
@@ -1182,7 +892,6 @@ async function loadLifeNote(openid, dreamText) {
       .limit(6)
       .get();
     var notes = response && response.data ? response.data : [];
-    var predictedSymbols = pickSymbols(dreamText).map(function (item) { return item.label; });
     var note = notes.map(function (item) {
       return {
         text: String(item.text || '').trim(),
@@ -1190,7 +899,7 @@ async function loadLifeNote(openid, dreamText) {
         createdAt: item.createdAt
       };
     }).find(function (item) {
-      return isLifeNoteRelevant(item, dreamText, predictedSymbols);
+      return isLifeNoteRelevant(item, dreamText, []);
     });
 
     if (!note) return null;
@@ -1274,21 +983,6 @@ function collectDreamDetails(dreamFacts, labels) {
   return details.slice(0, 6);
 }
 
-function hasDreamDetail(details, expected) {
-  const target = String(expected || '').trim();
-  if (!target) return false;
-  return (Array.isArray(details) ? details : []).some(function (detail) {
-    const value = String(detail || '').trim();
-    return value === target || value.indexOf(target) >= 0 || target.indexOf(value) >= 0;
-  });
-}
-
-function hasDreamDetails(details, expected) {
-  return (Array.isArray(expected) ? expected : []).every(function (item) {
-    return hasDreamDetail(details, item);
-  });
-}
-
 const REAL_LIFE_CONNECTION_TERMS = ['工作', '项目', '关系', '家人', '伴侣', '创作', '学习', '等待', '选择', '决定', '边界', '资源', '承担', '任务', '消息', '压力'];
 
 function hasDreamEvidence(text, dreamFacts, labels, minimum) {
@@ -1307,212 +1001,106 @@ function hasRealLifeConnection(text) {
   });
 }
 
-function groundedAnalysisText(value, fallback, dreamFacts, labels, options) {
+function groundedAnalysisText(value, dreamFacts, labels, options) {
   const config = options || {};
   const candidate = repairDreamTerms(value, config.dreamText || '');
   const evidenceOk = hasDreamEvidence(candidate, dreamFacts, labels, config.minimumEvidence || 2);
   const connectionOk = config.requireConnection === false || hasRealLifeConnection(candidate);
   const uncertaintyOk = config.requireUncertainty === false || /可能|也许|如果|是否|未必|不一定/.test(candidate);
-  return candidate && evidenceOk && connectionOk && uncertaintyOk ? candidate : fallback;
+  return candidate && evidenceOk && connectionOk && uncertaintyOk ? candidate : '';
 }
 
-function groundedChartText(value, fallback, baziChart) {
+function groundedChartText(value, baziChart) {
   const candidate = repairDreamTerms(value, '');
-  if (!candidate || !baziChart) return fallback;
+  if (!candidate || !baziChart) return '';
   const profile = baziChart.chartProfile || {};
   const traceableTerms = [baziChart.dayMaster, profile.dayMasterElement]
     .concat(Array.isArray(profile.dominantElements) ? profile.dominantElements : [])
     .filter(Boolean);
-  return traceableTerms.some(function (term) { return candidate.indexOf(term) >= 0; }) ? candidate : fallback;
+  return traceableTerms.some(function (term) { return candidate.indexOf(term) >= 0; }) ? candidate : '';
 }
 
-function buildPersonalConnectionFallback(dreamFacts, labels, dreamText, lifeNote) {
-  const details = collectDreamDetails(dreamFacts, labels);
-  const first = details[0] || compactDream(dreamText) || '这个梦';
-  const second = details[1] || '梦里的变化';
-  const note = lifeNote && String(lifeNote.text || '').trim();
-
-  if (hasDreamDetails(details, ['沙漠', '暴雪', '玫瑰'])) {
-    return [
-      '它可能对应一件原本看起来很难生长、最近却出现了新机会或新情绪的工作、关系或创作事项；“沙漠→暴雪→玫瑰”把苛刻环境、突发变化和新东西同时放进了一幅画。',
-      '如果现实里没有这样的“条件并不理想，却有东西冒出来”的时刻，这条理解就先放下；如果有，先看你是在保护这朵“玫瑰”，还是在怀疑它能不能留下。'
-    ];
-  }
-
-  if (hasDreamDetails(details, ['沙漠', '暴雨'])) {
-    if (note) {
-      return [
-        '如果你之前提到的“' + note.slice(0, 42) + '”最近出现了新进展，那么“沙漠→暴雨”更像是在记录：原本缺少回应的事情突然变成需要你承接的事情。',
-        '如果现实里没有对应事件，这条理解就不成立；请优先检查最近一周是否有一件工作、关系或创作事项从等待变成消息、任务或压力。'
-      ];
-    }
-    return [
-      '它可能对应一件长期缺少进展或资源、最近突然需要你处理的工作、关系或创作事项；“沙漠→暴雨”把“没东西可抓”变成“输入一下子过多”。',
-      '它也可能对应你对承受边界的判断：沙漠里的暴雨没有配套的逃跑或躲雨动作，重点也许不是害怕变化，而是决定哪些压力值得接住、哪些应该挡在外面。'
-    ];
-  }
-
-  return [
-    '如果现实里有一件事同时具备“' + first + '”的处境和“' + second + '”带来的变化，它可能是这段梦正在借画面指向的对象。',
-    '如果找不到这样的工作、关系、选择或等待，这条理解就先保留，不把梦强行套进你的生活。'
+function requireCompleteModelResult(result, chartAvailable) {
+  const requiredStrings = [
+    'title',
+    'card_theme',
+    'card_theme_label',
+    'emotional_weather',
+    'oracle',
+    'card_insight',
+    'dream_translation',
+    'reading_hook',
+    'cultural_symbolism',
+    'underneath',
+    'mirror',
+    'alternative_reading',
+    'integration_question',
+    'one_small_act',
+    'image',
+    'image_prompt',
+    'echo'
   ];
-}
+  const missing = requiredStrings.filter(function (field) {
+    return !String(result && result[field] || '').trim();
+  });
+  const facts = result && result.dream_facts ? result.dream_facts : {};
+  const factCount = ['people', 'places', 'objects', 'actions', 'transitions', 'emotions', 'time_sense']
+    .reduce(function (total, field) {
+      return total + (Array.isArray(facts[field]) ? facts[field].length : 0);
+    }, 0);
 
-function buildConnectionQuestion(dreamFacts, labels, dreamText) {
-  const details = collectDreamDetails(dreamFacts, labels);
-  if (hasDreamDetails(details, ['沙漠', '暴雪', '玫瑰'])) {
-    return '最近有没有一件事在条件并不理想时，反而突然长出新的可能？';
+  if (missing.length) {
+    throw new Error('AI provider normalized result missing semantic fields: ' + missing.join(','));
   }
-  if (hasDreamDetails(details, ['沙漠', '暴雨'])) {
-    return '最近有没有一件事从“迟迟没变化”突然变成“需要你马上应对”？';
+  if (allowedThemes.indexOf(result.card_theme) < 0) {
+    throw new Error('AI provider normalized result lost model-selected card theme');
   }
-  return '现实中哪件事最像“' + (details[0] || compactDream(dreamText)) + '”被“' + (details[1] || '一个新变化') + '”突然打断？';
-}
-
-function buildSmallAct(dreamFacts, labels, dreamText) {
-  const details = collectDreamDetails(dreamFacts, labels);
-  if (hasDreamDetails(details, ['沙漠', '暴雪', '玫瑰'])) {
-    return '写下一个正在艰难生长的念头，给它留出一小时。';
+  if (!Array.isArray(result.symbols) || !result.symbols.length || !factCount) {
+    throw new Error('AI provider normalized result lost source-grounded dream facts');
   }
-  if (hasDreamDetails(details, ['沙漠', '暴雨'])) {
-    return '列出一件突然变多的事，标记承接/拒绝。';
+  if (!Array.isArray(result.possible_connections) || result.possible_connections.length < 2) {
+    throw new Error('AI provider normalized result lost grounded possible connections');
   }
-  return '写下“' + (details[0] || compactDream(dreamText)) + '”对应的一件现实事项。';
-}
-
-function buildPsychologicalFallback(dreamFacts, labels, dreamText) {
-  const facts = dreamFacts || {};
-  const emotions = Array.isArray(facts.emotions) ? facts.emotions : [];
-  const details = collectDreamDetails(facts, labels);
-  const first = details[0] || compactDream(dreamText) || '这段梦';
-  const second = details[1] || '';
-  const emotion = emotions[0] || '不安或迟疑';
-  const preview = compactDream(dreamText);
-
-  if (hasDreamDetails(details, ['沙漠', '暴雪', '玫瑰'])) {
-    return '这次梦的关键不是“暴雪”和“玫瑰”各自代表什么，而是它们先后发生在同一片沙地：环境变得更严苛，新的东西却仍然长了出来。' +
-      '梦里没有写你去躲雪、拔掉玫瑰或把它带走，视线停在“它竟然出现了”这一刻；这让重点从应对危险转向辨认一个不合条件却真实发生的变化。' +
-      '它可能对应现实里的工作、关系或创作：你原以为条件不够、资源不够，某个念头或机会却已经冒头。真正要确认的是，你是在担心它经不起环境，还是还不习惯承认它已经开始生长。' +
-      '如果最近确有一件事符合这两个特征，这条理解才值得留下。';
+  if (
+    !result.visual_plan ||
+    !String(result.visual_plan.main_event || '').trim() ||
+    !String(result.visual_plan.setting || '').trim() ||
+    !Array.isArray(result.visual_plan.preserve_elements) ||
+    !result.visual_plan.preserve_elements.length
+  ) {
+    throw new Error('AI provider normalized result lost visual planning fields');
   }
-
-  if (hasDreamDetails(details, ['沙漠', '暴雨'])) {
-    return '这次梦里“沙漠”与“暴雨”的核心，不是查两个符号各自代表什么，而是一个原本干涸、无遮蔽的空间突然出现了过量输入。' +
-      '你没有写自己逃跑、寻找避雨处或被冲走，梦把注意力停在“变化发生了”这一刻，而不是具体的应对动作。' +
-      '它可能对应现实里某件长期缺少进展、资源或回应的事情，突然出现了消息、机会或压力；真正需要判断的是，它对你来说是补给，还是新的负担。' +
-      '可以回想最近哪件事正从“没动静”变成“需要马上处理”。';
+  if (
+    !result.omens ||
+    !String(result.omens.lucky_color_name || '').trim() ||
+    !String(result.omens.reason || '').trim()
+  ) {
+    throw new Error('AI provider normalized result lost color guidance');
   }
-
-  if (!second) {
-    return '这次梦只留下一个清晰的落点：“' + first + '”。与其补出并不存在的第二个情节，不如先观察这个画面带来的' + emotion + '，以及它在醒后还停留了多久。' +
-      '这只是一种基于这段梦境（' + preview + '）的可能理解，仍需要由你判断是否贴近。';
+  if (chartAvailable) {
+    const reading = result.metaphysical_reading || {};
+    if (
+      !result.metaphysical_resonance ||
+      !result.metaphysical_basis ||
+      ['temperament', 'dream_echo', 'tension', 'rhythm', 'basis'].some(function (field) {
+        return !String(reading[field] || '').trim();
+      })
+    ) {
+      throw new Error('AI provider normalized result lost birth-rhythm reading');
+    }
   }
 
-  return '这次梦的核心判断是：“' + first + '”提供了处境，“' + second + '”改变了处境，而不是两个可以分开查词的符号。' +
-    '这两个细节放在一起，显示出一种' + emotion + '的具体张力：事情已经被推到眼前，但你还在决定要承接多少、拒绝多少。' +
-    '如果要验证这条理解，去找现实中一件同时具备这两个特征的事：它既有明确场景，又刚刚改变了处理方式。';
-}
-
-function buildMetaphysicalReadingFallback(baziChart, labels, dreamFacts) {
-  const chartProfile = baziChart && baziChart.chartProfile ? baziChart.chartProfile : {};
-  const missing = Array.isArray(chartProfile.missingElements) && chartProfile.missingElements.length
-    ? chartProfile.missingElements.join('、')
-    : '没有明显缺口';
-  const details = collectDreamDetails(dreamFacts, labels);
-  const first = details[0] || '梦里的主意象';
-  const second = details[1] || '梦里的环境变化';
-  const strength = chartProfile.strengthEvidence || {};
-  const strengthSummary = strength.signal
-    ? strength.signal + '（扶助' + String(strength.supportCount || 0) + '，消耗/克制' + String(strength.drainCount || 0) + '）'
-    : '扶助与消耗的静态比例尚未形成';
-  const strengthMeaning = strength.signal === '扶助偏多'
-    ? '承载、积累和先保留自身资源的力量更明显'
-    : strength.signal === '消耗偏多'
-      ? '输出、应对外部要求和消耗自身资源的力量更明显'
-      : '承载与输出暂时接近，容易随场景切换';
-  const activatedTemperament = hasDreamDetails(details, ['沙漠', '暴雪', '玫瑰'])
-    ? '这次梦调动的是你出生节律里“先评估承受边界、再把力量放出去”的一面：环境已经很苛刻，你仍在判断那朵玫瑰是否值得保护。'
-    : hasDreamDetails(details, ['沙漠', '暴雨'])
-      ? '这次梦调动的是你出生节律里“先评估承受边界、再把力量放出去”的一面：长期的空旷与突然的暴雨，让你必须判断哪些输入值得接住。'
-      : '这次梦调动的是你出生节律里“' + strengthMeaning + '”的一面：先看清“' + first + '”如何改变了处境，再决定下一步承接多少。';
-
-  return {
-    temperament: activatedTemperament,
-    dream_echo: hasDreamDetails(details, ['沙漠', '暴雪', '玫瑰'])
-      ? '“沙漠”是资源稀薄、退路有限的底色，“暴雪”把环境的难度再次推高，但“玫瑰”仍从沙地里长出来；出生节律的侧光照到的，是你如何在不理想的条件里识别已经出现的生机。'
-      : hasDreamDetails(details, ['沙漠', '暴雨'])
-      ? '“沙漠”把资源稀薄、退路有限的处境压到画面底部，“暴雨”却突然把外界输入推到最高；这不是单纯的靠近或后退，而是从长期不足切换到短时间过量。'
-      : '“' + first + '”是梦里的处境底盘，“' + second + '”是改变节奏的输入；出生节律的侧光照到的，正是你如何承接这次改变。',
-    tension: hasDreamDetails(details, ['沙漠', '暴雪', '玫瑰'])
-      ? '这幅梦的拉扯不是“环境很坏”或“玫瑰很好”二选一，而是你要不要相信一个还很脆弱的变化：先保护它、先验证它，还是因为条件不够好而提前放弃。'
-      : hasDreamDetails(details, ['沙漠', '暴雨'])
-      ? '“沙漠”与“暴雨”的冲突更像“承载阈值”：长期资源不足时可以靠自我维持，变化突然增加后，却必须决定哪些进入、哪些挡在外面。这个判断比“雨是好还是坏”更接近梦里的实际矛盾。'
-      : '真正的拉扯不在“要不要变化”，而在“变化发生后要承接多少”。梦里的两个细节把这个边界具体化了。',
-    rhythm: hasDreamDetails(details, ['沙漠', '暴雪', '玫瑰'])
-      ? '把最近一件“条件并不理想却已经冒头”的工作、关系或创作事项写下来，分成保护、验证、放弃三栏；今天只做一次小验证。'
-      : hasDreamDetails(details, ['沙漠', '暴雨'])
-      ? '围绕“沙漠里的暴雨”，把最近一件突然变多的现实事项列成三栏：新增事实、必须承接、可以拒绝；今天先处理一项。'
-      : '把“' + first + '”对应的现实事项写成一条事实，再写出“' + second + '”改变了什么；先处理改变的部分，不急着解释全部。',
-    basis: '依据公历出生日期、时间和出生城市完成真太阳时校正与四柱计算；' +
-      '静态结构显示' + strengthSummary + '，' + (missing === '没有明显缺口' ? missing : '较少出现' + missing) +
-      '。纳音、十二长生、旬空及命宫等字段会随排盘引擎结果一并保存，仅用于东方文化视角下的自我观察。'
-  };
-}
-
-function buildCulturalSymbolismFallback(symbols, dreamText, dreamFacts) {
-  const selected = (Array.isArray(symbols) ? symbols : []).slice(0, 2);
-  const meanings = selected.map(function (symbol) {
-    return symbol && symbol.meaning ? symbol.meaning : '';
-  }).filter(Boolean);
-  const labels = selected.map(function (symbol) {
-    return symbol && symbol.label ? symbol.label : String(symbol || '');
-  }).filter(Boolean);
-  const labelText = labels.length ? labels.map(function (item) { return '“' + item + '”'; }).join('与') : '这组梦象';
-  const detailText = collectDreamDetails(dreamFacts, labels);
-  if (hasDreamDetails(detailText, ['沙漠', '暴雪', '玫瑰'])) {
-    return '在传统象征语境里，“沙漠”常指向空旷、匮乏与难以生长的处境，“暴雪”把遮蔽和考验推到眼前，“玫瑰”则把美与刺、脆弱与生命力放在一起。' +
-      '三者并置的文化意象不是“坏环境里一定有好结果”，而是“生长并不总发生在理想条件里”；它提供的是一组共同文化联想，不是未来判断。';
-  }
-  if (hasDreamDetails(detailText, ['沙漠', '暴雨'])) {
-    return '在传统象征语境里，“沙漠”偏向资源稀薄、路径难寻的处境，“暴雨”偏向外部条件骤变和情势集中涌入。' +
-      '两者并置的文化意象是“原本难以推进的秩序被突然打破”，它不等于吉凶预言；放回原文，重点是条件变化，而不是雨本身的好坏。';
-  }
-  return '在文化象征的语境里，' + labelText + '常被用来联想到' +
-    (meanings.join('；') || '过渡、记忆或尚未说清的变化') + '。放回这次梦，它们只是可供你取用的共同意象，不是对未来的确定判断。';
+  return result;
 }
 
 function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memory, baziChart, lifeNote) {
-  const dreamSymbols = pickSymbols(dreamText);
-  const fallbackLabels = dreamSymbols.map(function (symbol) {
-    return symbol.label;
-  });
-  const themeSymbol = pickThemeSymbol(dreamSymbols);
   const nickname = String(profile.nickname || '你');
-  const primary = dreamSymbols[0];
   const rawOmens = raw && raw.omens ? raw.omens : {};
-  const symbols = normalizeGroundedSymbols(raw && raw.symbols, dreamText, fallbackLabels);
-  // Once the model has returned source-grounded symbols, all downstream
-  // interpretation fallbacks must use them as well. Local labels are only an
-  // offline/no-valid-model-output fallback and must never overwrite AI semantics.
-  const labels = symbols.length ? symbols : fallbackLabels;
-  const primaryLabel = labels[0] || primary.label;
-  const fallbackThemeLabel = themeSymbol.label === '未命名场景'
-    ? primaryLabel
-    : themeSymbol.label;
-  const cardThemeLabel = asString(raw && raw.card_theme_label, fallbackThemeLabel, 24) === '未命名场景'
-    ? fallbackThemeLabel
-    : asString(raw && raw.card_theme_label, fallbackThemeLabel, 24);
-  const groundedDreamSymbols = labels.map(function (label) {
-    return dreamSymbols.find(function (symbol) {
-      return symbol.label === label;
-    }) || {
-      label: label,
-      meaning: '这个意象需要结合它在本次梦里的具体位置、动作和变化来理解。'
-    };
-  });
-  const dreamFacts = normalizeDreamFacts(raw && raw.dream_facts, dreamText, symbols);
+  const symbols = normalizeGroundedSymbols(raw && raw.symbols, dreamText);
+  const labels = symbols;
+  const cardThemeLabel = asString(raw && raw.card_theme_label, '', 24);
+  const dreamFacts = normalizeDreamFacts(raw && raw.dream_facts, dreamText);
   const visualPlan = normalizeVisualPlan(raw && raw.visual_plan, dreamText, dreamFacts, symbols);
-  const dreamPreview = compactDream(dreamText);
   const dreamMemory = memory || buildDreamMemory([]);
   var symbolMilestones = [];
   var milestoneSymbols = new Set();
@@ -1538,24 +1126,6 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
   symbolMilestones = symbolMilestones.slice(0, 1);
   relevantLifeNote = isLifeNoteRelevant(lifeNote, dreamText, symbols) ? lifeNote : null;
   const chartAvailable = !!(baziChart && baziChart.available);
-  const chartElements = chartAvailable && baziChart.fiveElements
-    ? Object.keys(baziChart.fiveElements).map(function (key) {
-      return baziChart.fiveElements[key];
-    }).filter(Boolean).join('、')
-    : '';
-  const personalConnectionsFallback = buildPersonalConnectionFallback(dreamFacts, labels, dreamText, lifeNote);
-  const mirrorFallback = personalConnectionsFallback.join(' ');
-  const metaphysicalBasisFallback = chartAvailable
-    ? '参考来源与时间精度：' + baziChart.basis + '。这段阅读把“' + baziChart.summary + '”与' + (chartElements || '相关') + '象征元素作为一束侧光，用来辨认梦中“' + labels.slice(0, 2).join('”与“') + '”之间的情绪纹理和行动节奏，不延伸为具体未来事件。'
-    : '';
-  const metaphysicalReadingFallback = chartAvailable
-    ? buildMetaphysicalReadingFallback(baziChart, labels, dreamFacts)
-    : { temperament: '', dream_echo: '', tension: '', rhythm: '', basis: '' };
-  const metaphysicalResonanceFallback = chartAvailable
-    ? metaphysicalReadingFallback.temperament + ' ' + metaphysicalReadingFallback.dream_echo + ' ' + metaphysicalReadingFallback.tension
-    : '';
-  const psychologicalFallback = buildPsychologicalFallback(dreamFacts, labels, dreamText);
-  const culturalFallback = buildCulturalSymbolismFallback(groundedDreamSymbols, dreamText, dreamFacts);
   const rawMetaphysicalReading = raw && raw.metaphysical_reading && typeof raw.metaphysical_reading === 'object'
     ? raw.metaphysical_reading
     : {};
@@ -1566,10 +1136,10 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
         : '目前还没有足够稳定的重复符号，Oneiro 会继续积累你的梦境脉络。')
     : '这是梦境记忆的起点。记录满三次后，Oneiro 会开始识别反复出现的符号、情绪和现实主题。';
 
-  return {
-    title: asString(raw && raw.title, titleFor(dreamSymbols), 24),
+  const normalized = {
+    title: asString(raw && raw.title, '', 24),
     card_no: 'NO. ' + String(cardIndex).padStart(3, '0'),
-    card_theme: normalizeTheme(raw && raw.card_theme, themeSymbol.theme || 'mist'),
+    card_theme: normalizeTheme(raw && raw.card_theme, ''),
     card_theme_label: cardThemeLabel,
     dream_facts: dreamFacts,
     visual_plan: visualPlan,
@@ -1584,95 +1154,87 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     } : null,
     emotional_weather: repairDreamTerms(asString(
       raw && raw.emotional_weather,
-      '这组梦象像一层刚亮起的晨雾，正在把你的压力、直觉和选择感慢慢显影。',
+      '',
       180
     ), dreamText),
     oracle: repairDreamTerms(asString(
       raw && raw.oracle,
-      '这次解读只是对当次梦的一种可能理解，你可以保留、修正或否定它。',
+      '',
       360
     ), dreamText),
     card_insight: repairDreamTerms(asString(
       raw && raw.card_insight,
-      '这张牌提醒你先看见“' + primaryLabel + '”背后的真实需要，再决定今天要回应什么。',
+      '',
       360
     ), dreamText),
     dream_translation: repairDreamTerms(asString(
       raw && raw.dream_translation,
-      '你写下的梦像是这样一组画面：“' + dreamPreview + '”。' + (labels.length ? '其中' + labels.join('、') + '是原文里最清晰的梦象。' : ''),
+      '',
       700
     ), dreamText),
     reading_hook: repairDreamTerms(asString(
       raw && raw.reading_hook,
-      labels.length >= 2
-        ? '这个梦最有张力的地方，是“' + labels.slice(0, 2).join('”和“') + '”同时出现：一个把环境推向变化，一个让变化变得可感。这个关系值得继续观察。'
-        : '这个梦最清晰的线索是“' + (labels[0] || dreamPreview) + '”。先观察它在醒后留下的感觉，不急着补出原文没有的情节。',
+      '',
       560
     ), dreamText),
     metaphysical_resonance: chartAvailable
       ? sanitizeMetaphysicalText(
           groundedAnalysisText(
             raw && raw.metaphysical_resonance,
-            metaphysicalResonanceFallback,
             dreamFacts,
             labels,
             { dreamText: dreamText, minimumEvidence: 2, requireConnection: false, requireUncertainty: false }
           ),
-          metaphysicalResonanceFallback,
+          '',
           700
         )
       : '',
     metaphysical_basis: chartAvailable
       ? sanitizeMetaphysicalText(
           repairDreamTerms(raw && raw.metaphysical_basis, dreamText),
-          metaphysicalBasisFallback,
+          '',
           360
       )
       : '',
     metaphysical_reading: chartAvailable
       ? {
-          temperament: repairDreamTerms(sanitizeMetaphysicalText(groundedChartText(rawMetaphysicalReading.temperament, metaphysicalReadingFallback.temperament, baziChart), metaphysicalReadingFallback.temperament, 520), dreamText),
+          temperament: repairDreamTerms(sanitizeMetaphysicalText(groundedChartText(rawMetaphysicalReading.temperament, baziChart), '', 520), dreamText),
           dream_echo: groundedAnalysisText(
             rawMetaphysicalReading.dream_echo,
-            metaphysicalReadingFallback.dream_echo,
             dreamFacts,
             labels,
             { dreamText: dreamText, minimumEvidence: 2, requireConnection: false, requireUncertainty: false }
           ),
           tension: groundedAnalysisText(
             rawMetaphysicalReading.tension,
-            metaphysicalReadingFallback.tension,
             dreamFacts,
             labels,
             { dreamText: dreamText, minimumEvidence: 2, requireConnection: false, requireUncertainty: false }
           ),
           rhythm: groundedAnalysisText(
             rawMetaphysicalReading.rhythm,
-            metaphysicalReadingFallback.rhythm,
             dreamFacts,
             labels,
             { dreamText: dreamText, minimumEvidence: 1, requireConnection: true, requireUncertainty: false }
           ),
-          basis: repairDreamTerms(sanitizeMetaphysicalText(rawMetaphysicalReading.basis, metaphysicalReadingFallback.basis, 360), dreamText)
+          basis: repairDreamTerms(sanitizeMetaphysicalText(rawMetaphysicalReading.basis, '', 360), dreamText)
         }
       : { temperament: '', dream_echo: '', tension: '', rhythm: '', basis: '' },
     underneath: groundedAnalysisText(
       raw && raw.underneath,
-      psychologicalFallback,
       dreamFacts,
       labels,
       { dreamText: dreamText, minimumEvidence: 2, requireConnection: true, requireUncertainty: true }
     ),
     cultural_symbolism: groundedAnalysisText(
       raw && raw.cultural_symbolism,
-      culturalFallback,
       dreamFacts,
       labels,
       { dreamText: dreamText, minimumEvidence: 2, requireConnection: false, requireUncertainty: false }
     ),
     mirror: repairDreamTerms(asString(
       raw && raw.mirror,
-      mirrorFallback,
+      '',
       700
     ), dreamText),
     possible_connections: (function () {
@@ -1682,11 +1244,11 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
       const validConnections = candidateConnections.filter(function (item) {
         return hasDreamEvidence(item, dreamFacts, labels, 1) && hasRealLifeConnection(item);
       });
-      return validConnections.length >= 2 ? validConnections : personalConnectionsFallback;
+      return validConnections;
     }()),
     alternative_reading: repairDreamTerms(asString(
       raw && raw.alternative_reading,
-      '另一种理解是：这些细节记录的不是固定的你，而是你在那一夜经过的一阵情绪天气。',
+      '',
       360
     ), dreamText),
     memory_reflection: asString(raw && raw.memory_reflection, memoryFallback, 760),
@@ -1701,34 +1263,32 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     memory_profile: dreamMemory,
     integration_question: repairDreamTerms(asString(
       raw && raw.integration_question,
-      buildConnectionQuestion(dreamFacts, labels, dreamText),
+      '',
       160
     ), dreamText),
     one_small_act: repairDreamTerms(asString(
       raw && raw.one_small_act,
-      buildSmallAct(dreamFacts, labels, dreamText),
+      '',
       80
     ), dreamText),
     image: repairDreamTerms(asString(
       raw && raw.image,
-      '梦卡画面以' + labels.join('、') + '为核心，把梦里最强烈的情绪凝成一张可以收藏的象征图。',
+      '',
       420
     ), dreamText),
     image_prompt: repairDreamTerms(asString(
       raw && raw.image_prompt,
-      'one main dream event with ' + labels.slice(0, 4).join(', ') + ', one impossible rule, clear focal action',
+      '',
       360
     ), dreamText),
-    echo: repairDreamTerms(asString(raw && raw.echo, '今天适合给梦里的感觉一个现实中的小出口。', 220), dreamText),
+    echo: repairDreamTerms(asString(raw && raw.echo, '', 220), dreamText),
     omens: {
-      lucky_color_name: asString(rawOmens.lucky_color_name, '云雾色', 24),
-      reason: repairDreamTerms(asString(rawOmens.reason, '这组梦象适合被轻轻辨认，而不是立刻下结论。', 220), dreamText)
+      lucky_color_name: asString(rawOmens.lucky_color_name, '', 24),
+      reason: repairDreamTerms(asString(rawOmens.reason, '', 220), dreamText)
     }
   };
-}
 
-function buildStaticResult(dreamText, profile, cardIndex, memory, baziChart, lifeNote) {
-  return normalizeAiResult({}, dreamText, profile, cardIndex, '云端梦卡', memory, baziChart, lifeNote);
+  return requireCompleteModelResult(normalized, chartAvailable);
 }
 
 function buildUserContext(profile, dreamText, memory, baziChart, lifeNote) {
@@ -1831,6 +1391,93 @@ function parseJsonResponse(text) {
   return parsed;
 }
 
+function validateAiSemanticPayload(raw, dreamText, baziChart) {
+  function isRecord(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+  const requiredStrings = [
+    'title',
+    'card_theme',
+    'card_theme_label',
+    'emotional_weather',
+    'oracle',
+    'card_insight',
+    'dream_translation',
+    'reading_hook',
+    'cultural_symbolism',
+    'underneath',
+    'mirror',
+    'alternative_reading',
+    'integration_question',
+    'one_small_act',
+    'image',
+    'image_prompt',
+    'echo'
+  ];
+  const missingStrings = requiredStrings.filter(function (field) {
+    return !String(raw && raw[field] || '').trim();
+  });
+  const groundedSymbols = normalizeGroundedSymbols(raw && raw.symbols, dreamText);
+  const rawFacts = raw && raw.dream_facts;
+  const factFields = ['people', 'places', 'objects', 'actions', 'transitions', 'emotions', 'time_sense'];
+  const rawFactCount = isRecord(rawFacts)
+    ? factFields.reduce(function (total, field) {
+      return total + (Array.isArray(rawFacts[field]) ? rawFacts[field].filter(Boolean).length : 0);
+    }, 0)
+    : 0;
+  const visualPlan = raw && raw.visual_plan;
+  const possibleConnections = raw && raw.possible_connections;
+  const omens = raw && raw.omens;
+
+  if (missingStrings.length) {
+    throw new Error('AI provider response missing semantic fields: ' + missingStrings.join(','));
+  }
+  if (!groundedSymbols.length) {
+    throw new Error('AI provider response did not include a source-grounded symbol');
+  }
+  if (
+    allowedThemes.indexOf(String(raw && raw.card_theme || '')) < 0 ||
+    String(dreamText || '').indexOf(String(raw && raw.card_theme_label || '').trim()) < 0
+  ) {
+    throw new Error('AI provider response did not include a source-grounded card theme');
+  }
+  if (!rawFactCount) {
+    throw new Error('AI provider response did not include dream facts');
+  }
+  if (
+    !isRecord(visualPlan) ||
+    !String(visualPlan.main_event || '').trim() ||
+    !String(visualPlan.setting || '').trim()
+  ) {
+    throw new Error('AI provider response did not include a complete visual plan');
+  }
+  if (!Array.isArray(possibleConnections) || possibleConnections.filter(function (item) {
+    return String(item || '').trim();
+  }).length < 2) {
+    throw new Error('AI provider response did not include two possible connections');
+  }
+  if (
+    !isRecord(omens) ||
+    !String(omens.lucky_color_name || '').trim() ||
+    !String(omens.reason || '').trim()
+  ) {
+    throw new Error('AI provider response did not include complete color guidance');
+  }
+  if (baziChart && baziChart.available) {
+    const metaphysical = raw && raw.metaphysical_reading;
+    if (
+      !String(raw.metaphysical_resonance || '').trim() ||
+      !String(raw.metaphysical_basis || '').trim() ||
+      !isRecord(metaphysical) ||
+      ['temperament', 'dream_echo', 'tension', 'rhythm', 'basis'].some(function (field) {
+        return !String(metaphysical[field] || '').trim();
+      })
+    ) {
+      throw new Error('AI provider response did not include complete birth-rhythm reading');
+    }
+  }
+}
+
 function providerConfig() {
   const provider = String(process.env.INTERPRET_PROVIDER || 'static').trim().toLowerCase();
 
@@ -1862,7 +1509,6 @@ function providerConfig() {
 function publicProviderHealth() {
   const config = providerConfig();
   const timeoutMs = effectiveTimeoutMs();
-  const strictAi = String(process.env.INTERPRET_STRICT_AI || '').trim() === '1';
   let hostname = '';
 
   if (config.baseUrl) {
@@ -1882,9 +1528,8 @@ function publicProviderHealth() {
     model: config.model || '',
     baseUrlHost: hostname,
     requestTimeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS,
-    strictAi: strictAi,
     supported: !config.unsupported,
-    fallbackProvider: 'cloudbase-static-fallback'
+    fallbackProvider: 'none'
   };
 }
 
@@ -1962,11 +1607,7 @@ async function interpretWithAi(profile, dreamText, cardIndex, memory, baziChart,
   const config = providerConfig();
 
   if (config.provider === 'static') {
-    return {
-      provider: 'cloudbase-static',
-      model: 'deterministic-local',
-      result: buildStaticResult(dreamText, profile, cardIndex, memory, baziChart, lifeNote)
-    };
+    throw new Error('AI provider is not configured');
   }
 
   if (config.unsupported) {
@@ -1978,6 +1619,7 @@ async function interpretWithAi(profile, dreamText, cardIndex, memory, baziChart,
   }
 
   const raw = await callOpenAiCompatible(config, profile, dreamText, memory, baziChart, lifeNote);
+  validateAiSemanticPayload(raw, dreamText, baziChart);
 
   return {
     provider: config.provider,
@@ -2006,15 +1648,6 @@ function chatResultSummary(value) {
   };
 }
 
-function staticChatReply(event) {
-  const summary = chatResultSummary(event && event.dreamResult);
-  const symbol = summary.symbols[0] || '这个画面';
-  const message = asString(event && event.userMessage, '', 500);
-  return '我先沿着你刚才说的“' + message.slice(0, 40) + '”往下看。' +
-    '它让梦里的“' + symbol + '”多了一层现实感，但这还只是一个待确认的线索。' +
-    '回到那个画面时，你最先感到的是紧张、难过、安心，还是别的感觉？';
-}
-
 async function runDreamChat(event) {
   const config = providerConfig();
   const dreamText = asString(event && event.dreamText, '', 1200);
@@ -2034,7 +1667,12 @@ async function runDreamChat(event) {
   }
 
   if (config.provider === 'static' || config.unsupported || !config.apiKey) {
-    return { ok: true, provider: 'cloudbase-static', fallback: true, reply: staticChatReply(event) };
+    return {
+      ok: false,
+      reason: 'ai_provider_unavailable',
+      retryable: true,
+      message: 'AI 对话暂时不可用，请稍后再试。'
+    };
   }
 
   try {
@@ -2059,24 +1697,13 @@ async function runDreamChat(event) {
     return { ok: true, provider: config.provider, model: config.model || '', fallback: false, reply: content };
   } catch (error) {
     return {
-      ok: true,
-      provider: 'cloudbase-static-fallback',
-      fallback: true,
+      ok: false,
+      reason: 'ai_provider_error',
+      retryable: true,
       provider_error: error && error.message ? error.message.slice(0, 180) : 'unknown_error',
-      reply: staticChatReply(event)
+      message: 'AI 对话暂时不可用，请稍后再试。'
     };
   }
-}
-
-function staticDreamRefinement(event) {
-  const summary = chatResultSummary(event && event.dreamResult);
-  const answer = asString(event && event.answer, '', 500);
-  const symbol = summary.symbols[0] || '这个画面';
-  return {
-    final_title: summary.title || symbol.slice(0, 4),
-    final_card_insight: '你提到“' + answer.slice(0, 52) + '”，让梦里的“' + symbol + '”从一个象征，变成了与你此刻有关的具体线索。',
-    personal_connection: '结合你的回答，这个梦更可能在整理你刚刚说到的现实感受。它仍是一种阶段理解，你以后可以继续修改。'
-  };
 }
 
 async function runDreamRefinement(event) {
@@ -2085,7 +1712,6 @@ async function runDreamRefinement(event) {
   const answer = asString(event && event.answer, '', 500);
   const summary = chatResultSummary(event && event.dreamResult);
   const timeoutMs = effectiveTimeoutMs();
-  const fallback = staticDreamRefinement(event);
   let i;
 
   if (!dreamText || !answer) {
@@ -2097,7 +1723,12 @@ async function runDreamRefinement(event) {
     }
   }
   if (config.provider === 'static' || config.unsupported || !config.apiKey) {
-    return Object.assign({ ok: true, provider: 'cloudbase-static', fallback: true }, fallback);
+    return {
+      ok: false,
+      reason: 'ai_provider_unavailable',
+      retryable: true,
+      message: 'AI 精修暂时不可用，请稍后再试。'
+    };
   }
   try {
     const response = await postJson(config.baseUrl + '/chat/completions', {
@@ -2117,22 +1748,28 @@ async function runDreamRefinement(event) {
       ? data.choices[0].message.content
       : '';
     const parsed = parseJsonResponse(content);
+    const finalTitle = asString(parsed.final_title, '', 16);
+    const finalInsight = asString(parsed.final_card_insight, '', 240);
+    const personalConnection = asString(parsed.personal_connection, '', 360);
+    if (!finalTitle || !finalInsight || !personalConnection) {
+      throw new Error('Dream refinement response was incomplete');
+    }
     return {
       ok: true,
       provider: config.provider,
       model: config.model || '',
       fallback: false,
-      final_title: asString(parsed.final_title, fallback.final_title, 16),
-      final_card_insight: asString(parsed.final_card_insight, fallback.final_card_insight, 240),
-      personal_connection: asString(parsed.personal_connection, fallback.personal_connection, 360)
+      final_title: finalTitle,
+      final_card_insight: finalInsight,
+      personal_connection: personalConnection
     };
   } catch (error) {
-    return Object.assign({
-      ok: true,
-      provider: 'cloudbase-static-fallback',
-      fallback: true,
+    return {
+      ok: false,
+      reason: 'ai_provider_error',
+      retryable: true,
       provider_error: error && error.message ? error.message.slice(0, 180) : 'unknown_error'
-    }, fallback);
+    };
   }
 }
 
@@ -2223,7 +1860,6 @@ exports.main = async function (event) {
   const dreamText = String((event && event.dreamText) || '').trim();
   const profile = event && event.profile ? event.profile : {};
   const cardIndex = Number((event && event.cardIndex) || 1);
-  const strictAi = String(process.env.INTERPRET_STRICT_AI || '').trim() === '1';
   const wxContext = cloud.getWXContext ? cloud.getWXContext() : {};
   const baziChart = buildBaziChart(profile);
   let memory;
@@ -2276,23 +1912,15 @@ exports.main = async function (event) {
       result: interpreted.result
     };
   } catch (error) {
-    if (strictAi) {
-      return {
-        ok: false,
-        blocked: false,
-        reason: 'ai_provider_error',
-        message: 'AI 解读暂时不可用，请稍后再试。'
-      };
-    }
-
     return {
-      ok: true,
-      provider: 'cloudbase-static-fallback',
-      model: 'deterministic-local',
+      ok: false,
+      blocked: false,
+      reason: 'ai_provider_error',
+      retryable: true,
       promptVersion: PROMPT_VERSION,
       schemaVersion: SCHEMA_VERSION,
       provider_error: error && error.message ? error.message.slice(0, 180) : 'unknown_error',
-      result: buildStaticResult(dreamText, profileContext, cardIndex, memory, baziChart, lifeNote)
+      message: 'AI 解读暂时不可用，请稍后再试。'
     };
   }
 };

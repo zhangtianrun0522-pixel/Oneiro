@@ -6,7 +6,13 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
 function safeDream(dream) {
-  const result = dream && dream.result ? dream.result : {};
+  const status = ['pending', 'ready', 'blocked'].indexOf(dream && dream.status) >= 0
+    ? dream.status
+    : 'ready';
+  const result = status === 'ready' && dream && dream.result && typeof dream.result === 'object'
+    ? dream.result
+    : null;
+  const resultFields = result || {};
   const facts = dream && dream.dreamFacts ? dream.dreamFacts : {};
   const feedbackOptions = ['inspiring', 'too_generic', 'too_mystical', 'not_grounded'];
   const feedback = feedbackOptions.indexOf(dream && dream.feedback) >= 0 ? dream.feedback : '';
@@ -31,7 +37,7 @@ function safeDream(dream) {
   return {
     localId: String((dream && dream.id) || ''),
     dreamText: String((dream && dream.dreamText) || ''),
-    status: ['pending', 'ready', 'blocked'].indexOf(dream && dream.status) >= 0 ? dream.status : 'ready',
+    status: status,
     result: result,
     dreamFacts: {
       people: stringList(facts.people, 6),
@@ -41,9 +47,9 @@ function safeDream(dream) {
       emotions: stringList(facts.emotions, 6),
       timeSense: stringList(facts.time_sense || facts.timeSense, 6)
     },
-    symbols: Array.isArray(result.symbols) ? result.symbols : [],
-    emotionalWeather: String(result.emotional_weather || ''),
-    cardTheme: String(result.card_theme || 'mist'),
+    symbols: Array.isArray(resultFields.symbols) ? resultFields.symbols : [],
+    emotionalWeather: String(resultFields.emotional_weather || ''),
+    cardTheme: String(resultFields.card_theme || 'mist'),
     interpretationSource: String((dream && dream.interpretationSource) || ''),
     interpretationProvider: String((dream && dream.interpretationProvider) || ''),
     interpretationError: String((dream && dream.interpretationError) || '').slice(0, 300),
