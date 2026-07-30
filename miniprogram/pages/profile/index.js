@@ -37,14 +37,28 @@ function snapshotId(snapshot) {
 
 function withClientId(snapshot) {
   if (!snapshot) return null;
-  return Object.assign({}, snapshot, { clientId: snapshotId(snapshot) });
+  var summary = String(snapshot.summary || snapshot.profileText || '').trim();
+  return Object.assign({}, snapshot, { summary: summary, profileText: snapshot.profileText || summary, clientId: snapshotId(snapshot) });
+}
+
+// V7 and earlier stored page instructions as the portrait itself. Treat those
+// snapshots as a migration candidate, while keeping them visible until V8 is
+// successfully generated.
+function needsPortraitMigration(snapshot) {
+  var summary = String(snapshot && (snapshot.summary || snapshot.profileText) || '').trim();
+  var wasUserEdited = snapshot && (
+    snapshot.userEdited === true ||
+    (snapshot.userEdited && typeof snapshot.userEdited === 'object') ||
+    (snapshot.userEditedOriginal && typeof snapshot.userEditedOriginal === 'object')
+  );
+  if (wasUserEdited) return false;
+  return !summary || /这是一份|基于近期|供你确认|供你修改|供你拒绝|阶段性观察|仅提炼当前|目前资料较少|等待你补充/.test(summary);
 }
 
 function normalizeMemoryState(value) {
   var source = value && typeof value === 'object' ? value : {};
-  // `latestDraft` is read only as a migration fallback for locally cached
-  // states created before portraits became immediately active.
-  var current = withClientId(source.current || source.latestDraft);
+  // 旧草稿只保留在云端历史中，不能在客户端伪装成已经生效的当前画像。
+  var current = withClientId(source.current);
   var history = (Array.isArray(source.history) ? source.history : []).map(withClientId);
   var currentId = snapshotId(current);
   return {
@@ -84,13 +98,14 @@ Page({
     portraitLoadError: false,
     portraitGenerateFailed: false,
     portraitLoading: false,
+    portraitAutoGenerateTriggered: false,
     portraitSaving: false,
     portraitEditing: false,
     portraitEditSummary: '',
-    showPortraitHistory: false,
     revisit: null,
     revisitAnswering: false,
     revisitAnswerText: '',
+    revisitSubmitting: false,
     revisitDisabled: false,
     lifeNotes: [],
     memoryState: emptyMemoryState(),
@@ -150,12 +165,14 @@ Page({
     var that = this;
     var revisit = this.data.revisit;
     var text = String(this.data.revisitAnswerText || '').trim();
-    if (!revisit || !revisit.localId) return;
+    if (!revisit || !revisit.localId || this.data.revisitSubmitting) return;
     if (!text) {
       wx.showToast({ title: '写一句就好', icon: 'none' });
       return;
     }
+    this.setData({ revisitSubmitting: true });
     cloudBase.answerRevisit(revisit.localId, text, function (result) {
+      that.setData({ revisitSubmitting: false });
       if (!result || !result.ok) {
         wx.showToast({ title: '暂时没有保存成功，请稍后再试', icon: 'none' });
         return;
@@ -276,6 +293,7 @@ Page({
 
   loadProfileMemory: function () {
     var that = this;
+    this.setData({ memoryLoaded: false, portraitLoadError: false });
     cloudBase.getProfileMemory(function (result) {
       if (!result || !result.ok) {
         // The fetch itself failed (network/cloud error). Only surface this
@@ -288,66 +306,59 @@ Page({
       }
       var remote = normalizeMemoryState(result);
       var local = normalizeMemoryState(that.data.memoryState);
-      if (!remote.current && !remote.latestDraft && !remote.history.length && local.history.length) {
+      if (!remote.current && !remote.latestDraft && !remote.history.length && (local.current || local.history.length)) {
         that.setData({ memoryLoaded: true, portraitLoadError: false });
+        if (needsPortraitMigration(local.current)) that.ensurePortraitGenerated(true, '旧版本画像升级');
         return;
       }
       persistMemoryState(remote);
       that.setData({ memoryState: remote, memoryLoaded: true, portraitLoadError: false });
+      if (!remote.current) that.ensurePortraitGenerated();
+      else if (needsPortraitMigration(remote.current)) that.ensurePortraitGenerated(true, '旧版本画像升级');
     });
   },
 
-  togglePortraitHistory: function () {
-    this.setData({ showPortraitHistory: !this.data.showPortraitHistory });
+  retryPortrait: function () {
+    this.setData({
+      memoryLoaded: false,
+      portraitLoadError: false,
+      portraitGenerateFailed: false,
+      portraitAutoGenerateTriggered: false
+    });
+    this.loadProfileMemory();
   },
 
-  restorePortrait: function (event) {
+  refreshPortrait: function () {
+    // Auto-migration is intentionally once per page load. A user-triggered
+    // refresh is a separate explicit action and must remain available.
+    this.setData({ portraitAutoGenerateTriggered: false, portraitGenerateFailed: false });
+    this.ensurePortraitGenerated(true, '手动重新梳理');
+  },
+
+  ensurePortraitGenerated: function (allowExisting, reason) {
     var that = this;
     var state = normalizeMemoryState(this.data.memoryState);
-    var targetId = String(event && event.currentTarget && event.currentTarget.dataset.id || '');
-    var target = state.history.filter(function (item) { return item.clientId === targetId; })[0];
-    if (!target || targetId === snapshotId(state.current)) return;
-
-    wx.showModal({
-      title: '回到这段理解？',
-      content: '当前画像会保留在历史记录里，不会被删除。',
-      confirmText: '回溯',
-      success: function (res) {
-        if (!res.confirm) return;
-        function applyRestored(snapshot) {
-          var previousId = snapshotId(state.current);
-          var restored = withClientId(snapshot || Object.assign({}, target, {
-            id: 'local-restored-' + String(Date.now()),
-            version: state.history.reduce(function (max, item) { return Math.max(max, Number(item.version || 0)); }, 0) + 1,
-            changeReason: '从 V' + String(target.version || '?') + ' 回溯',
-            userEdited: { restoredFromVersion: Number(target.version || 0), restoredAt: new Date().toISOString() }
-          }));
-          restored.status = 'confirmed';
-          restored.isCurrent = true;
-          state.current = restored;
-          state.history = [restored].concat(state.history.filter(function (item) {
-            return item.clientId !== restored.clientId;
-          }).map(function (item) {
-            return item.clientId === previousId
-              ? Object.assign({}, item, { status: 'superseded', isCurrent: false })
-              : item;
-          })).slice(0, 30);
-          persistMemoryState(state);
-          that.setData({ memoryState: state, showPortraitHistory: false });
-          wx.showToast({ title: '已回到这段理解', icon: 'success' });
-        }
-        if (!targetId || targetId.indexOf('local-') === 0) {
-          applyRestored(null);
-          return;
-        }
-        cloudBase.restoreProfilePortrait(targetId, function (result) {
-          if (!result || !result.ok || !result.snapshot) {
-            wx.showToast({ title: '回溯失败，请稍后再试', icon: 'none' });
-            return;
-          }
-          applyRestored(result.snapshot);
-        });
+    if ((!allowExisting && state.current) || this.data.portraitLoading || this.data.portraitAutoGenerateTriggered) return;
+    this.setData({ portraitLoading: true, portraitAutoGenerateTriggered: true, portraitGenerateFailed: false });
+    analytics.trackEvent(allowExisting ? 'profile_portrait_refresh' : 'profile_portrait_auto_generate', { dreamCount: this.data.insights.dreamCount });
+    cloudBase.generateProfilePortrait(reason || '首次打开画像时自动梳理', function (result) {
+      var nextState;
+      var snapshot;
+      if (!result || !result.ok || !result.snapshot) {
+        that.setData({ portraitLoading: false, portraitGenerateFailed: true });
+        return;
       }
+      nextState = normalizeMemoryState(that.data.memoryState);
+      snapshot = Object.assign({}, withClientId(result.snapshot), { status: 'confirmed', isCurrent: true });
+      nextState.current = snapshot;
+      nextState.history = [snapshot].concat(nextState.history.filter(function (item) {
+        return snapshotId(item) !== snapshotId(snapshot);
+      }).map(function (item) {
+        return Object.assign({}, item, { isCurrent: false });
+      })).slice(0, 30);
+      nextState.lastGeneratedDreamCount = that.data.insights.dreamCount;
+      persistMemoryState(nextState);
+      that.setData({ memoryState: nextState, memoryLoaded: true, portraitLoading: false, portraitGenerateFailed: false });
     });
   },
 
@@ -385,74 +396,9 @@ Page({
     this.setData({ profile: profile });
   },
 
-  createLocalPortraitDraft: function (changeReason) {
-    var state = normalizeMemoryState(this.data.memoryState);
-    var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
-    var maxVersion = state.history.reduce(function (max, item) {
-      return Math.max(max, Number(item.version || 0));
-    }, 0);
-    var portrait = dreamMemory.buildProfileDraft(this.data.profile, archive, maxVersion + 1, changeReason);
-    portrait.id = 'local-' + String(Date.now());
-    portrait.clientId = portrait.id;
-    portrait.status = 'confirmed';
-    portrait.isCurrent = true;
-    state.history = [portrait].concat(state.history.map(function (item) {
-      return item.clientId === snapshotId(state.current)
-        ? Object.assign({}, item, { status: 'superseded', isCurrent: false })
-        : item;
-    })).slice(0, 30);
-    state.current = portrait;
-    state.lastGeneratedDreamCount = this.data.insights.dreamCount;
-    persistMemoryState(state);
-    this.setData({ memoryState: state });
-    return portrait;
-  },
-
-  generatePortrait: function (event) {
-    var that = this;
-    var reason = event && event.currentTarget && event.currentTarget.dataset.reason
-      ? event.currentTarget.dataset.reason
-      : '根据最新资料与梦境变化生成';
-    var localPortrait;
-
-    if (this.data.portraitLoading) return;
-    localPortrait = this.createLocalPortraitDraft(reason);
-    this.setData({ portraitLoading: true, portraitEditing: false, portraitGenerateFailed: false });
-    analytics.trackEvent('profile_portrait_generate', {
-      dreamCount: this.data.insights.dreamCount,
-      reason: reason
-    });
-    cloudBase.generateProfilePortrait(reason, function (result) {
-      var state = normalizeMemoryState(that.data.memoryState);
-      that.setData({ portraitLoading: false });
-      if (!result || !result.ok || !result.snapshot) {
-        // Cloud generation failed. The local heuristic draft created above
-        // is still shown as `memoryState.current`, so this is never a blank
-        // screen — but stay visibly honest about the failure with a retry
-        // affordance instead of a toast the user may miss.
-        that.setData({ portraitGenerateFailed: true });
-        wx.showToast({ title: '云端生成失败，已展示本机版本', icon: 'none' });
-        return;
-      }
-      var remotePortrait = Object.assign({}, withClientId(result.snapshot), { status: 'confirmed', isCurrent: true });
-      state.history = [remotePortrait].concat(state.history.filter(function (item) {
-        return item.clientId !== localPortrait.clientId && item.clientId !== remotePortrait.clientId;
-      }).map(function (item) {
-        return item.clientId === snapshotId(state.current)
-          ? Object.assign({}, item, { status: 'superseded', isCurrent: false })
-          : item;
-      })).slice(0, 30);
-      state.current = remotePortrait;
-      state.lastGeneratedDreamCount = that.data.insights.dreamCount;
-      persistMemoryState(state);
-      that.setData({ memoryState: state, portraitGenerateFailed: false });
-      wx.showToast({ title: '阶段画像已更新', icon: 'success' });
-    });
-  },
-
   startPortraitEdit: function () {
     var portrait = this.data.memoryState.current;
-    if (!portrait) return;
+    if (!portrait || this.data.portraitLoading) return;
     this.setData({ portraitEditing: true, portraitEditSummary: portrait.summary || '' });
   },
 
@@ -464,7 +410,7 @@ Page({
     var that = this;
     var state = normalizeMemoryState(this.data.memoryState);
     var portrait = state.current;
-    if (!portrait) return;
+    if (!portrait || this.data.portraitLoading) return;
 
     var nextUse = portrait.useInFutureReadings === false;
     var targetId = snapshotId(portrait);
@@ -514,9 +460,14 @@ Page({
     var state = normalizeMemoryState(this.data.memoryState);
     var portrait = state.current;
     var summary = String(this.data.portraitEditSummary || '').trim().slice(0, 500);
-    if (!portrait || !summary || this.data.portraitSaving) return;
+    if (!portrait || !summary || this.data.portraitSaving || this.data.portraitLoading) return;
     if (!snapshotId(portrait) || snapshotId(portrait).indexOf('local-') === 0) {
-      portrait = Object.assign({}, portrait, { summary: summary, userEdited: true, updatedAt: new Date().toISOString() });
+      portrait = Object.assign({}, portrait, {
+        summary: summary,
+        profileText: summary,
+        userEdited: { summary: summary, editedAt: new Date().toISOString() },
+        updatedAt: new Date().toISOString()
+      });
       state.current = portrait;
       state.history = state.history.map(function (item) { return item.clientId === portrait.clientId ? portrait : item; });
       persistMemoryState(state);

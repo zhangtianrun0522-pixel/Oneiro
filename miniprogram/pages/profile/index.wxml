@@ -36,7 +36,7 @@
           placeholder="写下此刻的变化或感受"
           placeholder-class="muted"
         />
-        <button class="profile-revisit-send" bindtap="submitRevisitAnswer">发送</button>
+        <button class="profile-revisit-send" disabled="{{revisitSubmitting}}" loading="{{revisitSubmitting}}" bindtap="submitRevisitAnswer">发送</button>
       </view>
     </block>
 
@@ -49,13 +49,10 @@
   <view class="portrait-block">
     <view class="section-row">
       <text class="section-label">阶段画像{{memoryState.current ? ' · V' + memoryState.current.version : ''}}</text>
-      <!-- 内容存在优先展示；否则读取中显示「读取中」，读取完成后才区分
-           「读取失败」与真正的「等待形成」，避免第一帧就武断地判空 -->
-      <text class="portrait-focus-label {{memoryState.current ? (memoryState.current.useInFutureReadings === false ? 'is-paused' : 'is-active') : 'is-waiting'}}">{{memoryState.current ? (memoryState.current.useInFutureReadings === false ? '已暂停解读' : '用于解读中') : (!memoryLoaded ? '读取中' : (portraitLoadError ? '读取失败' : '等待形成'))}}</text>
+      <text class="portrait-focus-label {{memoryState.current ? (memoryState.current.useInFutureReadings === false ? 'is-paused' : 'is-active') : 'is-waiting'}}">{{memoryState.current ? (memoryState.current.useInFutureReadings === false ? '已暂停解读' : '用于解读中') : (!memoryLoaded ? '读取中' : (portraitLoading ? '正在梳理' : (portraitLoadError || portraitGenerateFailed ? '暂时不可用' : '等待形成')))}}</text>
     </view>
 
-    <!-- 内容优先：只要 memoryState.current 有值就展示，不受 memoryLoaded 影响——
-         这样刚在本页手动生成的本机草稿也能立刻显示，不会被"读取中"骨架盖住 -->
+    <!-- 内容优先：只要当前画像有值就展示，不受异步读取状态影响。 -->
     <view wx:if="{{memoryState.current}}" class="portrait-body">
       <textarea
         wx:if="{{portraitEditing}}"
@@ -66,13 +63,8 @@
         bindinput="onPortraitSummaryInput"
       />
       <text wx:else class="portrait-summary">{{memoryState.current.summary}}</text>
-      <!-- 云端生成失败时不能静默：本机推测版本仍展示，但要明确说明并给出重试 -->
-      <view wx:if="{{portraitGenerateFailed && !portraitEditing}}" class="portrait-generate-error">
-        <text class="portrait-generate-error-copy">云端生成失败，当前展示的是本机推测版本</text>
-        <text class="portrait-generate-error-retry" data-reason="重试生成" bindtap="generatePortrait">重试</text>
-      </view>
       <view wx:if="{{portraitEditing}}" class="portrait-actions">
-        <button class="portrait-primary" loading="{{portraitSaving}}" bindtap="savePortraitEdit">保存修改</button>
+        <button class="portrait-primary" disabled="{{portraitSaving || portraitLoading}}" loading="{{portraitSaving}}" bindtap="savePortraitEdit">保存修改</button>
         <button class="portrait-secondary" bindtap="cancelPortraitEdit">取消</button>
       </view>
     </view>
@@ -87,42 +79,42 @@
       </view>
     </view>
 
-    <!-- 加载完成但请求失败：区别于「真的还没有」，给出可理解的原因和重试 -->
+    <!-- 加载失败或自动生成失败：明确告诉用户可以重试，不把失败误判成无画像 -->
     <view wx:elif="{{portraitLoadError}}" class="portrait-empty-card">
-      <text class="portrait-empty-title">阶段画像暂时加载不出来</text>
-      <text class="portrait-empty-copy">可能是网络不稳定，不影响你已保存的资料。可以重新加载，或先生成一份本机画像。</text>
-      <text class="portrait-empty-retry" bindtap="loadProfileMemory">重新加载</text>
+      <text class="portrait-empty-title">暂时没连上，点击重试</text>
+      <text class="portrait-empty-copy">你的资料不会受影响，连上后我会继续为你梳理。</text>
+      <text class="portrait-empty-retry" bindtap="retryPortrait">重试</text>
     </view>
 
-    <!-- 加载已完成，确认云端和本机都没有画像：真正的空态 + 下一步引导 -->
+    <!-- 无画像时自动生成，避免让用户先理解并选择一堆操作 -->
+    <view wx:elif="{{portraitLoading}}" class="portrait-empty-card">
+      <text class="portrait-empty-title">正在为你梳理</text>
+      <text class="portrait-empty-copy">我会从你留下的资料、梦和生活片段开始，先整理一版简短的当下观察。</text>
+    </view>
+
+    <view wx:elif="{{portraitGenerateFailed}}" class="portrait-empty-card">
+      <text class="portrait-empty-title">暂时没连上，点击重试</text>
+      <text class="portrait-empty-copy">你的资料不会受影响，连上后我会继续为你梳理。</text>
+      <text class="portrait-empty-retry" bindtap="retryPortrait">重试</text>
+    </view>
+
+    <!-- 生成尚未开始的短暂空态会立即触发 ensurePortraitGenerated；这里仅作兜底 -->
     <view wx:else class="portrait-empty-card">
-      <text class="portrait-empty-title">还没有形成可查看的阶段画像</text>
-      <text class="portrait-empty-copy">先保存基础资料，或记录一个梦。Oneiro 会从这些真实线索开始理解你。</text>
+      <text class="portrait-empty-title">正在为你梳理</text>
+      <text class="portrait-empty-copy">我会从你留下的真实线索开始。</text>
     </view>
 
-    <view wx:if="{{!portraitEditing && (memoryState.current || memoryLoaded)}}" class="portrait-links-row">
-      <button wx:if="{{memoryState.current}}" class="portrait-link-btn" bindtap="startPortraitEdit">修改这段理解</button>
-      <button wx:if="{{memoryState.current}}" class="portrait-link-btn" bindtap="togglePortraitUse">{{memoryState.current.useInFutureReadings === false ? '恢复用于解读' : '暂停用于解读'}}</button>
-      <button class="portrait-link-btn" loading="{{portraitLoading}}" disabled="{{portraitLoading}}" data-reason="手动刷新" bindtap="generatePortrait">{{memoryState.current ? '手动刷新' : '生成第一份阶段画像'}}</button>
+    <view wx:if="{{!portraitEditing && memoryState.current}}" class="portrait-links-row">
+      <button wx:if="{{memoryState.current}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="startPortraitEdit">修改这段理解</button>
+      <button wx:if="{{memoryState.current}}" class="portrait-link-btn" disabled="{{portraitLoading}}" loading="{{portraitLoading}}" bindtap="refreshPortrait">重新梳理</button>
+      <button wx:if="{{memoryState.current}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="togglePortraitUse">{{memoryState.current.useInFutureReadings === false ? '恢复用于解读' : '暂停用于解读'}}</button>
     </view>
 
-    <view wx:if="{{memoryState.pastHistory.length}}" class="portrait-history-box">
-      <view class="portrait-history-head" bindtap="togglePortraitHistory">
-        <text class="section-label">历史版本</text>
-        <!-- 折叠态要带「展开」字样：只写「共 N 版」时这个盒子看起来是一块
-             读不出可点性的空白区，用户不知道里面还有内容 -->
-        <text class="section-meta">{{showPortraitHistory ? '收起' : ('共 ' + memoryState.pastHistory.length + ' 版 · 展开')}}</text>
-      </view>
-      <view wx:if="{{showPortraitHistory}}" class="portrait-history-list">
-        <view wx:for="{{memoryState.pastHistory}}" wx:key="clientId" class="history-item">
-          <view class="history-copy">
-            <text class="history-version">V{{item.version}} · {{item.status === 'superseded' ? '当时的理解' : '历史画像'}}</text>
-            <text wx:if="{{item.userEdited}}" class="history-edited-flag">用户编辑</text>
-          </view>
-          <button class="history-restore" data-id="{{item.clientId}}" bindtap="restorePortrait">回溯 ›</button>
-        </view>
-      </view>
+    <view wx:if="{{memoryState.current && portraitGenerateFailed}}" class="portrait-links-row">
+      <text class="portrait-empty-retry" bindtap="refreshPortrait">重新梳理失败，点击重试</text>
     </view>
+
+    <text wx:if="{{memoryState.current && insights.dreamCount < 3}}" class="portrait-growth-hint">随着你记录更多梦，这份画像会越来越具体</text>
   </view>
 
   <view class="recent-clues-block section-divider">

@@ -27,6 +27,36 @@ function allowedStatus(value, fallback) {
   return ['draft', 'confirmed', 'rejected', 'superseded'].indexOf(value) >= 0 ? value : fallback;
 }
 
+// 旧版本未写开关时，默认继续用于后续解读。
+function normalizedSnapshot(snapshot) {
+  const copy = Object.assign({}, snapshot || {});
+  // Some pre-summary snapshots only persisted profileText. Normalize on the
+  // way out so clients can render them and decide whether a migration is due.
+  copy.summary = text(copy.summary || copy.profileText, 500);
+  copy.profileText = text(copy.profileText || copy.summary, 500);
+  copy.status = allowedStatus(copy.status, 'confirmed');
+  copy.useInFutureReadings = copy.useInFutureReadings !== false;
+  return copy;
+}
+
+// 编辑原文不截断，用于保存和下一次生成时的高权重参考。
+function editableOriginal(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    summary: typeof source.summary === 'string' ? source.summary : '',
+    traits: Array.isArray(source.traits) ? source.traits.slice() : [],
+    themes: Array.isArray(source.themes) ? source.themes.slice() : [],
+    realLifeContext: Array.isArray(source.realLifeContext) ? source.realLifeContext.slice() : [],
+    changeReason: typeof source.changeReason === 'string' ? source.changeReason : ''
+  };
+}
+
+function snapshotUserEdit(snapshot) {
+  if (snapshot && snapshot.userEditedOriginal) return snapshot.userEditedOriginal;
+  if (snapshot && snapshot.userEdited && typeof snapshot.userEdited === 'object') return snapshot.userEdited;
+  return null;
+}
+
 function cleanStrings(value, maxItems, maxLength) {
   if (!Array.isArray(value)) return [];
   return value.map(function (item) { return text(item, maxLength); }).filter(Boolean).slice(0, maxItems);
@@ -34,6 +64,10 @@ function cleanStrings(value, maxItems, maxLength) {
 
 function safeId(value) {
   return text(value, 80).replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function newSnapshotId() {
+  return safeId('portrait-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12));
 }
 
 function sortByDate(items) {
@@ -186,12 +220,13 @@ async function loadAllByOpenid(collectionName, openid) {
   return loadAllByOpenidFrom(db, collectionName, openid);
 }
 
-async function loadAllByOpenidFrom(database, collectionName, openid) {
+async function loadAllByOpenidFrom(database, collectionName, openid, sortField) {
   const items = [];
   let offset = 0;
   while (true) {
-    const response = await database.collection(collectionName).where({ openid: openid })
-      .orderBy('createdAt', 'desc').skip(offset).limit(SOURCE_PAGE_SIZE).get();
+    let query = database.collection(collectionName).where({ openid: openid });
+    if (sortField) query = query.orderBy(sortField, 'desc');
+    const response = await query.skip(offset).limit(SOURCE_PAGE_SIZE).get();
     const page = response && response.data ? response.data : [];
     items.push.apply(items, page);
     if (page.length < SOURCE_PAGE_SIZE) return items;
@@ -206,6 +241,14 @@ function sourceManifest(sources) {
   }
   return {
     profile: baseProfile(sources && sources.user),
+    portrait: {
+      stateId: text(sources && sources.memoryState && sources.memoryState._id, 80),
+      generationRevision: Number(sources && sources.memoryState && sources.memoryState.generationRevision || 0),
+      nextVersion: Number(sources && sources.memoryState && sources.memoryState.nextVersion || 1),
+      currentSnapshotId: text(sources && sources.currentSnapshotId, 80),
+      priorSnapshotId: text(sources && sources.priorPortrait && sources.priorPortrait._id, 80),
+      priorUpdatedAt: dateKey(sources && sources.priorPortrait && sources.priorPortrait.updatedAt)
+    },
     dreams: (sources && sources.dreams || []).map(function (dream) {
       return JSON.stringify({
         id: text(dream && dream.id, 80), localId: text(dream && dream.localId, 80),
@@ -224,36 +267,21 @@ function sameManifest(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-async function sourcesStillCurrent(transaction, openid, expected) {
-  const results = await Promise.all([
-    transaction.collection('users').where({ openid: openid }).limit(1).get(),
-    loadAllByOpenidFrom(transaction, 'dream_entries', openid),
-    loadAllByOpenidFrom(transaction, 'life_notes', openid)
-  ]);
-  const user = results[0].data && results[0].data[0] ? results[0].data[0] : null;
-  const dreams = results[1] || [];
-  const notes = results[2] || [];
-  const current = sourceManifest({
-    user: user,
-    dreams: dreams.map(function (dream) {
-      const result = dream.result || {};
-      return {
-        id: text(dream._id || dream.localId, 80), localId: text(dream.localId, 80), text: text(dream.dreamText, 360),
-        symbols: cleanStrings(dream.symbols || result.symbols, 5, 30), emotion: text(dream.emotionalWeather || result.emotional_weather, 100),
-        discussion: discussionTexts(dream), createdAt: dream.createdAt || null
-      };
-    }),
-    notes: notes.map(function (note) { return { id: text(note._id, 80), text: text(note.text, 220), createdAt: note.createdAt || null }; })
-  });
-  if (!sameManifest(expected, current) || dreams.some(function (dream) { return dream.deletionPending === true; })) return false;
-
+async function sourcesStillCurrent(openid, expected) {
+  // All collection queries run outside the transaction. CloudBase only allows
+  // doc operations in a transaction; the state-document revision below is the
+  // transactional optimistic lock for the gap between this check and commit.
+  const currentSources = await loadSources(openid);
+  if (!sameManifest(expected, sourceManifest(currentSources))) return null;
+  if (currentSources.rawDreams.some(function (dream) { return dream.deletionPending === true; })) return null;
+  const deletionJobs = await loadAllByOpenid('deletion_jobs', openid);
   const sourceDreamIds = expected.dreams.map(function (entry) {
     try { return text(JSON.parse(entry).localId, 80); } catch (error) { return ''; }
   }).filter(Boolean);
-  const deletionChecks = await Promise.all(sourceDreamIds.map(function (localId) {
-    return transaction.collection('deletion_jobs').where({ openid: openid, sourceDreamId: localId }).limit(1).get();
-  }));
-  return !deletionChecks.some(function (result) { return result.data && result.data.length; });
+  if (deletionJobs.some(function (job) {
+    return sourceDreamIds.indexOf(text(job && job.sourceDreamId, 80)) >= 0;
+  })) return null;
+  return currentSources;
 }
 
 async function loadSources(openid) {
@@ -261,7 +289,8 @@ async function loadSources(openid) {
     db.collection('users').where({ openid: openid }).limit(1).get().catch(function () { return { data: [] }; }),
     loadAllByOpenid('dream_entries', openid).catch(function () { return []; }),
     loadAllByOpenid('life_notes', openid).catch(function () { return []; }),
-    db.collection('profile_snapshots').where({ openid: openid }).orderBy('updatedAt', 'desc').limit(8).get().catch(function () { return { data: [] }; })
+    db.collection('profile_snapshots').where({ openid: openid }).limit(MAX_HISTORY).get().catch(function () { return { data: [] }; }),
+    db.collection('profile_memory_state').where({ openid: openid }).limit(1).get().catch(function () { return { data: [] }; })
   ]);
   const user = results[0].data && results[0].data[0] ? results[0].data[0] : null;
   const dreams = (results[1] || []).map(function (dream) {
@@ -281,11 +310,63 @@ async function loadSources(openid) {
     return { id: text(note._id, 80), text: text(note.text, 220), createdAt: note.createdAt || null, ref: sourceRef('life_notes', note) };
   }).filter(function (item) { return item.id && item.text; });
   const userRef = user ? sourceRef('users', user) : null;
-  const portraitHistory = results[3] && results[3].data ? results[3].data : [];
-  const priorPortrait = portraitHistory.filter(function (item) { return item.status === 'draft' && item.stale !== true; })[0]
+  const portraitHistory = sortByDate((results[3] && results[3].data ? results[3].data : []).map(normalizedSnapshot));
+  const priorPortrait = portraitHistory.filter(function (item) { return item.status === 'confirmed' && item.isCurrent !== false && item.stale !== true; })[0]
     || portraitHistory.filter(function (item) { return item.status === 'confirmed' && item.stale !== true; })[0]
+    || portraitHistory.filter(function (item) { return item.status === 'draft' && item.stale !== true; })[0]
     || null;
-  return { user: user, userRef: userRef, dreams: dreams, notes: notes, priorPortrait: priorPortrait };
+  const memoryState = results[4].data && results[4].data[0] ? results[4].data[0] : null;
+  return {
+    user: user,
+    userRef: userRef,
+    dreams: dreams,
+    notes: notes,
+    priorPortrait: priorPortrait,
+    currentSnapshotId: memoryState && memoryState.currentSnapshotId,
+    memoryState: memoryState || null,
+    portraitHistory: portraitHistory,
+    rawDreams: results[1] || []
+  };
+}
+
+async function ensureMemoryState(openid) {
+  const existing = await db.collection('profile_memory_state').where({ openid: openid }).limit(1).get();
+  if (existing.data && existing.data[0]) return existing.data[0];
+  const snapshotsResult = await db.collection('profile_snapshots').where({ openid: openid }).limit(MAX_HISTORY).get();
+  const snapshots = sortByDate((snapshotsResult.data || []).map(normalizedSnapshot));
+  const current = snapshots.filter(function (item) { return item.status === 'confirmed' && item.isCurrent !== false && item.stale !== true; })[0]
+    || snapshots.filter(function (item) { return item.status === 'confirmed' && item.stale !== true; })[0]
+    || null;
+  const nextVersion = snapshots.reduce(function (next, item) {
+    const version = Number(item && item.version);
+    return Number.isFinite(version) ? Math.max(next, version + 1) : next;
+  }, 1);
+  // First generation has no state doc to lock yet. A stable id gives all
+  // concurrent opens one document, and the doc-only transaction prevents a
+  // late initializer from resetting a state that another request committed.
+  let hash = 2166136261;
+  for (let index = 0; index < openid.length; index += 1) {
+    hash ^= openid.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const id = 'profile-memory-' + (hash >>> 0).toString(36);
+  const now = new Date();
+  return runAtomic(async function (transaction) {
+    const stateDoc = transaction.collection('profile_memory_state').doc(id);
+    let state = null;
+    try {
+      state = (await stateDoc.get()).data || null;
+    } catch (error) {}
+    if (state) return state;
+    const initialData = {
+      openid: openid, nextVersion: nextVersion,
+      currentSnapshotId: current ? current._id : '', generationRevision: 0,
+      createdAt: now, updatedAt: now
+    };
+    const initialState = Object.assign({ _id: id }, initialData);
+    await stateDoc.set({ data: initialData });
+    return (await stateDoc.get()).data || initialState;
+  });
 }
 
 function deterministicDraft(sources) {
@@ -311,18 +392,22 @@ function deterministicDraft(sources) {
   if (themes.length) traits.push('对反复出现的意象保持观察');
   if (!traits.length) traits.push('目前资料较少，等待更多用户主动提供的线索');
   const name = profile.nickname || '你';
-  const recurringThemes = patterns.recurringThemes.map(function (item) { return '“' + item.label + '”'; }).join('、');
+  const recurringThemes = patterns.recurringThemes.filter(function (item) { return item.count >= 2; }).slice(0, 3).map(function (item) { return '“' + item.label + '”'; }).join('、');
   const recentNote = sources.notes[0] ? text(sources.notes[0].text, 80) : '';
-  const summaryParts = [name + '，你是一个对变化和细节很敏感、但不会轻易被它们推着走的人。'];
-  if (recentNote) summaryParts.push('最近现实里你提到“' + recentNote + '”，你似乎正在一边靠近新的可能，一边确认它是否真的值得投入。');
-  else if (recurringThemes) summaryParts.push('最近反复出现的' + recurringThemes + '，像是一条持续牵着你的线，让你不断回头确认自己真正想要什么。');
-  else if (patterns.recurringEmotions[0]) summaryParts.push('最近的梦常带着“' + patterns.recurringEmotions[0].label + '”的情绪天气，像是有种感受还没有被真正放下。');
-  if (sources.dreams.some(function (dream) { return dream.discussion.length; })) summaryParts.push('你没有急着给这些变化下结论，而是愿意在梦后继续把感受说清楚。');
-  if (summaryParts.length === 1) summaryParts.push('你正在慢慢形成自己的判断：什么值得留下，什么只是因为熟悉才舍不得离开。');
+  const emotion = patterns.recurringEmotions[0] ? patterns.recurringEmotions[0].label : '目前还无法判断';
+  const priorUserEdit = snapshotUserEdit(sources.priorPortrait);
+  const summaryParts = ['当下的状态：' + name + '，' + (recentNote ? '你最近提到“' + recentNote + '”。' : '现有素材不多，你正在留下可供理解自己的线索。')];
+  if (priorUserEdit && priorUserEdit.summary) summaryParts[0] = '当下的状态：' + text(priorUserEdit.summary, 55);
+  if (recurringThemes) summaryParts.push('反复出现的主题：' + recurringThemes + '。');
+  summaryParts.push('情绪的底色：' + emotion + '；这只是当前资料中的有限观察。');
+  if (sources.priorPortrait) summaryParts.push('正在变化的：新的记录会继续校正这份阶段性理解。');
+  const summary = priorUserEdit && priorUserEdit.summary
+    ? String(priorUserEdit.summary).trim().slice(0, 500)
+    : summaryParts.join('\n').slice(0, 200);
   return {
-    summary: text(summaryParts.join(''), 500),
+    summary: summary,
     traits: cleanStrings(traits, 5, 80),
-    themes: cleanStrings(themes, 6, 40),
+    themes: cleanStrings(themes, 3, 40),
     realLifeContext: cleanStrings(contexts, 5, 140),
     sourceRefs: refs.slice(0, 18),
     baseProfile: profile,
@@ -331,7 +416,8 @@ function deterministicDraft(sources) {
       discussionCount: sources.dreams.reduce(function (count, dream) { return count + dream.discussion.length; }, 0),
       lifeNoteCount: sources.notes.length
     },
-    changeReason: '根据当前可用的基础资料、已存档梦境、梦后回应和生活记录生成。'
+    changeReason: '根据当前可用的基础资料、已存档梦境、梦后回应和生活记录生成。',
+    hasPriorPortrait: !!sources.priorPortrait
   };
 }
 
@@ -340,13 +426,29 @@ function isMetaSummary(value) {
   return !source || /这是一份|基于近期|供你确认|供你修改|阶段性观察|仅提炼当前|目前资料较少|等待你补充/.test(source);
 }
 
+// 画像正文固定为四个板块，首次生成不展示“正在变化的”。
+function fixedSummary(value, fallback, includeChanging) {
+  const headings = includeChanging
+    ? ['当下的状态：', '反复出现的主题：', '情绪的底色：', '正在变化的：']
+    : ['当下的状态：', '反复出现的主题：', '情绪的底色：'];
+  const sectionLimit = includeChanging ? 42 : 55;
+  const source = String(value == null ? '' : value).replace(/\r/g, '').trim();
+  const lines = headings.map(function (heading, index) {
+    const start = source.indexOf(heading);
+    const next = index + 1 < headings.length ? source.indexOf(headings[index + 1], start + heading.length) : source.length;
+    if (start < 0 || next < start) return '';
+    return heading + text(source.slice(start + heading.length, next), sectionLimit);
+  });
+  return lines.every(Boolean) ? lines.join('\n') : fallback.summary;
+}
+
 function normalizeObservation(raw, fallback) {
   raw = raw && typeof raw === 'object' ? raw : {};
   const traits = cleanStrings(raw.traits, 5, 80);
-  const themes = cleanStrings(raw.themes, 6, 40);
+  const themes = cleanStrings(raw.themes, 3, 40);
   const contexts = cleanStrings(raw.realLifeContext, 5, 140);
   return {
-    summary: isMetaSummary(raw.summary) ? fallback.summary : text(raw.summary, 500),
+    summary: isMetaSummary(raw.summary) ? fallback.summary : fixedSummary(raw.summary, fallback, fallback.hasPriorPortrait),
     traits: traits.length ? traits : fallback.traits,
     themes: themes.length ? themes : fallback.themes,
     realLifeContext: contexts.length ? contexts : fallback.realLifeContext,
@@ -360,23 +462,21 @@ function normalizeObservation(raw, fallback) {
 function aiPrompt(sources) {
   const profile = baseProfile(sources.user);
   const evidence = promptEvidence(sources);
-  const priorPortrait = sources.priorPortrait ? {
+  const priorPortrait = sources.priorPortrait ? normalizedSnapshot(sources.priorPortrait) : null;
+  const priorUserEdit = snapshotUserEdit(priorPortrait);
+  const priorPortraitForPrompt = priorPortrait ? {
     version: Number(sources.priorPortrait.version || 0),
     summary: text(sources.priorPortrait.summary, 500),
-    userEdited: !!sources.priorPortrait.userEdited
+    userEdited: priorPortrait.userEdited === true || !!priorUserEdit,
+    userEditedOriginal: priorUserEdit
   } : null;
   return [
-    '你为 Oneiro 创建一份会自动成为当前版本的“AI阶段画像”。只能基于提供资料作可修正的阶段性观察，绝不把推测写成事实。',
-    '不得诊断人格、心理/医疗状况，不预测未来，不应包含敏感属性推断。资料不足时明确保持有限。',
-    'summary 是核心：写成一段直接对“你”说的话，像熟悉用户的朋友。必须自然连起基础资料背景、近期变化、跨时间重复模式和当前张力；具体但不武断。基础资料只作理解背景，不据此下判断。',
-    'summary 禁止出现“这是一份”“基于资料”“供你确认”等元话术；禁止逐个解释梦象、逐条复述梦或生活记录。',
-    '必须自己判断哪些梦后聊天是有价值的现实线索：优先保留具体的近期事件、持续情绪、关系/工作/生活变化和反复出现的现实关注点；忽略寒暄、单纯梦中描述、对解读的附和和没有现实落点的猜测。',
-    '不要要求用户确认，也不要把“用户没有点击确认”当成排除条件；这是系统的提取工作。信息不足时宁可返回空数组。',
-    '上一版仅是可修正基线。若其中有用户编辑，优先延续其核心措辞，除非新证据明显需要调整。',
-    '原始证据已按输入边界截取；长期模式覆盖全部已存档来源。不要声称看到了未提供的细节。',
-    '只返回 JSON：{"summary":"<=500字，朋友式整体描述","traits":["<=80字，最多5项，选择性提炼"],"themes":["<=40字，最多6项，选择性提炼"],"realLifeContext":["<=140字，最多5项，仅补充必要现实背景"],"changeReason":"<=220字"}。',
+    '为 Oneiro 生成自动生效的阶段画像，只能据证据做可修正观察，不编造、不诊断、不预测。',
+    'summary 固定约200字、四行：当下的状态、反复出现的主题、情绪的底色、正在变化的；没有上一版时省略“正在变化的”。资料少也写基础画像，并明确观察有限。整体替换旧画像，不能追加或逐条复述素材。',
+    '以下是用户亲手修改过的自我描述，其含义必须完整保留并融入新画像，不得丢弃或反驳；它是最高权重输入。忽略寒暄和无现实落点的猜测。',
+    '只返回 JSON：{"summary":"固定结构画像","traits":[],"themes":[],"realLifeContext":[],"changeReason":""}。',
     '基础用户资料：' + JSON.stringify(profile),
-    '上一版阶段画像（只作为可修正的基线；如果用户编辑过，优先保留其核心措辞）：' + JSON.stringify(priorPortrait),
+    '上一版阶段画像：' + JSON.stringify(priorPortraitForPrompt),
     '有边界的近期证据与全量长期模式：' + JSON.stringify(evidence)
   ].join('\n');
 }
@@ -403,7 +503,7 @@ async function generateObservation(sources) {
 
 function snapshotForClient(snapshot) {
   if (!snapshot) return null;
-  const copy = Object.assign({}, snapshot);
+  const copy = normalizedSnapshot(snapshot);
   delete copy.openid;
   return copy;
 }
@@ -440,29 +540,18 @@ async function getState(openid) {
   ]);
   const result = results[0];
   const memoryState = results[1].data && results[1].data[0];
-  const sortedHistory = sortByDate(result.data || []);
+  const sortedHistory = sortByDate((result.data || []).map(normalizedSnapshot));
   const visible = function (item) {
     return item && item.stale !== true;
   };
-  const usable = function (item) {
-    return visible(item) && item.useInFutureReadings !== false;
-  };
-  const history = sortedHistory.map(function (item) {
-    if (item.status === 'draft') {
-      return Object.assign({}, item, {
-        status: 'superseded',
-        isCurrent: false
-      });
-    }
-    return item;
-  });
+  const history = sortedHistory;
   const current = (memoryState && memoryState.currentSnapshotId
-    ? history.filter(function (item) { return item._id === memoryState.currentSnapshotId && item.status === 'confirmed' && visible(item); })[0]
+    ? history.filter(function (item) { return item._id === memoryState.currentSnapshotId && item.status === 'confirmed' && item.isCurrent !== false && visible(item); })[0]
     : null) || history.filter(function (item) { return item.status === 'confirmed' && item.isCurrent !== false && visible(item); })[0] || null;
   return {
     ok: true,
     current: await decorateSnapshot(openid, current),
-    latestDraft: null,
+    latestDraft: await decorateSnapshot(openid, history.filter(function (item) { return item.status === 'draft' && visible(item); })[0] || null),
     history: await Promise.all(history.map(function (item) { return decorateSnapshot(openid, item); }))
   };
 }
@@ -472,7 +561,7 @@ function editableSnapshot(input, base) {
   return {
     summary: text(source.summary, 500) || base.summary,
     traits: Array.isArray(source.traits) ? cleanStrings(source.traits, 5, 80) : base.traits,
-    themes: Array.isArray(source.themes) ? cleanStrings(source.themes, 6, 40) : base.themes,
+    themes: Array.isArray(source.themes) ? cleanStrings(source.themes, 3, 40) : base.themes,
     realLifeContext: Array.isArray(source.realLifeContext) ? cleanStrings(source.realLifeContext, 5, 140) : base.realLifeContext,
     changeReason: text(source.changeReason, 220) || base.changeReason
   };
@@ -493,62 +582,75 @@ exports.main = async function (event) {
     if (action === 'get' || action === 'list') return getState(openid);
 
     if (action === 'generate') {
+      await ensureMemoryState(openid);
       const sources = await loadSources(openid);
       const expectedSources = sourceManifest(sources);
       const generated = await generateObservation(sources);
       const now = new Date();
       const observation = generated.observation;
+      const priorUserEdit = snapshotUserEdit(sources.priorPortrait);
       const requestedReason = text(event && event.changeReason, 220);
+      const checkedSources = await sourcesStillCurrent(openid, expectedSources);
+      if (!checkedSources) return { ok: false, reason: 'sources_changed', retryable: true };
+      const snapshotId = newSnapshotId();
       const created = await runAtomic(async function (transaction) {
-        if (!await sourcesStillCurrent(transaction, openid, expectedSources)) {
+        const expectedState = checkedSources.memoryState;
+        if (!expectedState || !expectedState._id) return { sourceChanged: true };
+        let state;
+        try {
+          state = (await transaction.collection('profile_memory_state').doc(expectedState._id).get()).data;
+        } catch (error) {
           return { sourceChanged: true };
         }
-        const states = await transaction.collection('profile_memory_state').where({ openid: openid }).limit(1).get();
-        const state = states.data && states.data[0];
-        let version = state ? Number(state.nextVersion || 1) : 1;
-        if (!state) {
-          const prior = await transaction.collection('profile_snapshots').where({ openid: openid }).limit(MAX_HISTORY).get();
-          version = (prior.data || []).reduce(function (max, item) {
-            const value = Number(item && item.version);
-            return Number.isFinite(value) && value >= max ? value + 1 : max;
-          }, 1);
+        if (!state || Number(state.generationRevision || 0) !== Number(expectedState.generationRevision || 0) ||
+          Number(state.nextVersion || 1) !== Number(expectedState.nextVersion || 1) ||
+          text(state.currentSnapshotId, 80) !== text(expectedState.currentSnapshotId, 80)) return { sourceChanged: true };
+        const version = Number(state.nextVersion || 1);
+        const currentSnapshotId = text(state.currentSnapshotId, 80);
+        if (currentSnapshotId) {
+          try {
+            const currentSnapshot = (await transaction.collection('profile_snapshots').doc(currentSnapshotId).get()).data;
+            const currentUpdatedAt = new Date(currentSnapshot && currentSnapshot.updatedAt || 0).toISOString();
+            if (!currentSnapshot || currentSnapshot.openid !== openid ||
+              text(expectedSources.portrait.priorSnapshotId, 80) !== currentSnapshotId ||
+              text(expectedSources.portrait.priorUpdatedAt, 80) !== currentUpdatedAt) return { sourceChanged: true };
+            await transaction.collection('profile_snapshots').doc(currentSnapshotId).update({ data: { isCurrent: false, updatedAt: now } });
+          } catch (error) {
+            return { sourceChanged: true };
+          }
         }
-        const priorDrafts = await transaction.collection('profile_snapshots')
-          .where({ openid: openid, status: 'draft' }).limit(MAX_HISTORY).get();
-        await Promise.all((priorDrafts.data || []).map(function (item) {
-          return transaction.collection('profile_snapshots').doc(item._id).update({ data: {
-            status: 'superseded', isCurrent: false, supersededAt: now,
-            supersededByVersion: version, updatedAt: now
-          } });
-        }));
-        const priorConfirmed = await transaction.collection('profile_snapshots')
-          .where({ openid: openid, status: 'confirmed' }).limit(MAX_HISTORY).get();
-        await Promise.all((priorConfirmed.data || []).map(function (item) {
-          return transaction.collection('profile_snapshots').doc(item._id).update({ data: { isCurrent: false, updatedAt: now } });
-        }));
-        const snapshot = await transaction.collection('profile_snapshots').add({ data: {
+        await transaction.collection('profile_snapshots').doc(snapshotId).set({ data: {
           openid: openid, version: version, status: 'confirmed', isCurrent: true,
           summary: observation.summary, profileText: observation.summary, traits: observation.traits, themes: observation.themes,
           realLifeContext: observation.realLifeContext, recentContext: observation.realLifeContext, sourceRefs: observation.sourceRefs,
           baseProfile: observation.baseProfile, sourceCounts: observation.sourceCounts,
           changeReason: requestedReason || observation.changeReason, aiOriginal: Object.assign({}, observation, { provider: generated.provider, model: generated.model || '', fallback: generated.fallback }),
-          userEdited: null, useInFutureReadings: true, createdAt: now, updatedAt: now, confirmedAt: now,
+          // 延续编辑原文，保证后续生成仍以用户表达为高权重输入。
+          userEdited: priorUserEdit ? true : null, userEditedOriginal: priorUserEdit,
+          useInFutureReadings: sources.priorPortrait && sources.priorPortrait.useInFutureReadings === false ? false : true,
+          createdAt: now, updatedAt: now, confirmedAt: now,
           autoPublished: true
         } });
-        if (state) {
-          await transaction.collection('profile_memory_state').doc(state._id).update({ data: {
-            nextVersion: version + 1, currentSnapshotId: snapshot._id, updatedAt: now
-          } });
-        } else {
-          await transaction.collection('profile_memory_state').add({ data: {
-            openid: openid, nextVersion: version + 1, currentSnapshotId: snapshot._id, createdAt: now, updatedAt: now
-          } });
-        }
-        return snapshot;
+        await transaction.collection('profile_memory_state').doc(expectedState._id).update({ data: {
+          nextVersion: version + 1, currentSnapshotId: snapshotId,
+          generationRevision: Number(state.generationRevision || 0) + 1, updatedAt: now
+        } });
+        return { _id: snapshotId, version: version };
       });
       if (created && created.sourceChanged) {
         return { ok: false, reason: 'sources_changed', retryable: true };
       }
+      // Draft cleanup is deliberately outside the critical transaction: it
+      // does not decide the current version and CloudBase transactions only
+      // permit doc operations. The state document above remains the lock.
+      await Promise.all(checkedSources.portraitHistory.filter(function (item) {
+        return item.status === 'draft';
+      }).map(function (item) {
+        return db.collection('profile_snapshots').doc(item._id).update({ data: {
+          status: 'superseded', isCurrent: false, supersededAt: now,
+          supersededByVersion: created.version, updatedAt: now
+        } }).catch(function () { return null; });
+      }));
       const snapshot = await findOwned(openid, created._id);
       return { ok: true, snapshot: await decorateSnapshot(openid, snapshot), provider: generated.provider, fallback: generated.fallback, providerError: generated.error || '' };
     }
@@ -560,7 +662,9 @@ exports.main = async function (event) {
     const now = new Date();
 
     if (action === 'save') {
-      const edited = editableSnapshot(event && (event.snapshot || event.edits), existing);
+      const editInput = event && (event.snapshot || event.edits);
+      const edited = editableSnapshot(editInput, existing);
+      const original = editableOriginal(editInput);
       const created = await runAtomic(async function (transaction) {
         const states = await transaction.collection('profile_memory_state').where({ openid: openid }).limit(1).get();
         const state = states.data && states.data[0];
@@ -583,7 +687,8 @@ exports.main = async function (event) {
           openid: openid, version: version, status: 'confirmed', isCurrent: true,
           sourceRefs: existing.sourceRefs || [], baseProfile: existing.baseProfile || baseProfile(null), sourceCounts: existing.sourceCounts || {},
           profileText: edited.summary, recentContext: existing.recentContext || existing.realLifeContext || [],
-          aiOriginal: existing.aiOriginal || null, userEdited: Object.assign({}, edited, { editedAt: now }),
+          aiOriginal: existing.aiOriginal || null, userEdited: true,
+          userEditedOriginal: Object.assign({}, original, { editedAt: now }),
           useInFutureReadings: existing.useInFutureReadings !== false, createdAt: now, updatedAt: now, confirmedAt: now,
           autoPublished: false, derivedFromSnapshotId: id
         }) });
@@ -597,7 +702,7 @@ exports.main = async function (event) {
       return { ok: true, snapshot: await decorateSnapshot(openid, await findOwned(openid, created._id)) };
     }
 
-    if (action === 'confirm') {
+    if (action === 'confirm' || action === 'confirmed') {
       if (existing.status === 'confirmed' && existing.isCurrent === true) {
         return { ok: true, snapshot: await decorateSnapshot(openid, existing) };
       }
@@ -622,12 +727,19 @@ exports.main = async function (event) {
     }
 
     if (action === 'reject') {
-      await db.collection('profile_snapshots').doc(id).update({ data: { status: 'rejected', isCurrent: false, updatedAt: now } });
+      await runAtomic(async function (transaction) {
+        await transaction.collection('profile_snapshots').doc(id).update({ data: { status: 'rejected', isCurrent: false, updatedAt: now } });
+        const states = await transaction.collection('profile_memory_state').where({ openid: openid }).limit(1).get();
+        const state = states.data && states.data[0];
+        if (state && state.currentSnapshotId === id) {
+          await transaction.collection('profile_memory_state').doc(state._id).update({ data: { currentSnapshotId: '', updatedAt: now } });
+        }
+      });
       return { ok: true, snapshot: await decorateSnapshot(openid, await findOwned(openid, id)) };
     }
 
     if (action === 'toggleUse') {
-      const value = typeof event.useInFutureReadings === 'undefined' ? !existing.useInFutureReadings : bool(event.useInFutureReadings);
+      const value = typeof event.useInFutureReadings === 'undefined' ? existing.useInFutureReadings === false : bool(event.useInFutureReadings);
       await db.collection('profile_snapshots').doc(id).update({ data: { useInFutureReadings: value, updatedAt: now } });
       return { ok: true, snapshot: await decorateSnapshot(openid, await findOwned(openid, id)) };
     }
@@ -657,7 +769,8 @@ exports.main = async function (event) {
           sourceRefs: existing.sourceRefs || [], baseProfile: existing.baseProfile || baseProfile(null), sourceCounts: existing.sourceCounts || {},
           changeReason: '从 V' + String(existing.version || '?') + ' 回溯',
           aiOriginal: existing.aiOriginal || null,
-          userEdited: { restoredFromSnapshotId: id, restoredFromVersion: Number(existing.version || 0), restoredAt: now },
+          userEdited: existing.userEdited === true,
+          userEditedOriginal: existing.userEditedOriginal || null,
           useInFutureReadings: existing.useInFutureReadings !== false,
           createdAt: now, updatedAt: now, confirmedAt: now, autoPublished: false,
           derivedFromSnapshotId: id

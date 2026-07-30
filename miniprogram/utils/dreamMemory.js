@@ -165,49 +165,49 @@ function discussionCount(archive) {
 }
 
 function buildProfileDraft(profile, archive, nextVersion, changeReason) {
+  var records = readyRecords(archive);
   var insights = buildInsights(archive);
   var factsList = autoExtractedRealLifeContext(archive);
   var discussions = discussionCount(archive);
-  var themes = insights.recurringSymbols.concat(insights.recurringEmotions).slice(0, 5).map(function (item) {
-    return item.label;
-  });
-  var traits = [];
-  var summaryParts = [];
+  var themes = insights.recurringSymbols.slice(0, 3).map(function (item) { return item.label; });
+  var tone = insights.recurringEmotions[0] ? '梦里的情绪常带着“' + insights.recurringEmotions[0].label + '”的底色。' :
+    factsList[0] ? '现实线索里能看见一层“' + cleanText(factsList[0], 28) + '”的情绪。' : '情绪还在显影，暂时不急着下结论。';
+  var stateText;
+  var changing = '';
+  var evidenceSymbols = records.reduce(function (all, record) {
+    return all.concat(uniqueList(record && record.result && record.result.symbols, 3));
+  }, []);
 
-  if (insights.recurringSymbols[0]) {
-    traits.push('近期常通过“' + insights.recurringSymbols[0].label + '”组织梦中感受');
-  }
-  if (insights.recurringEmotions[0]) {
-    traits.push('近期较常出现“' + insights.recurringEmotions[0].label + '”的情绪天气');
-  }
-  if (insights.recurringPeople[0]) {
-    traits.push('反复梦见“' + insights.recurringPeople[0].label + '”这一人物线索');
-  }
-  if (!traits.length) traits.push('梦境线索仍在积累，暂未形成稳定重复');
-
-  if (!insights.dreamCount && !factsList.length) {
-    summaryParts.push((profile && profile.nickname ? cleanText(profile.nickname, 30) + '，' : '') +
-      '你是一个会把重要感受留下来、再回头确认它们的人。现在我们还在认识你的起点，下一次梦境和现实里的变化会让这段理解更具体。');
+  if (!records.length && !factsList.length) {
+    stateText = '你刚开始记录，当前留下的资料还很少；这份画像会从下一条真实线索继续变具体。';
+  } else if (records.length < 3) {
+    stateText = '你刚开始记录。从现有梦境看，' + (evidenceSymbols.length ? '“' + evidenceSymbols.slice(0, 2).join('”“') + '”是目前能确认的线索。' : '目前只能确认你正在留意自己的梦。');
+  } else if (factsList[0]) {
+    stateText = '最近现实里你提到“' + cleanText(factsList[0], 45) + '”，这成为当前理解你的一个具体入口。';
+  } else if (themes.length) {
+    stateText = '最近梦里反复出现“' + themes.join('”“') + '”，它们是这一阶段较清楚的线索。';
   } else {
-    summaryParts.push((profile && profile.nickname ? cleanText(profile.nickname, 30) + '，' : '') +
-      '你是一个对变化和细节很敏感、但不会轻易被它们推着走的人。');
-    if (factsList[0]) {
-      summaryParts.push('最近现实里你提到“' + cleanText(factsList[0], 80) + '”，你似乎正在一边靠近新的可能，一边确认它是否真的值得投入。');
-    } else if (insights.recurringSymbols[0]) {
-      summaryParts.push('最近你反复遇到“' + insights.recurringSymbols[0].label + '”这一线索，说明有件事正在持续占据你的注意力。');
-    } else if (insights.recurringEmotions[0]) {
-      summaryParts.push('最近你的梦常带着“' + insights.recurringEmotions[0].label + '”的情绪天气，像是在提醒你某种感受还没有被真正放下。');
-    }
-    if (discussions) summaryParts.push('你没有急着给这些变化下结论，而是愿意在梦后继续把感受说清楚。');
-    summaryParts.push('和之前相比，你正在慢慢形成自己的判断：什么值得留下，什么只是因为熟悉才舍不得离开。');
+    stateText = '你持续留下梦境，但稳定模式还在形成；目前只保留已经出现的线索。';
   }
+  if (records.length >= 3 || factsList.length >= 2 || discussions >= 2) {
+    changing = '你正在从记录感受，慢慢走向辨认现实里哪些事情仍在牵动你。';
+  }
+  var summaryParts = ['当下的状态：' + stateText];
+  if (themes.length) summaryParts.push('反复出现的主题：' + themes.join('、') + '。');
+  summaryParts.push('情绪的底色：' + tone);
+  if (changing) summaryParts.push('正在变化的：' + changing);
+  var summary = summaryParts.join('').slice(0, 200);
 
   return {
     version: Number(nextVersion) || 1,
-    status: 'draft',
-    summary: summaryParts.join(''),
-    traits: traits,
-    themes: uniqueList(themes, 5),
+    status: 'confirmed',
+    isCurrent: true,
+    summary: summary,
+    profileText: summary,
+    emotionalTone: tone.slice(0, 100),
+    changing: changing.slice(0, 120),
+    traits: [],
+    themes: uniqueList(themes, 3),
     realLifeContext: factsList,
     sourceRefs: insights.evidenceDreamIds.map(function (id) {
       return { type: 'dream', id: id };
@@ -225,8 +225,8 @@ function buildProfileDraft(profile, archive, nextVersion, changeReason) {
       lifeNoteCount: factsList.length
     },
     changeReason: cleanText(changeReason || '根据近期梦境变化生成', 80),
-    aiOriginal: summaryParts.join(''),
-    userEdited: false,
+    aiOriginal: summary,
+    userEdited: null,
     useInFutureReadings: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -297,9 +297,15 @@ function refreshPortraitInBackground(options) {
   portraitRefreshInFlight = true;
   cloudBase.generateProfilePortrait(reason, function (result) {
     var next;
+    var pending;
     portraitRefreshInFlight = false;
     if (!result || !result.ok || !result.snapshot) {
       if (typeof input.onComplete === 'function') input.onComplete(result || { ok: false });
+      if (portraitRefreshPending) {
+        pending = portraitRefreshPending;
+        portraitRefreshPending = null;
+        setTimeout(function () { refreshPortraitInBackground(pending); }, 0);
+      }
       return;
     }
     next = mergePortraitDraft(readPortraitMemory(), result.snapshot, insights.dreamCount, refreshKey);
@@ -307,7 +313,7 @@ function refreshPortraitInBackground(options) {
     if (typeof input.onUpdated === 'function') input.onUpdated(next, result.snapshot);
     if (typeof input.onComplete === 'function') input.onComplete(result);
     if (portraitRefreshPending) {
-      var pending = portraitRefreshPending;
+      pending = portraitRefreshPending;
       portraitRefreshPending = null;
       setTimeout(function () { refreshPortraitInBackground(pending); }, 0);
     }
