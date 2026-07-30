@@ -857,7 +857,10 @@ for (const [path, expected] of [
   ['miniprogram/pages/dream-chat/index.wxml', '{{turnCount}} / {{maxTurns}}'],
   ['miniprogram/pages/profile/index.wxml', 'bindtap="saveProfile"'],
   ['miniprogram/pages/profile/index.wxml', '可随时修改或清空'],
-  ['miniprogram/pages/profile/index.wxml', '我的阶段画像'],
+  // 设计稿 3c 把栏目标题从「我的阶段画像」缩短成「阶段画像 · V{n}」
+  // （不再有「我的」前缀，且版本号是动态拼接的），断言改为不带前缀的
+  // 「阶段画像」，仍然精确对应 profile-block 里的 section-label 文本节点。
+  ['miniprogram/pages/profile/index.wxml', '阶段画像'],
   ['miniprogram/pages/profile/index.wxml', '系统提取的现实线索'],
   ['miniprogram/pages/profile/index.wxml', '修改这段理解'],
   ['miniprogram/pages/share/index.wxml', '记下我的梦'],
