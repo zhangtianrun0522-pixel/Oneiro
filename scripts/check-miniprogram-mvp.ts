@@ -1291,6 +1291,7 @@ assert.ok(providerErrorDream);
 assert.equal(providerErrorDream.status, 'pending');
 assert.equal(providerErrorDream.result, null);
 assert.equal(providerErrorDream.interpretationError, 'ai_provider_error');
+assert.equal(providerErrorDream.interpretationRevision, 1);
 
 const pendingResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 pendingResultPage.onLoad({ id: providerErrorDream.id });
@@ -1301,10 +1302,19 @@ assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === providerErrorDream.id)?.result,
   null
 );
+wx.blockNextInterpret = true;
+pendingResultPage.retryInterpretation();
+assert.equal(pendingResultPage.data.retryingInterpretation, false);
+assert.equal(pendingResultPage.pendingInterpretationDream.status, 'blocked');
+assert.equal(pendingResultPage.pendingInterpretationDream.result, null);
+assert.equal(pendingResultPage.pendingInterpretationDream.interpretationRevision, 2);
+assert.equal(pendingResultPage.data.dream.status, 'blocked');
+assert.equal(last(wx.modals).title, '暂不生成梦卡');
 wx.failNextInterpret = true;
 pendingResultPage.retryInterpretation();
 assert.equal(pendingResultPage.data.retryingInterpretation, false);
 assert.equal(pendingResultPage.pendingInterpretationDream.result, null);
+assert.equal(pendingResultPage.pendingInterpretationDream.interpretationRevision, 3);
 assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === providerErrorDream.id)?.result,
   null
@@ -1318,6 +1328,7 @@ assert.equal(pendingResultPage.data.retryingInterpretation, false);
 assert.equal(pendingResultPage.data.interpretationUnavailable, false);
 assert.equal(pendingResultPage.pendingInterpretationDream, null);
 assert.equal(pendingResultPage.data.dream.status, 'ready');
+assert.equal(pendingResultPage.data.dream.interpretationRevision, 4);
 assert.equal(pendingResultPage.data.dream.result.title, '云影');
 assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === providerErrorDream.id)?.result?.title,

@@ -233,6 +233,7 @@ Page({
   },
 
   onUnload: function () {
+    this.submitting = false;
     this.stopAnalysisProgress();
     this.clearVoiceStartTimer();
     if (this.dragBounceTimer) {
@@ -678,6 +679,8 @@ Page({
       wx.showToast({ title: this.data.recording ? '请先停止录音' : '语音正在识别', icon: 'none' });
       return;
     }
+    if (this.submitting) return;
+    this.submitting = true;
     var dreamText = this.data.dreamText.trim();
     var profile = readProfile();
     var safety = contentSafety.validateDreamText(dreamText);
@@ -702,6 +705,7 @@ Page({
       } else {
         wx.showToast({ title: safety.message, icon: 'none' });
       }
+      this.submitting = false;
       return;
     }
 
@@ -723,6 +727,8 @@ Page({
         },
         interpretationSource: '',
         interpretationProvider: '',
+        cloudSynced: false,
+        interpretationRevision: 1,
         interpretationMeta: {
           schemaVersion: 'dream-entry-v0.2',
           promptVersion: '',
@@ -740,7 +746,9 @@ Page({
         length: dreamText.length
       });
 
-      cloudBase.saveDream(pendingDream, function () {
+      cloudBase.saveDream(pendingDream, function (saveResult) {
+        pendingDream.cloudSynced = !!(saveResult && saveResult.ok);
+        upsertLocalDream(pendingDream);
         cloudBase.interpretDream(dreamText, profile, cardIndex, function (cloudResult) {
         if (cloudResult && cloudResult.blocked) {
           pendingDream.status = 'blocked';
@@ -758,6 +766,7 @@ Page({
             confirmText: '知道了',
             showCancel: false
           });
+          that.submitting = false;
           return;
         }
 
@@ -783,6 +792,7 @@ Page({
           cloudBase.flushEvents(analytics.getEvents());
           that.stopAnalysisProgress();
           wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dreamId) });
+          that.submitting = false;
           return;
         }
 
@@ -802,13 +812,15 @@ Page({
           dreamFacts: normalizeDreamFacts(result),
           interpretationSource: source,
           interpretationProvider: provider,
+          interpretationRevision: pendingDream.interpretationRevision,
           interpretationError: cloudResult && !cloudResult.result
             ? String(cloudResult.reason || cloudResult.message || '')
             : '',
           interpretationMeta: {
             schemaVersion: (cloudResult && cloudResult.schemaVersion) || 'dream-entry-v0.2',
             promptVersion: cloudResult.promptVersion || '',
-            model: cloudResult.model || ''
+            model: cloudResult.model || '',
+            memoryUnavailable: !!cloudResult.memoryUnavailable
           },
           feedback: '',
           createdAt: createdAt,
@@ -817,7 +829,9 @@ Page({
 
         app.globalData.currentDream = dream;
         upsertLocalDream(dream);
-        cloudBase.saveDream(dream, function () {
+        cloudBase.saveDream(dream, function (saveResult) {
+          dream.cloudSynced = !!(saveResult && saveResult.ok);
+          upsertLocalDream(dream);
           refreshPortraitAfterDream(dream);
         });
         analytics.trackEvent('interpretation_success', {
@@ -833,6 +847,7 @@ Page({
         }
         that.stopAnalysisProgress();
         wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dream.id) });
+        that.submitting = false;
         });
       });
     }, 700);

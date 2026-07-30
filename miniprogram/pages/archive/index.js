@@ -104,6 +104,7 @@ function normalizeCloudDream(item) {
     chatMessages: item && Array.isArray(item.chatMessages) ? item.chatMessages : [],
     interpretationSource: String((item && item.interpretationSource) || ''),
     interpretationProvider: String((item && item.interpretationProvider) || ''),
+    interpretationRevision: Math.max(0, Number(item && item.interpretationRevision) || 0),
     interpretationMeta: item && item.interpretationMeta ? item.interpretationMeta : {},
     createdAt: item && item.createdAt ? item.createdAt : new Date().toISOString(),
     updatedAt: item && item.updatedAt ? item.updatedAt : item && item.createdAt
@@ -165,15 +166,27 @@ Page({
       // record's interpretation and persistent image file id from the cloud.
       remote = remote.map(function (item) {
         var local = localById[item.id];
+        var localUpdatedAt = local ? new Date(local.updatedAt || 0).getTime() : 0;
+        var remoteUpdatedAt = new Date(item.updatedAt || 0).getTime();
+        if (
+          local &&
+          local.status === 'ready' &&
+          (item.status !== 'ready' || localUpdatedAt > remoteUpdatedAt)
+        ) {
+          return local;
+        }
         if (!local || item.thumbnailPath) return item;
         return Object.assign({}, item, { thumbnailPath: local.thumbnailPath || '' });
       });
       var remoteIds = {};
       remote.forEach(function (item) { remoteIds[item.id] = true; });
       var localOnly = archive.filter(function (item) {
-        return !remoteIds[item.id] && item.status === 'pending';
+        return !remoteIds[item.id] && ['pending', 'ready', 'blocked'].indexOf(item.status) >= 0;
       });
-      var merged = remote.concat(localOnly).slice(0, 30);
+      var merged = remote.concat(localOnly).sort(function (left, right) {
+        return new Date(right.updatedAt || right.createdAt || 0).getTime() -
+          new Date(left.updatedAt || left.createdAt || 0).getTime();
+      }).slice(0, 30);
       wx.setStorageSync('oneiro:dreamArchive', merged);
       that.renderArchive(merged);
       that.hydrateArchiveImages(merged, loadToken);

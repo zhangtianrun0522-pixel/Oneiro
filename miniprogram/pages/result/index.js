@@ -132,6 +132,20 @@ function cardIndexForDream(dream) {
   return index >= 0 ? index + 1 : 1;
 }
 
+function imageFailureMessage(reason) {
+  var value = String(reason || '').toLowerCase();
+  if (/timeout|timed_out|provider_timeout/.test(value)) {
+    return '画面生成超时了，点击重试';
+  }
+  if (/temp[_-]?url|download|image_load|load_failed/.test(value)) {
+    return '图片加载失败，点击重试';
+  }
+  if (/cloud_unavailable|cloud_call_failed|cloud_result_expired|network|offline/.test(value)) {
+    return '网络暂时不可用，稍后重试';
+  }
+  return '画面暂时没生成出来，点击重试';
+}
+
 function scrubLocalPortraitSource(dreamId) {
   var state = wx.getStorageSync('oneiro:profileMemory') || {};
   var changed = false;
@@ -659,9 +673,35 @@ Page({
     if (this.data.retryingInterpretation || !dream || !dream.dreamText) return;
     profile = wx.getStorageSync('oneiro:lastProfile') || app.globalData.lastProfile || {};
     cardIndex = cardIndexForDream(dream);
+    dream.interpretationRevision = Math.max(0, Number(dream.interpretationRevision) || 0) + 1;
     this.setData({ retryingInterpretation: true });
 
     cloudBase.interpretDream(dream.dreamText, profile, cardIndex, function (cloudResult) {
+      if (cloudResult && cloudResult.blocked) {
+        dream.status = 'blocked';
+        dream.result = null;
+        dream.interpretationError = String(cloudResult.reason || 'cloud_safety').slice(0, 300);
+        dream.updatedAt = new Date().toISOString();
+        that.pendingInterpretationDream = dream;
+        persistLocalDream(dream);
+        cloudBase.saveDream(dream);
+        that.setData({
+          retryingInterpretation: false,
+          dream: Object.assign({}, that.data.dream, { status: 'blocked' })
+        });
+        analytics.trackEvent('interpretation_retry_blocked', {
+          dreamId: dream.id || '',
+          reason: dream.interpretationError
+        });
+        wx.showModal({
+          title: '暂不生成梦卡',
+          content: cloudResult.message || '这个梦暂不适合生成解读。',
+          confirmText: '知道了',
+          showCancel: false
+        });
+        return;
+      }
+
       if (!cloudResult || !cloudResult.ok || !cloudResult.result) {
         dream.status = 'pending';
         dream.result = null;
@@ -692,13 +732,17 @@ Page({
       dream.interpretationMeta = {
         schemaVersion: cloudResult.schemaVersion || 'dream-entry-v0.2',
         promptVersion: cloudResult.promptVersion || '',
-        model: cloudResult.model || ''
+        model: cloudResult.model || '',
+        memoryUnavailable: !!cloudResult.memoryUnavailable
       };
       dream.updatedAt = new Date().toISOString();
       that.pendingInterpretationDream = null;
       app.globalData.currentDream = dream;
       persistLocalDream(dream);
-      cloudBase.saveDream(dream);
+      cloudBase.saveDream(dream, function (saveResult) {
+        dream.cloudSynced = !!(saveResult && saveResult.ok);
+        persistLocalDream(dream);
+      });
       that.setData({
         retryingInterpretation: false,
         interpretationUnavailable: false,
@@ -732,7 +776,7 @@ Page({
       that.setData({
         aiImageLocalPath: localPath || '',
         imageStatus: localPath ? 'ready' : 'failed',
-        imageErrorMessage: localPath ? '' : '云端画面暂时无法加载，已使用梦象卡面',
+        imageErrorMessage: localPath ? '' : imageFailureMessage(loadError || 'cloud_image_load_failed'),
         imageLoadError: localPath ? '' : String(loadError || 'cloud_image_load_failed').slice(0, 300)
       });
     });
@@ -753,6 +797,7 @@ Page({
 
   requestDreamImage: function (done, options) {
     var that = this;
+    var dream = this.data.dream;
     var result = this.data.dream.result || {};
     var prompt = result.image_prompt || result.image || '';
 
@@ -763,18 +808,19 @@ Page({
       return;
     }
 
-    this.setData({ imageStatus: 'generating', imageErrorMessage: '' });
-    cloudBase.generateDreamImage(
+    var startGeneration = function () {
+      that.setData({ imageStatus: 'generating', imageErrorMessage: '' });
+      cloudBase.generateDreamImage(
       prompt,
-      this.data.dream.id || '',
+      dream.id || '',
       result.card_theme || 'mist',
       result.visual_plan || null,
       options && options.forceRefresh ? { forceRefresh: true } : null,
       function (imageRes) {
-      var dream = that.data.dream;
+      var currentDream = that.data.dream;
 
       if (imageRes && imageRes.ok && imageRes.imageUrl) {
-        dream.result = Object.assign({}, dream.result, {
+        currentDream.result = Object.assign({}, currentDream.result, {
           imageUrl: imageRes.imageUrl,
           image_file_id: imageRes.fileID || '',
           image_provider: imageRes.provider || '',
@@ -786,22 +832,22 @@ Page({
           image_visual_plan: imageRes.visualPlan || result.visual_plan || null,
           image_quality_check: imageRes.qualityCheck || null
         });
-        persistLocalDream(dream);
-        cloudBase.saveDream(dream);
+        persistLocalDream(currentDream);
+        cloudBase.saveDream(currentDream);
         that.setData({
-          dream: dream,
+          dream: currentDream,
           aiImageFileId: imageRes.fileID || ''
         });
         cloudBase.resolveCloudImage(imageRes.fileID || '', imageRes.imageUrl, function (localPath, loadError) {
           that.setData({
             aiImageLocalPath: localPath || '',
             imageStatus: localPath ? 'ready' : 'failed',
-            imageErrorMessage: localPath ? '' : '云端画面暂时无法加载，已使用梦象卡面',
+            imageErrorMessage: localPath ? '' : imageFailureMessage(loadError || 'cloud_image_load_failed'),
             imageLoadError: localPath ? '' : String(loadError || 'cloud_image_load_failed').slice(0, 300)
           });
           if (!localPath) {
             analytics.trackEvent('generated_image_load_fail', {
-              dreamId: dream.id || '',
+              dreamId: currentDream.id || '',
               reason: String(loadError || 'cloud_image_load_failed').slice(0, 180)
             });
           }
@@ -813,7 +859,7 @@ Page({
           }
         });
         analytics.trackEvent('generated_image_success', {
-          dreamId: dream.id || '',
+          dreamId: currentDream.id || '',
           provider: imageRes.provider || '',
           cacheHit: !!imageRes.cacheHit,
           latencyMs: imageRes.latencyMs || 0
@@ -821,12 +867,10 @@ Page({
       } else {
         that.setData({
           imageStatus: 'failed',
-          imageErrorMessage: imageRes && (imageRes.reason || imageRes.message)
-            ? String(imageRes.reason || imageRes.message).slice(0, 42)
-            : 'unknown'
+          imageErrorMessage: imageFailureMessage(imageRes && (imageRes.reason || imageRes.message))
         });
         analytics.trackEvent('generated_image_fail', {
-          dreamId: dream.id || '',
+          dreamId: currentDream.id || '',
           reason: imageRes && imageRes.reason ? imageRes.reason : 'unknown'
         });
         if (done) {
@@ -834,7 +878,33 @@ Page({
         }
       }
       }
-    );
+      );
+    };
+
+    if (dream.cloudSynced === false) {
+      cloudBase.saveDream(dream, function (saveResult) {
+        if (saveResult && saveResult.ok) {
+          dream.cloudSynced = true;
+          persistLocalDream(dream);
+          that.setData({ dream: dream });
+          startGeneration();
+          return;
+        }
+        that.setData({
+          imageStatus: 'failed',
+          imageErrorMessage: '云端同步未完成，画面稍后可重试',
+          imageLoadError: 'cloud_sync_pending'
+        });
+        analytics.trackEvent('generated_image_fail', {
+          dreamId: dream.id || '',
+          reason: 'cloud_sync_pending'
+        });
+        if (done) done();
+      });
+      return;
+    }
+
+    startGeneration();
   },
 
   startDreamImageQuality: function (fastImage, visualResult) {
@@ -1168,7 +1238,12 @@ Page({
         cloudBase.deleteDream(dream.id, function (result) {
           var canDeleteLocally = result && result.ok;
           wx.hideLoading();
-          if (!canDeleteLocally && result && result.reason !== 'cloud_unavailable') {
+          if (
+            !canDeleteLocally &&
+            result &&
+            result.reason !== 'cloud_unavailable' &&
+            result.reason !== 'dream_not_found'
+          ) {
             wx.showToast({ title: '云端删除失败，请稍后重试', icon: 'none' });
             return;
           }

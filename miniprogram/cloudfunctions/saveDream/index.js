@@ -53,10 +53,12 @@ function safeDream(dream) {
     interpretationSource: String((dream && dream.interpretationSource) || ''),
     interpretationProvider: String((dream && dream.interpretationProvider) || ''),
     interpretationError: String((dream && dream.interpretationError) || '').slice(0, 300),
+    interpretationRevision: Math.max(0, Math.floor(Number(dream && dream.interpretationRevision) || 0)),
     interpretationMeta: {
       schemaVersion: String((dream && dream.interpretationMeta && dream.interpretationMeta.schemaVersion) || 'dream-entry-v0.2'),
       promptVersion: String((dream && dream.interpretationMeta && dream.interpretationMeta.promptVersion) || ''),
-      model: String((dream && dream.interpretationMeta && dream.interpretationMeta.model) || '')
+      model: String((dream && dream.interpretationMeta && dream.interpretationMeta.model) || ''),
+      memoryUnavailable: !!(dream && dream.interpretationMeta && dream.interpretationMeta.memoryUnavailable)
     },
     chatMessages: chatMessages(dream && dream.chatMessages),
     feedback: feedback,
@@ -310,6 +312,18 @@ async function markDreamDeleting(openid, dreamRecord, existingJob) {
   });
 }
 
+function isStaleInterpretationWrite(current, incoming) {
+  const currentRevision = Math.max(0, Math.floor(Number(current && current.interpretationRevision) || 0));
+  const incomingRevision = Math.max(0, Math.floor(Number(incoming && incoming.interpretationRevision) || 0));
+  const currentStatus = String((current && current.status) || '');
+  const incomingStatus = String((incoming && incoming.status) || '');
+
+  if (incomingRevision < currentRevision) return true;
+  return incomingRevision === currentRevision &&
+    (currentStatus === 'ready' || currentStatus === 'blocked') &&
+    incomingStatus !== currentStatus;
+}
+
 async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
   const jobId = deletionJobId(openid, dream.localId);
   const legacyJob = await findDeletionJob(openid, dream.localId);
@@ -318,6 +332,9 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
   if (typeof db.runTransaction !== 'function') {
     if (existingRecord) {
       if (existingRecord.deletionPending) return { ok: false, reason: 'dream_deleted' };
+      if (isStaleInterpretationWrite(existingRecord, dream)) {
+        return { ok: false, reason: 'stale_interpretation_write' };
+      }
       await db.collection('dream_entries').doc(existingRecord._id).update({ data: dream });
       return { ok: true, id: existingRecord._id, updated: true };
     }
@@ -332,6 +349,9 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
     if (existingRecord) {
       const current = await getDocument(transaction.collection('dream_entries'), existingRecord._id);
       if (!current || current.deletionPending) return { ok: false, reason: 'dream_deleted' };
+      if (isStaleInterpretationWrite(current, dream)) {
+        return { ok: false, reason: 'stale_interpretation_write' };
+      }
       await transaction.collection('dream_entries').doc(existingRecord._id).update({ data: dream });
       return { ok: true, id: existingRecord._id, updated: true };
     }
