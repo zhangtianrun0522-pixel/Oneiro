@@ -10,7 +10,7 @@ const nodeRequire = createRequire(import.meta.url);
 type InterpretDreamModule = {
   main: (event: Record<string, unknown>) => Promise<Record<string, unknown>>;
   parseJsonResponse?: (text: string) => Record<string, unknown>;
-  normalizeGroundedSymbols?: (value: unknown, dreamText: string, fallback: string[]) => string[];
+  normalizeSymbols?: (value: unknown) => string[];
   normalizeAiResult?: (
     raw: Record<string, unknown>,
     dreamText: string,
@@ -182,7 +182,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false): 
   };
 
   const source = exposeParser
-    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.normalizeGroundedSymbols = normalizeGroundedSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.buildBaziChart = buildBaziChart;'
+    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.buildBaziChart = buildBaziChart;'
     : read(interpretDreamPath);
   vm.runInNewContext(source, sandbox, { filename: interpretDreamPath });
   return commonJsModule.exports;
@@ -220,11 +220,11 @@ for (const expected of [
   'locationResolver',
   'buildBaziChart',
   'loadDreamMemory',
-  'memory_reflection',
   'DREAM_CHAT_SYSTEM_PROMPT',
   'chatAboutDream',
   'reading_hook',
   'alternative_reading',
+  'oneiro-freeform-reading-v0.3',
 ]) {
   assertIncludes(interpretDreamPath, expected);
 }
@@ -379,15 +379,13 @@ assert.equal(staticInterpretation.retryable, true);
 assert.equal(Object.prototype.hasOwnProperty.call(staticInterpretation, 'result'), false);
 
 const exposedInterpretDream = loadInterpretDream({}, true);
-const normalizeGroundedSymbols = exposedInterpretDream.normalizeGroundedSymbols;
-assert.ok(normalizeGroundedSymbols);
-assert.deepEqual(
-  normalizeGroundedSymbols(['水蜜桃'], '我梦见西红柿里爆出了一颗水蜜桃', ['清水']),
-  ['水蜜桃']
-);
+const normalizeSymbols = exposedInterpretDream.normalizeSymbols;
+assert.ok(normalizeSymbols);
+assert.equal(normalizeSymbols(['水蜜桃']).length, 1);
+assert.equal(normalizeSymbols(['水蜜桃'])[0], '水蜜桃');
 assert.equal(
-  normalizeGroundedSymbols(['清水'], '我梦见自己站在水里，看着河水涨起', ['清水']).length,
-  0
+  normalizeSymbols(['清水']).length,
+  1
 );
 
 const normalizeAiResult = exposedInterpretDream.normalizeAiResult;
@@ -421,7 +419,8 @@ const completeModelPayload = {
   image_prompt: 'A tomato opens to reveal a peach.',
   visual_plan: {
     main_event: '西红柿里爆出水蜜桃',
-    setting: '梦中画面'
+    setting: '梦中画面',
+    preserve_elements: ['西红柿', '水蜜桃']
   },
   dream_facts: {
     objects: ['西红柿', '水蜜桃'],
@@ -439,6 +438,25 @@ assert.doesNotThrow(() => validateAiSemanticPayload(
   '我梦见西红柿里爆出了一颗水蜜桃',
   null
 ));
+const emotionOnlyHallucination = JSON.parse(JSON.stringify(completeModelPayload));
+emotionOnlyHallucination.dream_facts = { emotions: ['恐惧'] };
+emotionOnlyHallucination.visual_plan.main_event = '月球上有一条龙飞过';
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  emotionOnlyHallucination,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  null
+));
+const mixedFactHallucination = JSON.parse(JSON.stringify(completeModelPayload));
+mixedFactHallucination.dream_facts = {
+  actions: ['西红柿，旁边出现一条龙'],
+  emotions: ['恐惧']
+};
+mixedFactHallucination.visual_plan.main_event = '西红柿旁边出现一条龙';
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  mixedFactHallucination,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  null
+));
 const modelFirstPeach = normalizeAiResult(
   completeModelPayload,
   '我梦见西红柿里爆出了一颗水蜜桃',
@@ -451,7 +469,55 @@ const modelFirstPeach = normalizeAiResult(
 );
 assert.deepEqual(modelFirstPeach.symbols, ['西红柿', '水蜜桃']);
 assert.equal(modelFirstPeach.card_theme_label, '西红柿');
+assert.equal(Object.prototype.hasOwnProperty.call(modelFirstPeach, 'memory_reflection'), false);
 assert.doesNotMatch(JSON.stringify(modelFirstPeach), /未命名场景|清水|水面|水意象|水的意象/);
+
+const noConnectionPayload = JSON.parse(JSON.stringify(completeModelPayload));
+noConnectionPayload.possible_connections = [];
+noConnectionPayload.integration_question = '这个画面让你想到最近哪件小事？';
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  noConnectionPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  null
+));
+const noConnectionResult = normalizeAiResult(
+  noConnectionPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  7,
+  'AI 梦卡',
+  null,
+  null,
+  null
+);
+assert.equal(Array.isArray(noConnectionResult.possible_connections), true);
+assert.equal(noConnectionResult.possible_connections.length, 0);
+assert.ok(noConnectionResult.integration_question);
+
+const shortDreamPayload = JSON.parse(JSON.stringify(completeModelPayload));
+shortDreamPayload.card_theme_label = '猫';
+shortDreamPayload.symbols = ['月亮'];
+shortDreamPayload.dream_facts = { objects: ['月亮'], actions: ['飞过'] };
+shortDreamPayload.visual_plan.main_event = '月亮旁边出现一条龙';
+shortDreamPayload.visual_plan.setting = '';
+shortDreamPayload.visual_plan.preserve_elements = ['月亮'];
+const shortDreamText = '我梦见一只猫。';
+assert.doesNotThrow(() => validateAiSemanticPayload(shortDreamPayload, shortDreamText, null));
+const shortDreamResult = normalizeAiResult(
+  shortDreamPayload,
+  shortDreamText,
+  {},
+  8,
+  'AI 梦卡',
+  null,
+  null,
+  null
+);
+assert.equal(Array.isArray(shortDreamResult.symbols), true);
+assert.equal(shortDreamResult.symbols.length, 0);
+assert.equal(Array.isArray(shortDreamResult.dream_facts.objects), true);
+assert.equal(shortDreamResult.dream_facts.objects.length, 0);
+assert.equal(shortDreamResult.visual_plan.main_event, shortDreamText);
 
 const buildBaziChart = exposedInterpretDream.buildBaziChart;
 assert.ok(buildBaziChart);
