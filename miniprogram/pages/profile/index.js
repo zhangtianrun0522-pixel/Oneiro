@@ -118,6 +118,7 @@ Page({
     var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
     var state = normalizeMemoryState(wx.getStorageSync(PROFILE_MEMORY_KEY));
     var insights = dreamMemory.buildInsights(archive);
+    this.skipNextProfileShowRefresh = true;
     this.setData({
       profile: Object.assign(emptyProfile(), saved),
       genderIndex: genderIndexFor(saved.gender),
@@ -138,6 +139,12 @@ Page({
 
   onShow: function () {
     this.loadRevisit();
+    if (this.skipNextProfileShowRefresh) {
+      this.skipNextProfileShowRefresh = false;
+      return;
+    }
+    this.loadLifeNotes();
+    this.loadProfileMemory();
   },
 
   loadRevisit: function () {

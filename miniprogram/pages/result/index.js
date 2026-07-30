@@ -736,12 +736,26 @@ Page({
         memoryUnavailable: !!cloudResult.memoryUnavailable
       };
       dream.updatedAt = new Date().toISOString();
+      // A newly interpreted result is a new version of the dream. Keep the
+      // local card visible, but require this version to reach cloud storage
+      // before requesting a generated image.
+      dream.cloudSynced = false;
       that.pendingInterpretationDream = null;
       app.globalData.currentDream = dream;
       persistLocalDream(dream);
       cloudBase.saveDream(dream, function (saveResult) {
         dream.cloudSynced = !!(saveResult && saveResult.ok);
         persistLocalDream(dream);
+        that.setData({ dream: dream });
+        if (dream.cloudSynced) {
+          that.requestDreamImage();
+          return;
+        }
+        that.setData({
+          imageStatus: 'failed',
+          imageErrorMessage: '云端同步未完成，画面稍后可重试',
+          imageLoadError: 'cloud_sync_pending'
+        });
       });
       that.setData({
         retryingInterpretation: false,
@@ -757,7 +771,6 @@ Page({
         dreamId: dream.id || '',
         provider: cloudResult.provider || ''
       });
-      that.requestDreamImage();
     });
   },
 
@@ -881,7 +894,9 @@ Page({
       );
     };
 
-    if (dream.cloudSynced === false) {
+    if (dream.cloudSynced !== true) {
+      dream.cloudSynced = false;
+      persistLocalDream(dream);
       cloudBase.saveDream(dream, function (saveResult) {
         if (saveResult && saveResult.ok) {
           dream.cloudSynced = true;

@@ -812,6 +812,9 @@ Page({
           dreamFacts: normalizeDreamFacts(result),
           interpretationSource: source,
           interpretationProvider: provider,
+          // The ready payload differs from the earlier pending save, so it
+          // must be persisted again before downstream image generation.
+          cloudSynced: false,
           interpretationRevision: pendingDream.interpretationRevision,
           interpretationError: cloudResult && !cloudResult.result
             ? String(cloudResult.reason || cloudResult.message || '')
@@ -833,6 +836,12 @@ Page({
           dream.cloudSynced = !!(saveResult && saveResult.ok);
           upsertLocalDream(dream);
           refreshPortraitAfterDream(dream);
+          if (wx.removeStorageSync) {
+            wx.removeStorageSync('oneiro:pendingDreamText');
+          }
+          that.stopAnalysisProgress();
+          wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dream.id) });
+          that.submitting = false;
         });
         analytics.trackEvent('interpretation_success', {
           dreamId: dream.id,
@@ -842,12 +851,6 @@ Page({
           provider: provider
         });
         cloudBase.flushEvents(analytics.getEvents());
-        if (wx.removeStorageSync) {
-          wx.removeStorageSync('oneiro:pendingDreamText');
-        }
-        that.stopAnalysisProgress();
-        wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dream.id) });
-        that.submitting = false;
         });
       });
     }, 700);

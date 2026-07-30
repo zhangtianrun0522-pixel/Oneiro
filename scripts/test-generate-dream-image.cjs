@@ -265,12 +265,62 @@ async function run() {
     dreamFacts: { places: ['沙漠'], objects: ['暴雨'] },
     symbols: ['沙漠', '暴雨']
   });
+  const paletteSamples = [
+    { emotion: '焦虑', dreamText: '我在深夜的空站台反复确认一张旧车票。' },
+    { emotion: '神秘', dreamText: '陌生房间里的门缓慢打开，里面没有声音。' },
+    { emotion: '治愈', dreamText: '我回到午后的厨房，把热茶递给自己。' }
+  ].map(function (sample) {
+    return visualPlanner.normalizeVisualPlan({ emotion: [sample.emotion] }, {
+      dreamText: sample.dreamText,
+      dreamFacts: { emotions: [sample.emotion] },
+      symbols: []
+    });
+  });
+  const openPaletteRun = Array.from({ length: 60 }, function (_, index) {
+    const emotion = ['焦虑', '神秘', '治愈', '怀旧', '兴奋', '悲伤'][index % 6];
+    const dreamText = '第' + (index + 1) + '个梦里，场景、人物动作和光线都发生了不同变化。';
+    return visualPlanner.normalizeVisualPlan({ emotion: [emotion] }, {
+      dreamText: dreamText,
+      dreamFacts: { emotions: [emotion] },
+      symbols: []
+    }).palette;
+  });
 
   assert.equal(visualPlan.preserve_elements.length, 4);
   assert.equal(visualPlan.anomalies.length, 1);
   assert.equal(visualPlan.palette.id, 'anxiety');
   assert.equal(healingPlan.palette.id, 'healing');
   assert.equal(mysteryPlan.palette.id, 'mystery');
+  paletteSamples.forEach(function (plan) {
+    const repeated = visualPlanner.normalizeVisualPlan({ emotion: plan.emotion }, {
+      dreamText: plan.raw_text,
+      dreamFacts: { emotions: plan.emotion },
+      symbols: []
+    });
+    assert.deepEqual(repeated.palette, plan.palette, 'the same dream input must keep its palette');
+    assert.match(plan.palette.dominant, /^h\d{1,3} #[0-9A-F]{6}$/);
+  });
+  assert.ok(
+    new Set(paletteSamples.map(function (plan) { return plan.palette.dominant; })).size >= 2,
+    'anxiety, mystery, and healing must not collapse into one dominant color'
+  );
+  assert.ok(
+    new Set(openPaletteRun.map(function (palette) {
+      const hue = Number(String(palette.variant_id).match(/-(\d+)$/)[1]);
+      return Math.floor(hue / 60);
+    })).size >= 5,
+    'dream-seeded palettes should cover most of the color wheel rather than a fixed family'
+  );
+  assert.ok(
+    new Set(openPaletteRun.map(function (palette) {
+      return String(palette.variant_id).replace(/-\d+$/, '');
+    })).size >= 3,
+    'dream-seeded palettes should use multiple color relationships'
+  );
+  assert.ok(
+    new Set(openPaletteRun.map(function (palette) { return palette.dominant; })).size >= 30,
+    'different dream texts should produce a broad set of dominant hues'
+  );
   assert.deepEqual(hallucinatedPlan.preserve_elements, ['白天，我独自在一间空房间里缓慢走路。']);
   assert.deepEqual(hallucinatedPlan.objects, []);
   assert.deepEqual(hallucinatedPlan.characters, []);
@@ -283,7 +333,12 @@ async function run() {
   assert.equal(rainGroundingPlan.anomalies.length, 0);
   assert.notEqual(visualPlan.palette.dominant, healingPlan.palette.dominant);
   Object.keys(visualPlanner.EMOTION_PALETTES).forEach(function (key) {
-    const palette = Object.assign({ id: key }, visualPlanner.EMOTION_PALETTES[key]);
+    const meta = visualPlanner.EMOTION_PALETTES[key];
+    const palette = visualPlanner.normalizeVisualPlan({ emotion: [meta.label] }, {
+      dreamText: meta.label + '主题下发生了一件具体而不同的梦中事件。',
+      dreamFacts: { emotions: [meta.label] },
+      symbols: []
+    }).palette;
     const count = visualPlanner.paletteList(palette).length;
     assert.ok(count >= 4 && count <= 6, key + ' palette must contain 4-6 inks');
     assert.ok(palette.focal, key + ' palette must define a separate focal color');
@@ -343,12 +398,13 @@ async function run() {
   assert.match(customCompositionPrompt, /主体严格位于画面中央下方/);
   assert.match(customCompositionPrompt, /使用单一平面压缩空间，不建立前中后景/);
   assert.match(customCompositionPrompt, /不要用通用模板覆盖这些关系/);
-  assert.match(sadnessGenericPrompt, /muted coral #B96750/);
-  assert.match(sadnessInternalPrompt, /muted coral #B96750/);
+  assert.ok(sadnessGenericPrompt.includes(sadnessPlan.palette.dominant));
+  assert.ok(sadnessGenericPrompt.includes(sadnessPlan.palette.accent));
+  assert.ok(sadnessInternalPrompt.includes(sadnessPlan.palette.dominant));
   assert.equal(visualPlanner.styleVersionForPreset('production'), 'oneiro-seedream-dream-v2.2');
   assert.equal(
     crypto.createHash('sha256').update(compiledPrompt).digest('hex'),
-    'a654063f41d75140ef2025eeba4bd6571af5f12f6ee16b42eea3a929e70ecdbf',
+    'a0ab2c6628509233c1f56ada92df6a283df715c547e4af1e1171f49c08ba5140',
     'production prompt golden changed unexpectedly'
   );
   assert.match(compiledPrompt, /exactly 4–6 inks/);

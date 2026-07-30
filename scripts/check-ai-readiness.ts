@@ -10,6 +10,10 @@ const nodeRequire = createRequire(import.meta.url);
 type InterpretDreamModule = {
   main: (event: Record<string, unknown>) => Promise<Record<string, unknown>>;
   parseJsonResponse?: (text: string) => Record<string, unknown>;
+  parseDreamChatContent?: (text: string, userMessage: string) => {
+    reply: string;
+    realityClue: string;
+  };
   normalizeSymbols?: (value: unknown) => string[];
   normalizeAiResult?: (
     raw: Record<string, unknown>,
@@ -182,7 +186,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false): 
   };
 
   const source = exposeParser
-    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.buildBaziChart = buildBaziChart;'
+    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.buildBaziChart = buildBaziChart;'
     : read(interpretDreamPath);
   vm.runInNewContext(source, sandbox, { filename: interpretDreamPath });
   return commonJsModule.exports;
@@ -581,5 +585,54 @@ assert.ok(Array.isArray(repairedModelJson.symbols));
 assert.equal(repairedModelJson.symbols.join('\u0000'), '银色\t钥匙');
 assert.throws(() => parseJsonResponse('["not an object"]'), /must be a JSON object/);
 assert.throws(() => parseJsonResponse('{"title":"unterminated}'));
+
+const parseDreamChatContent = exposedInterpretDream.parseDreamChatContent;
+assert.ok(parseDreamChatContent);
+const explicitRealityChat = parseDreamChatContent(
+  '{"reply":"换工作让这个梦更具体了。","memory_candidate":{"eligible":true,"quote":"最近在换工作"}}',
+  '我最近在换工作，最近确实睡得不太安稳。'
+);
+assert.equal(explicitRealityChat.reply, '换工作让这个梦更具体了。');
+assert.equal(explicitRealityChat.realityClue, '最近在换工作');
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"先把它当成一个问题。","memory_candidate":{"eligible":false,"quote":""}}',
+    '你觉得我是不是最近在换工作吗？'
+  ).realityClue,
+  ''
+);
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"这只是模型推测。","memory_candidate":{"eligible":true,"quote":"最近在换工作"}}',
+    '我只是说梦里出现了一间办公室。'
+  ).realityClue,
+  ''
+);
+for (const message of [
+  '梦里我正在换工作。',
+  '如果我换工作，可能会轻松一些。',
+  '我并不是在换工作。',
+]) {
+  assert.equal(
+    parseDreamChatContent(
+      JSON.stringify({
+        reply: '继续观察。',
+        memory_candidate: { eligible: false, quote: '' },
+      }),
+      message
+    ).realityClue,
+    ''
+  );
+}
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"不能改写证据。","memory_candidate":{"eligible":true,"quote":"正在准备离职"}}',
+    '我最近在换工作。'
+  ).realityClue,
+  ''
+);
+const plainTextDreamChat = parseDreamChatContent('纯文本兼容回复', '最近在换工作');
+assert.equal(plainTextDreamChat.reply, '纯文本兼容回复');
+assert.equal(plainTextDreamChat.realityClue, '');
 
 console.log(`AI readiness checks passed across ${runtimeFiles.length} Mini Program runtime files.`);

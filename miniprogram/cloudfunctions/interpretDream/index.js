@@ -60,10 +60,12 @@ const DREAM_CHAT_SYSTEM_PROMPT = [
   '按这个顺序灵活推进：先追问一个可观察的梦中细节，再问醒来时的身体或情绪感受，最后才邀请用户联系最近现实中的一件具体小事。',
   '每次只问一个容易回答的问题，优先问“发生了什么、你感到什么、最近有没有类似场景”，不要连续追问“为什么”。',
   '可以提出一种可能理解，但必须标注为可能性，区分梦中事实、用户感受和待确认的现实关联，不得虚构用户的现实经历或历史记忆。',
-  '不要把任何聊天内容自动写成长期记忆；只有用户明确点击确认后，才可视为已确认的现实线索。',
+  '同时判断用户本条消息里是否有可自动记入资料的现实事实：只有用户明确自述的、现实生活中已经发生、正在发生或已经决定的事实才 eligible=true。',
+  '问题、猜测、假设、否定、梦中发生的事、单纯情绪联想和你的推断都必须 eligible=false。',
+  'memory_candidate.quote 必须逐字复制用户本条消息中的一个连续原文片段，不得改写、补全或概括；eligible=false 时 quote 必须为空。',
   '不做医疗、创伤、人格、关系或职业诊断，不预测命运。',
   '回复 2-4 句话，先复述一个具体线索，再给出一层克制的可能理解，最后最多只问一个容易回答的问题。',
-  '只返回纯文本，不要 markdown。'
+  '只返回合法 JSON，不要 markdown：{"reply":"回复正文","memory_candidate":{"eligible":true或false,"quote":"用户原文连续片段或空字符串"}}。'
 ].join('\n');
 
 const DREAM_REFINE_SYSTEM_PROMPT = [
@@ -1525,6 +1527,39 @@ function chatResultSummary(value) {
   };
 }
 
+function validatedRealityClue(value, userMessage, eligible) {
+  const clue = asString(value, '', 300);
+  const source = asString(userMessage, '', 500);
+  if (eligible !== true || !clue || source.indexOf(clue) < 0) return '';
+  return clue;
+}
+
+function parseDreamChatContent(content, userMessage) {
+  let parsed;
+  let reply;
+
+  try {
+    parsed = parseJsonResponse(content);
+  } catch (error) {
+    parsed = null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { reply: asString(content, '', 1200), realityClue: '' };
+  }
+  reply = asString(parsed.reply, '', 1200);
+  const memoryCandidate = parsed.memory_candidate && typeof parsed.memory_candidate === 'object'
+    ? parsed.memory_candidate
+    : {};
+  return {
+    reply: reply,
+    realityClue: validatedRealityClue(
+      memoryCandidate.quote,
+      userMessage,
+      memoryCandidate.eligible
+    )
+  };
+}
+
 async function runDreamChat(event) {
   const config = providerConfig();
   const dreamText = asString(event && event.dreamText, '', 1200);
@@ -1561,7 +1596,8 @@ async function runDreamChat(event) {
         { role: 'system', content: DREAM_CHAT_SYSTEM_PROMPT },
         { role: 'system', content: '当前梦境原文：' + dreamText + '\n当前解读上下文：' + JSON.stringify(summary) }
       ].concat(history).concat([{ role: 'user', content: userMessage }]),
-      temperature: 0.62
+      temperature: 0.62,
+      response_format: { type: 'json_object' }
     }, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
     const data = JSON.parse(response.text);
     const content = data && data.choices && data.choices[0] && data.choices[0].message
@@ -1571,7 +1607,15 @@ async function runDreamChat(event) {
     if (response.statusCode < 200 || response.statusCode >= 300 || !content) {
       throw new Error('Dream chat provider failed');
     }
-    return { ok: true, provider: config.provider, model: config.model || '', fallback: false, reply: content };
+    const chatContent = parseDreamChatContent(content, userMessage);
+    return {
+      ok: true,
+      provider: config.provider,
+      model: config.model || '',
+      fallback: false,
+      reply: chatContent.reply,
+      realityClue: chatContent.realityClue
+    };
   } catch (error) {
     return {
       ok: false,

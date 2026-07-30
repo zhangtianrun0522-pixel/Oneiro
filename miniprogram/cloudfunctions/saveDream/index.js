@@ -317,8 +317,22 @@ function isStaleInterpretationWrite(current, incoming) {
   const incomingRevision = Math.max(0, Math.floor(Number(incoming && incoming.interpretationRevision) || 0));
   const currentStatus = String((current && current.status) || '');
   const incomingStatus = String((incoming && incoming.status) || '');
+  const currentResult = current && current.result && typeof current.result === 'object' ? current.result : {};
+  const incomingResult = incoming && incoming.result && typeof incoming.result === 'object' ? incoming.result : {};
+  const currentHasImage = !!(currentResult.image_file_id || currentResult.imageUrl);
+  const incomingHasImage = !!(incomingResult.image_file_id || incomingResult.imageUrl);
+  const currentUpdatedAt = new Date(current && current.updatedAt || 0).getTime();
+  const incomingUpdatedAt = new Date(incoming && incoming.updatedAt || 0).getTime();
 
   if (incomingRevision < currentRevision) return true;
+  if (incomingRevision === currentRevision && currentStatus === 'ready' && incomingStatus === 'ready') {
+    if (currentHasImage && !incomingHasImage) return true;
+    if (
+      Number.isFinite(currentUpdatedAt) &&
+      Number.isFinite(incomingUpdatedAt) &&
+      currentUpdatedAt > incomingUpdatedAt
+    ) return true;
+  }
   return incomingRevision === currentRevision &&
     (currentStatus === 'ready' || currentStatus === 'blocked') &&
     incomingStatus !== currentStatus;
@@ -372,15 +386,32 @@ async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText) {
   const dreamRecord = owned && owned.data && owned.data[0];
   if (!dreamRecord || dreamRecord.deletionPending) return null;
 
+  const normalizedText = String(noteText || '').replace(/\s+/g, ' ').trim();
+  const noteId = 'life-' + crypto.createHash('sha256')
+    .update([openid, localDreamId, normalizedText.toLowerCase()].join('|'))
+    .digest('hex')
+    .slice(0, 32);
   const noteData = {
     openid: openid,
-    text: noteText,
+    text: normalizedText,
     sourceDreamId: localDreamId,
     createdAt: new Date()
   };
+  const matchingNotes = await db.collection('life_notes')
+    .where({ openid: openid, sourceDreamId: localDreamId, text: normalizedText })
+    .limit(1)
+    .get();
+  const matchingNote = matchingNotes && matchingNotes.data && matchingNotes.data[0];
 
   if (typeof db.runTransaction !== 'function') {
-    return db.collection('life_notes').add({ data: noteData });
+    const latestJob = await findDeletionJob(openid, localDreamId);
+    const latestDream = await getDocument(db.collection('dream_entries'), dreamRecord._id);
+    if (latestJob || !latestDream || latestDream.deletionPending) return null;
+    if (matchingNote) return { _id: matchingNote._id, deduplicated: true };
+    const existingNote = await getDocument(db.collection('life_notes'), noteId);
+    if (existingNote) return { _id: noteId, deduplicated: true };
+    await db.collection('life_notes').doc(noteId).set({ data: noteData });
+    return { _id: noteId, deduplicated: false };
   }
 
   return db.runTransaction(async function (transaction) {
@@ -393,7 +424,11 @@ async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText) {
       dreamRecord._id
     );
     if (tombstone || !currentDream || currentDream.deletionPending) return null;
-    return transaction.collection('life_notes').add({ data: noteData });
+    if (matchingNote) return { _id: matchingNote._id, deduplicated: true };
+    const existingNote = await getDocument(transaction.collection('life_notes'), noteId);
+    if (existingNote) return { _id: noteId, deduplicated: true };
+    await transaction.collection('life_notes').doc(noteId).set({ data: noteData });
+    return { _id: noteId, deduplicated: false };
   });
 }
 
@@ -625,7 +660,7 @@ exports.main = async function (event) {
     var addedNote = await addLifeNoteUnlessDeleted(wxContext.OPENID, noteDreamId, noteText);
     if (!addedNote) return { ok: false, reason: 'dream_deleted' };
 
-    return { ok: true, id: addedNote._id };
+    return { ok: true, id: addedNote._id, deduplicated: addedNote.deduplicated === true };
   }
 
   if (action === 'deleteLifeNote') {

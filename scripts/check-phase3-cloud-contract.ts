@@ -373,6 +373,20 @@ assert.equal(stalePendingWrite.reason, 'stale_interpretation_write');
 const storedReadyDream = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-pending-contract');
 assert.equal(storedReadyDream.status, 'ready');
 assert.equal(storedReadyDream.result.title, '已完成');
+storedReadyDream.result.image_file_id = 'cloud://newer-image.png';
+storedReadyDream.updatedAt = new Date(now.getTime() + 5000);
+const staleReadyOverwrite = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract',
+  dreamText: '等待云端模型解读',
+  status: 'ready',
+  result: { title: '已完成', symbols: ['云端模型'] },
+  interpretationRevision: 1,
+  createdAt: now,
+  updatedAt: now,
+} });
+assert.equal(staleReadyOverwrite.ok, false);
+assert.equal(staleReadyOverwrite.reason, 'stale_interpretation_write');
+assert.equal(storedReadyDream.result.image_file_id, 'cloud://newer-image.png');
 
 database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => item.localId !== 'dream-pending-contract');
 const archiveList = await saveDreamMain({ action: 'list' });
@@ -388,6 +402,12 @@ assert.equal(lifeNotes.notes.length, 1);
 const addedLifeNote = await saveDreamMain({ action: 'addLifeNote', dreamId: 'dream-2', text: '这是确认过的现实片段' });
 assert.equal(addedLifeNote.ok, true);
 assert.equal(database.rows.life_notes.some((item: Row) => item._id === addedLifeNote.id), true);
+const lifeNoteCountAfterAdd = database.rows.life_notes.length;
+const duplicateLifeNote = await saveDreamMain({ action: 'addLifeNote', dreamId: 'dream-2', text: '  这是确认过的现实片段  ' });
+assert.equal(duplicateLifeNote.ok, true);
+assert.equal(duplicateLifeNote.id, addedLifeNote.id);
+assert.equal(duplicateLifeNote.deduplicated, true);
+assert.equal(database.rows.life_notes.length, lifeNoteCountAfterAdd);
 const crossUserLifeNote = await saveDreamMain({ action: 'addLifeNote', dreamId: 'private-other', text: '不应写入' });
 assert.equal(crossUserLifeNote.reason, 'dream_deleted');
 await saveDreamMain({ action: 'deleteLifeNote', noteId: addedLifeNote.id });

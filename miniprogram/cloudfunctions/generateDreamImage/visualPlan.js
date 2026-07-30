@@ -15,76 +15,36 @@ const STYLE_PRESETS = {
   }
 };
 
+// Emotion identifies the narrative tone, not a pre-assigned hue family.
+// Hue is generated below from the dream seed so the series can use the full wheel.
 const EMOTION_PALETTES = {
   anxiety: {
     label: '焦虑',
     keywords: ['焦虑', '紧张', '害怕', '恐惧', '不安', '压迫', '窒息', '追赶'],
-    dominant: 'deep ink green #104A43',
-    accent: 'burnt orange #C9682E',
-    focal: 'signal yellow #E7C94A',
-    auxiliary: ['pale cyan #9DD7D4'],
-    outline: 'green-black ink #111916',
-    paper: 'warm paper cream #F0DFB8'
   },
   nostalgia: {
     label: '怀旧',
     keywords: ['怀旧', '想念', '童年', '小时候', '故乡', '旧', '回忆', '以前'],
-    dominant: 'warm ochre #D9A33A',
-    accent: 'muted teal #4B9290',
-    focal: 'burnt orange #B85A31',
-    auxiliary: ['burnt orange #B85A31', 'grass green #6E8A45'],
-    outline: 'warm black ink #1C1A18',
-    paper: 'aged cream #F1E1BE'
   },
   excitement: {
     label: '兴奋',
     keywords: ['兴奋', '期待', '开心', '快乐', '激动', '自由', '飞翔', '惊喜'],
-    dominant: 'terracotta orange #C96532',
-    accent: 'pale cyan #94D0D1',
-    focal: 'lemon yellow #E7C94A',
-    auxiliary: ['lemon yellow #E7C94A', 'deep green #1C4C43'],
-    outline: 'near-black indigo #121525',
-    paper: 'clean warm cream #F6E8C8'
   },
   sadness: {
     label: '悲伤',
     keywords: ['悲伤', '难过', '失落', '孤独', '哭', '离开', '消失', '告别'],
-    dominant: 'deep indigo #2B3D67',
-    accent: 'warm cream #E9D2A4',
-    focal: 'muted coral #B96750',
-    auxiliary: ['muted coral #B96750', 'ink green #1A4A40'],
-    outline: 'near-black blue #151923',
-    paper: 'milk cream #EFE3C9'
   },
   anger: {
     label: '愤怒',
     keywords: ['愤怒', '生气', '发火', '争吵', '冲突', '破坏', '攻击'],
-    dominant: 'vermilion #D33D29',
-    accent: 'electric blue #2D68C4',
-    focal: 'burnt orange #DA6A2C',
-    auxiliary: ['burnt orange #DA6A2C', 'deep ink #1A1A19'],
-    outline: 'charcoal black #151311',
-    paper: 'warm paper #F1DFBC'
   },
   mystery: {
     label: '神秘',
     keywords: ['神秘', '未知', '陌生', '奇怪', '诡异', '迷雾', '夜晚', '秘密'],
-    dominant: 'deep ink green #164F46',
-    accent: 'golden yellow #D6A62E',
-    focal: 'coral orange #D95B3D',
-    auxiliary: ['deep violet #4D4165', 'pale cyan #9CBEC0'],
-    outline: 'green-black ink #111916',
-    paper: 'antique ivory #EEE0BE'
   },
   healing: {
     label: '治愈',
     keywords: ['治愈', '安心', '平静', '温暖', '轻松', '安全', '拥抱', '回家'],
-    dominant: 'sage green #6B9A70',
-    accent: 'warm orange #D77540',
-    focal: 'warm yellow #E4C25E',
-    auxiliary: ['clear light blue #74B9C1', 'warm yellow #E4C25E'],
-    outline: 'soft near-black #1B2420',
-    paper: 'cream white #F4E8CD'
   }
 };
 
@@ -266,7 +226,64 @@ function paletteFor(emotions, dreamText) {
     }
   });
 
-  return Object.assign({ id: bestKey }, EMOTION_PALETTES[bestKey]);
+  const hashSource = bestKey + '|' + uniqueStrings(emotions, 6, 30).join('|') + '|' + clean(dreamText, 600);
+  const digest = crypto.createHash('sha256').update(hashSource).digest();
+  const hue = ((digest[0] << 8) + digest[1]) % 360;
+  const temperament = {
+    anxiety: { saturation: 62, lightness: 27, actionSaturation: 82, actionLightness: 49 },
+    nostalgia: { saturation: 54, lightness: 42, actionSaturation: 70, actionLightness: 46 },
+    excitement: { saturation: 70, lightness: 42, actionSaturation: 88, actionLightness: 50 },
+    sadness: { saturation: 50, lightness: 29, actionSaturation: 64, actionLightness: 55 },
+    anger: { saturation: 76, lightness: 37, actionSaturation: 90, actionLightness: 52 },
+    mystery: { saturation: 58, lightness: 31, actionSaturation: 76, actionLightness: 48 },
+    healing: { saturation: 48, lightness: 47, actionSaturation: 66, actionLightness: 53 }
+  }[bestKey] || { saturation: 58, lightness: 38, actionSaturation: 76, actionLightness: 50 };
+  const relationships = [
+    { id: 'complementary', action: 180, focal: 150, auxiliary: 210 },
+    { id: 'split-complementary', action: 150, focal: 210, auxiliary: 28 },
+    { id: 'triadic', action: 120, focal: 240, auxiliary: 180 },
+    { id: 'offset-analogous', action: 42, focal: 180, auxiliary: 322 }
+  ];
+  const relationship = relationships[digest[2] % relationships.length];
+  const accentHue = (hue + relationship.action) % 360;
+  const focalHue = (hue + relationship.focal) % 360;
+  const auxiliaryHue = (hue + relationship.auxiliary) % 360;
+
+  return {
+    id: bestKey,
+    variant_id: relationship.id + '-' + hue,
+    label: EMOTION_PALETTES[bestKey].label,
+    dominant: hslColor(hue, temperament.saturation, temperament.lightness),
+    accent: hslColor(accentHue, temperament.actionSaturation, temperament.actionLightness),
+    focal: hslColor(focalHue, 88, 58),
+    auxiliary: [hslColor(auxiliaryHue, Math.max(35, temperament.saturation - 12), Math.min(68, temperament.lightness + 18))],
+    outline: hslColor(hue, Math.min(24, temperament.saturation), 12),
+    paper: hslColor(34 + (digest[3] % 18), 46, 88)
+  };
+}
+
+function hslColor(hue, saturation, lightness) {
+  const normalizedHue = ((Math.round(hue) % 360) + 360) % 360;
+  const rgb = hslToRgb(normalizedHue, saturation, lightness);
+  return 'h' + normalizedHue + ' #' + rgb.map(function (value) {
+    return value.toString(16).padStart(2, '0').toUpperCase();
+  }).join('');
+}
+
+function hslToRgb(hue, saturation, lightness) {
+  const h = hue / 360;
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const segment = h * 6;
+  const x = chroma * (1 - Math.abs(segment % 2 - 1));
+  const match = l - chroma / 2;
+  const channels = segment < 1 ? [chroma, x, 0] :
+    segment < 2 ? [x, chroma, 0] :
+      segment < 3 ? [0, chroma, x] :
+        segment < 4 ? [0, x, chroma] :
+          segment < 5 ? [x, 0, chroma] : [chroma, 0, x];
+  return channels.map(function (channel) { return Math.round((channel + match) * 255); });
 }
 
 function compositionFor(rawComposition, seed) {
@@ -373,6 +390,7 @@ function normalizeVisualPlan(rawPlan, context) {
     composition: compositionFor(raw.composition, dreamText + mainEvent),
     palette: {
       id: palette.id,
+      variant_id: palette.variant_id || 'base',
       emotion_label: palette.label,
       dominant: palette.dominant,
       accent: palette.accent,

@@ -302,13 +302,43 @@ Page({
       current.push({ role: 'assistant', content: reply, createdAt: new Date().toISOString() });
       dream.chatMessages = current.slice(-12);
       dream.updatedAt = new Date().toISOString();
-      persistDream(dream, function () {
-        dreamMemory.refreshPortraitInBackground({
-          cloudBase: cloudBase,
-          reason: '梦后讨论有了新内容',
-          refreshKey: 'discussion:' + String(dream.id) + ':' + String(current.length),
-          archive: wx.getStorageSync('oneiro:dreamArchive') || []
-        });
+      persistDream(dream, function (saveResult) {
+        var realityClue = result && result.ok ? String(result.realityClue || '').trim() : '';
+        var refreshPortrait = function (reason, refreshKey) {
+          dreamMemory.refreshPortraitInBackground({
+            cloudBase: cloudBase,
+            reason: reason,
+            refreshKey: refreshKey,
+            archive: wx.getStorageSync('oneiro:dreamArchive') || []
+          });
+        };
+
+        if (realityClue) {
+          cloudBase.addLifeNote(dream.id, realityClue, function (noteResult) {
+            if (noteResult && noteResult.ok) {
+              refreshPortrait(
+                '梦后对话提取了新的现实线索',
+                'life-note:' + String(noteResult.id || dream.id + ':' + current.length)
+              );
+              analytics.trackEvent('dream_chat_life_note_extracted', {
+                dreamId: dream.id,
+                deduplicated: !!noteResult.deduplicated
+              });
+              return;
+            }
+            analytics.trackEvent('dream_chat_life_note_failed', {
+              dreamId: dream.id,
+              reason: noteResult && noteResult.reason ? noteResult.reason : 'unknown'
+            });
+          });
+          return;
+        }
+        if (saveResult && saveResult.ok) {
+          refreshPortrait(
+            '梦后讨论有了新内容',
+            'discussion:' + String(dream.id) + ':' + String(current.length)
+          );
+        }
       });
       that.setData({
         dream: dream,

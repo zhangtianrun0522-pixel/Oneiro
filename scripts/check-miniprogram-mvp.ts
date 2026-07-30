@@ -180,6 +180,7 @@ type WxMock = {
   cloudUploads: Array<Record<string, any>>;
   blockNextInterpret: boolean;
   failNextInterpret: boolean;
+  failNextDreamSave: boolean;
   failNextPortraitToggle: boolean;
   failNextPortraitSave: boolean;
   failNextPortraitGenerate: boolean;
@@ -250,6 +251,7 @@ function createWxMock(): WxMock {
     cloudUploads: [],
     blockNextInterpret: false,
     failNextInterpret: false,
+    failNextDreamSave: false,
     failNextPortraitToggle: false,
     failNextPortraitSave: false,
     failNextPortraitGenerate: false,
@@ -370,6 +372,11 @@ function createWxMock(): WxMock {
         options.success({ result: { openid: 'mock-openid' } });
         return;
       }
+      if (options.name === 'saveDream' && wx.failNextDreamSave) {
+        wx.failNextDreamSave = false;
+        options.success({ result: { ok: false, reason: 'mock_save_failed' } });
+        return;
+      }
       if (options.name === 'interpretDream') {
         if (options.data?.refineDream) {
           options.success({
@@ -391,6 +398,7 @@ function createWxMock(): WxMock {
               provider: 'mock-cloud',
               fallback: false,
               reply: '你提到的期限感让学校和追逐更具体了。这可能与近期被评价的压力有关，也可能只是偶然联想。你最在意的是赶不上，还是被看见？',
+              realityClue: '我最近确实很怕赶不上期限',
             },
           });
           return;
@@ -1450,6 +1458,38 @@ assert.equal(resultPage.data.dream.result.image_file_id, 'cloud://mock/generated
 assert.equal(resultPage.data.dream.result.imageFileId, '');
 assert.equal(resultPage.data.dream.result.fileID, '');
 assert.equal(resultPage.data.dream.result.fileId, '');
+
+// A locally ready card with no confirmed cloud save must remain available.
+// Image generation is deferred until the retry save succeeds; this covers
+// both an explicit failed save and legacy records where cloudSynced was absent.
+const syncRetryDream = Object.assign({}, archiveAfterDream[0], {
+  id: 'sync-retry-dream',
+  cloudSynced: undefined,
+  result: Object.assign({}, archiveAfterDream[0].result, {
+    imageUrl: '',
+    image_file_id: '',
+    imageFileId: '',
+    fileID: '',
+    fileId: '',
+  }),
+});
+wx.storage['oneiro:dreamArchive'] = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).concat([syncRetryDream]);
+const syncRetryPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+syncRetryPage.onLoad({ id: syncRetryDream.id });
+const imageCallsBeforeSyncRetry = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length;
+wx.failNextDreamSave = true;
+syncRetryPage.requestDreamImage();
+assert.equal(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length, imageCallsBeforeSyncRetry);
+assert.equal(syncRetryPage.data.dream.status, 'ready');
+assert.equal(syncRetryPage.data.dream.cloudSynced, false);
+assert.equal(syncRetryPage.data.imageStatus, 'failed');
+assert.equal(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === syncRetryDream.id)?.cloudSynced,
+  false
+);
+syncRetryPage.retryDreamImage();
+assert.ok(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length > imageCallsBeforeSyncRetry);
+assert.equal(syncRetryPage.data.dream.cloudSynced, true);
 const sharePayload = resultPage.onShareAppMessage();
 assert.equal(sharePayload.path, '/pages/home/index?fromShare=1');
 assert.ok(sharePayload.title.includes(resultPage.data.dream.result.title));
@@ -1512,11 +1552,20 @@ const dreamChatPage = loadPage('miniprogram/pages/dream-chat/index.js', pageModu
 dreamChatPage.onLoad({ id: archiveAfterDream[0].id });
 assert.equal(dreamChatPage.data.messages.length, 1);
 dreamChatPage.onInput({ detail: { value: '我最近确实很怕赶不上期限。' } });
+const lifeNoteCallsBeforeChat = wx.cloudCalls.filter((call) => call.name === 'saveDream' && call.data.action === 'addLifeNote').length;
 dreamChatPage.sendMessage();
 assert.equal(dreamChatPage.data.messages.length, 3);
 assert.equal(dreamChatPage.data.turnCount, 1);
 assert.ok(dreamChatPage.data.messages[2].content.includes('期限感'));
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.chatAboutDream));
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'saveDream' && call.data.action === 'addLifeNote').length,
+  lifeNoteCallsBeforeChat + 1
+);
+assert.equal(
+  last(wx.cloudCalls.filter((call) => call.name === 'saveDream' && call.data.action === 'addLifeNote')).data.text,
+  '我最近确实很怕赶不上期限'
+);
 assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((item) => item.id === archiveAfterDream[0].id)?.chatMessages.length,
   3
