@@ -30,12 +30,15 @@ const NANO_BANANA_SUBMIT_TIMEOUT_MS = 46000;
 // 远超同步小图模型的耗时。此前这条路径沿用了 12 秒的通用超时，于是
 // 每次都在 ~13 秒被 socket 超时掐断，客户端只看到
 // "image provider timeout"，看起来像"出图反复失败"。
-// 42 秒是在 FUNCTION_BUDGET_MS(55s) 内为下载(≤12s)+上传云存储留出余量的取值。
+// 旧同步实现仅用于不支持两阶段任务的兼容分支；Seedream 旧客户端会在
+// exports.main 中透明转接到两阶段任务，避免把 provider 与持久化挤进同一预算。
 const SEEDREAM_SUBMIT_TIMEOUT_MS = 42000;
 const PRIMARY_SEEDREAM_SUBMIT_TIMEOUT_MS = 54000;
 const PRIMARY_SUBMIT_LEASE_MS = 60000;
 const PRIMARY_FINALIZE_LEASE_MS = 65000;
 const PRIMARY_FINALIZE_MAX_RETRIES = 2;
+const LEGACY_FUNCTION_HARD_BUDGET_MS = 60000;
+const LEGACY_FINALIZE_MIN_BUDGET_MS = 20000;
 // 同步小图模型（gpt-image 等）保持原来的快速失败超时，不被 seedream 的
 // 长耗时拖累
 const SYNC_IMAGE_SUBMIT_TIMEOUT_MS = 12000;
@@ -1443,6 +1446,70 @@ async function finalizePrimaryImage(event, openid) {
   }
 }
 
+async function legacyPrimaryPreview(jobId, sourceDreamId, openid) {
+  const job = await getDocument(cloud.database().collection('image_generation_jobs'), jobId);
+  if (
+    !job ||
+    job.kind !== 'seedream_primary' ||
+    job.openid !== openid ||
+    job.sourceDreamId !== sourceDreamId ||
+    !job.provider_image_url
+  ) {
+    return null;
+  }
+  return {
+    ok: true,
+    status: 'provider_ready',
+    jobId: jobId,
+    provider: job.provider || 'openai',
+    providerConfigured: true,
+    model: job.model || '',
+    fileID: '',
+    imageUrl: job.provider_image_url,
+    cacheHit: false,
+    transientPreview: true,
+    stylePreset: job.style_preset || 'production',
+    styleVersion: job.style_version || STYLE_VERSION,
+    theme: job.theme || 'mist',
+    imageFormat: '',
+    imageBytes: 0,
+    visualPlan: job.visual_plan || null,
+    qualityCheck: job.visual_plan ? visualPlanner.buildPlanQualityCheck(job.visual_plan) : null,
+    referenceImageCount: Number(job.reference_count || 0)
+  };
+}
+
+async function generateLegacyPrimaryImage(event, openid, handlerStartedAt) {
+  const sourceDreamId = String((event && event.dreamId) || '').trim().slice(0, 100);
+  const startEvent = Object.assign({}, event, { action: 'startPrimaryImage' });
+  if (startEvent.forceRefresh === true && !String(startEvent.requestId || '').trim()) {
+    startEvent.requestId = 'legacy-' + Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex');
+  }
+  const started = await startPrimaryImage(startEvent, openid);
+  if (!started || !started.ok || started.imageUrl || !started.jobId) return started;
+  if (started.status !== 'provider_ready' && started.status !== 'finalizing') return started;
+
+  const configuredMinimum = Number(process.env.LEGACY_IMAGE_FINALIZE_MIN_BUDGET_MS);
+  const minimumFinalizeBudget = Number.isFinite(configuredMinimum)
+    ? Math.max(5000, Math.min(configuredMinimum, LEGACY_FUNCTION_HARD_BUDGET_MS))
+    : LEGACY_FINALIZE_MIN_BUDGET_MS;
+  const remainingBudget = LEGACY_FUNCTION_HARD_BUDGET_MS - (Date.now() - handlerStartedAt);
+
+  if (started.status === 'provider_ready' && remainingBudget > minimumFinalizeBudget) {
+    const finalized = await finalizePrimaryImage({
+      action: 'finalizePrimaryImage',
+      dreamId: sourceDreamId,
+      jobId: started.jobId
+    }, openid);
+    if (finalized && finalized.ok && finalized.imageUrl) return finalized;
+    if (finalized && (finalized.status === 'cancelled' || finalized.status === 'failed')) {
+      return finalized;
+    }
+  }
+
+  return await legacyPrimaryPreview(started.jobId, sourceDreamId, openid) || started;
+}
+
 async function prepareQualityContext(event, openid) {
   const sourceDreamId = String((event && event.dreamId) || '').trim().slice(0, 100);
   if (!sourceDreamId) return { error: { ok: false, reason: 'missing_dream_id' } };
@@ -1678,7 +1745,9 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
       theme: theme
     }
   );
-  const generationPrompt = visualPlanner.buildGenerationPrompt(visualPlan, stylePreset);
+  const generationPrompt = isSeedreamModel(config.model)
+    ? visualPlanner.buildSeedreamGenerationPrompt(visualPlan, stylePreset)
+    : visualPlanner.buildGenerationPrompt(visualPlan, stylePreset);
   const referenceCount = Array.isArray(referenceImageUrls) ? referenceImageUrls.length : 0;
   const key = cacheKey(generationPrompt, config.model, styleVersion, referenceCount);
 
@@ -1945,6 +2014,8 @@ exports.main = async function (event) {
       requestTimeoutMs: config.timeoutMs,
       primaryPipeline: 'seedream_two_stage_v1',
       primarySubmitTimeoutMs: PRIMARY_SEEDREAM_SUBMIT_TIMEOUT_MS,
+      legacySeedreamSubmitTimeoutMs: SEEDREAM_SUBMIT_TIMEOUT_MS,
+      legacyFinalizeMinBudgetMs: LEGACY_FINALIZE_MIN_BUDGET_MS,
       styleVersion: STYLE_VERSION,
       stylePresets: visualPlanner.STYLE_PRESETS,
       supportedThemes: Object.keys(LEGACY_THEMES),
@@ -1992,6 +2063,9 @@ exports.main = async function (event) {
   try {
     if (referenceTest) {
       preparedReferences = await prepareReferenceImages(event.referenceImageData, sourceDreamId);
+    }
+    if (isSeedreamModel(config.model) && !referenceTest) {
+      return await generateLegacyPrimaryImage(event, openid, handlerStartedAt);
     }
     return await generateImage(
       prompt,

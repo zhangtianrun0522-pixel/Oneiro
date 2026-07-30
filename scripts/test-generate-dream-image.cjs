@@ -284,6 +284,11 @@ async function run() {
   assert.doesNotMatch(internalTestPrompt, /Favor direct cobalt or ultramarine/);
   assert.doesNotMatch(internalTestPrompt, /dry-brush breaks|heavy distressed texture/);
 
+  result = await imageFunction.main({ healthCheck: true });
+  assert.equal(result.primarySubmitTimeoutMs, 54000);
+  assert.equal(result.legacySeedreamSubmitTimeoutMs, 42000);
+  assert.equal(result.legacyFinalizeMinBudgetMs, 20000);
+
   result = await imageFunction.main({ prompt: 'moon', dreamId: '' });
   assert.equal(result.reason, 'missing_dream_id');
 
@@ -313,16 +318,24 @@ async function run() {
   assert.equal(result.reason, 'dream_not_found');
 
   state.deletion = false;
+  state.providerImageUrl = 'https://provider.example.com/legacy-seedream.png';
   state.transactionDeletion = true;
   result = await imageFunction.main({ prompt: 'moon', dreamId: 'dream-1' });
   assert.equal(result.reason, 'dream_not_found');
   assert.equal(state.uploaded, 1);
   assert.deepEqual(state.deletedFiles, ['cloud://image-1']);
-  assert.equal(state.providerCalls, 1);
+  assert.equal(state.providerCalls, 2);
 
   state.transactionDeletion = false;
-  result = await imageFunction.main({ prompt: 'legacy summary', dreamId: 'dream-1', visualPlan: visualPlan });
+  result = await imageFunction.main({
+    prompt: 'legacy summary',
+    dreamId: 'dream-1',
+    visualPlan: visualPlan,
+    forceRefresh: true
+  });
   assert.equal(result.ok, true);
+  assert.equal(result.status, 'succeeded');
+  assert.ok(result.fileID, 'legacy Seedream calls should transparently finalize when budget allows');
   assert.equal(result.styleVersion, 'oneiro-seedream-dream-v2.0');
   assert.equal(result.visualPlan.palette.id, 'anxiety');
   assert.equal(result.qualityCheck.checks.output_aspect_ratio_3_4, true);
@@ -333,8 +346,13 @@ async function run() {
   assert.equal(state.requestBodies[state.requestBodies.length - 1].watermark, false);
   assert.equal(state.requestBodies[state.requestBodies.length - 1].quality, undefined);
   assert.equal(state.requestBodies[state.requestBodies.length - 1].n, undefined);
-  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /fixed red-and-blue pairing/);
-  assert.doesNotMatch(state.requestBodies[state.requestBodies.length - 1].prompt, /tarot-inspired/);
+  assert.ok(
+    state.requestBodies[state.requestBodies.length - 1].prompt.length < 1800,
+    'legacy Seedream clients must use the compact production prompt'
+  );
+  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /核心事件/);
+  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /粗粝丝网印刷与孔版印刷画风/);
+  assert.doesNotMatch(state.requestBodies[state.requestBodies.length - 1].prompt, /fixed red-and-blue pairing|tarot-inspired/);
 
   result = await imageFunction.main({
     prompt: 'legacy summary',
@@ -345,8 +363,8 @@ async function run() {
   assert.equal(result.ok, true);
   assert.equal(result.stylePreset, 'internal_test');
   assert.equal(result.styleVersion, 'oneiro-internal-test-style-v1.4');
-  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /ONEIRO INTERNAL TEST VISUAL STYLE/);
-  assert.doesNotMatch(state.requestBodies[state.requestBodies.length - 1].prompt, /rough screenprint and risograph texture/);
+  assert.match(state.requestBodies[state.requestBodies.length - 1].prompt, /极简手绘内测画风/);
+  assert.doesNotMatch(state.requestBodies[state.requestBodies.length - 1].prompt, /ONEIRO INTERNAL TEST VISUAL STYLE|rough screenprint and risograph texture/);
 
   const deletedBeforeReference = state.deletedFiles.length;
   process.env.OPENAI_IMAGE_ENDPOINT_URL = 'https://grsaiapi.com/v1/api/generate';
@@ -398,6 +416,29 @@ async function run() {
   assert.equal(result.reason, 'provider_timeout');
   assert.equal(result.stage, 'submit');
   assert.ok(Date.now() - timeoutStartedAt < 1500, 'absolute timeout must stop an active response stream');
+
+  process.env.LEGACY_IMAGE_FINALIZE_MIN_BUDGET_MS = '60000';
+  state.providerImageUrl = 'https://provider.example.com/legacy-preview.png';
+  result = await imageFunction.main({
+    prompt: 'legacy preview',
+    dreamId: 'dream-1',
+    visualPlan: visualPlan,
+    forceRefresh: true
+  });
+  delete process.env.LEGACY_IMAGE_FINALIZE_MIN_BUDGET_MS;
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'provider_ready');
+  assert.equal(result.transientPreview, true);
+  assert.equal(result.fileID, '');
+  assert.equal(result.imageUrl, state.providerImageUrl);
+  const previewFinalized = await imageFunction.main({
+    action: 'finalizePrimaryImage',
+    jobId: result.jobId,
+    dreamId: 'dream-1'
+  });
+  assert.equal(previewFinalized.ok, true);
+  assert.equal(previewFinalized.status, 'succeeded');
+  assert.ok(previewFinalized.fileID, 'a transient legacy preview must remain finalizable');
 
   delete process.env.OPENAI_IMAGE_ENDPOINT_URL;
   delete process.env.OPENAI_IMAGE_MODEL;
