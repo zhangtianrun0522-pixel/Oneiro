@@ -216,6 +216,43 @@
   line-height: 1.7;
 }
 
+/* ── 首次加载态：文字 + 骨架条，取代之前「异步返回前先渲染空态」的
+   闪烁。骨架条是纯装饰（不承载文字信息），用已有的 rgba(ink,0.08)
+   量级，呼吸动画只改 opacity，不引入新颜色 token ── */
+.portrait-loading-card {
+  margin-top: var(--space-tight);
+}
+
+.portrait-loading-copy {
+  display: block;
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  line-height: 1.7;
+}
+
+.portrait-loading-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  margin-top: 20rpx;
+}
+
+.portrait-loading-bar {
+  height: 22rpx;
+  border-radius: 2rpx;
+  background: rgba(33, 29, 23, 0.08);
+  animation: portrait-loading-pulse 1.2s ease-in-out infinite;
+}
+
+.portrait-loading-bar.is-short {
+  width: 60%;
+}
+
+@keyframes portrait-loading-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
 .portrait-empty-card {
   margin-top: var(--space-tight);
 }
@@ -233,6 +270,46 @@
   color: var(--ink-70);
   font-size: var(--fs-aux);
   line-height: 1.7;
+}
+
+/* 加载失败态的重试入口：与 .clear-field 同规格的下划线文字链，
+   --ink-70 on --paper = 6.10:1 */
+.portrait-empty-retry {
+  display: inline-block;
+  margin-top: var(--space-tight);
+  min-height: var(--tap-min);
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
+}
+
+/* 云端生成失败但本机草稿仍展示：用 --cinnabar-ink（4.69–5.03:1，
+   与 .fact-delete 同一校准值）标出失败说明，重试仍是 --ink-70 文字链 */
+.portrait-generate-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: var(--space-tight);
+}
+
+.portrait-generate-error-copy {
+  color: var(--cinnabar-ink);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+}
+
+.portrait-generate-error-retry {
+  min-height: var(--tap-min);
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
 .portrait-actions {

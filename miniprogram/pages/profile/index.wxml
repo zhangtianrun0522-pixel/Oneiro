@@ -4,35 +4,58 @@
     <text class="profile-subtitle">这是可修改的当下观察，不是对你的定义</text>
   </view>
 
-  <view wx:if="{{revisit}}" class="profile-revisit">
-    <text class="profile-revisit-kicker">昨日梦回访</text>
-    <text class="profile-revisit-title">昨天的梦「{{revisit.title}}」</text>
-    <text class="profile-revisit-question">{{revisit.question}}</text>
-    <view wx:if="{{!revisitAnswering}}" class="profile-revisit-actions">
-      <button class="profile-revisit-answer" bindtap="startAnswerRevisit">回答</button>
-      <button class="profile-revisit-skip" bindtap="skipRevisitPrompt">跳过</button>
-      <text class="profile-revisit-disable" bindtap="disableRevisitPrompts">关闭提醒</text>
-    </view>
-    <view wx:else class="profile-revisit-composer">
-      <textarea
-        class="profile-revisit-textarea"
-        bindinput="onRevisitAnswerInput"
-        value="{{revisitAnswerText}}"
-        maxlength="300"
-        auto-height
-        placeholder="写下此刻的变化或感受"
-        placeholder-class="muted"
-      />
-      <button class="profile-revisit-send" bindtap="submitRevisitAnswer">发送</button>
-    </view>
+  <!-- 「次日回访」区域固定占位，不因为当前没有待回访的梦就整块消失——
+       否则用户会以为这个功能被下线了。四种状态：已关闭 / 有待回访(默认或作答中) /
+       无待回访。真正没有待回访的梦时只说明机制，绝不编造回访问题文案。 -->
+  <view class="profile-revisit">
+    <text class="profile-revisit-kicker">次日回访</text>
+
+    <block wx:if="{{revisitDisabled}}">
+      <text class="profile-revisit-title">回访提醒已关闭</text>
+      <text class="profile-revisit-question">记下一个梦后，第二天本该在这里出现一次回访提问，但提醒已被关闭。</text>
+      <view class="profile-revisit-actions">
+        <text class="profile-revisit-disable" bindtap="enableRevisitPrompts">恢复回访提醒</text>
+      </view>
+    </block>
+
+    <block wx:elif="{{revisit}}">
+      <text class="profile-revisit-title">昨天的梦「{{revisit.title}}」</text>
+      <text class="profile-revisit-question">{{revisit.question}}</text>
+      <view wx:if="{{!revisitAnswering}}" class="profile-revisit-actions">
+        <button class="profile-revisit-answer" bindtap="startAnswerRevisit">回答</button>
+        <button class="profile-revisit-skip" bindtap="skipRevisitPrompt">跳过</button>
+        <text class="profile-revisit-disable" bindtap="disableRevisitPrompts">关闭提醒</text>
+      </view>
+      <view wx:else class="profile-revisit-composer">
+        <textarea
+          class="profile-revisit-textarea"
+          bindinput="onRevisitAnswerInput"
+          value="{{revisitAnswerText}}"
+          maxlength="300"
+          auto-height
+          placeholder="写下此刻的变化或感受"
+          placeholder-class="muted"
+        />
+        <button class="profile-revisit-send" bindtap="submitRevisitAnswer">发送</button>
+      </view>
+    </block>
+
+    <block wx:else>
+      <text class="profile-revisit-title">暂时没有待回访的梦</text>
+      <text class="profile-revisit-question">记下一个梦后，第二天这里会出现一次回访提问，帮你确认梦里的感受有没有照进现实。</text>
+    </block>
   </view>
 
   <view class="portrait-block">
     <view class="section-row">
       <text class="section-label">阶段画像{{memoryState.current ? ' · V' + memoryState.current.version : ''}}</text>
-      <text class="portrait-focus-label {{!memoryState.current ? 'is-waiting' : (memoryState.current.useInFutureReadings === false ? 'is-paused' : 'is-active')}}">{{!memoryState.current ? '等待形成' : (memoryState.current.useInFutureReadings === false ? '已暂停解读' : '用于解读中')}}</text>
+      <!-- 内容存在优先展示；否则读取中显示「读取中」，读取完成后才区分
+           「读取失败」与真正的「等待形成」，避免第一帧就武断地判空 -->
+      <text class="portrait-focus-label {{memoryState.current ? (memoryState.current.useInFutureReadings === false ? 'is-paused' : 'is-active') : 'is-waiting'}}">{{memoryState.current ? (memoryState.current.useInFutureReadings === false ? '已暂停解读' : '用于解读中') : (!memoryLoaded ? '读取中' : (portraitLoadError ? '读取失败' : '等待形成'))}}</text>
     </view>
 
+    <!-- 内容优先：只要 memoryState.current 有值就展示，不受 memoryLoaded 影响——
+         这样刚在本页手动生成的本机草稿也能立刻显示，不会被"读取中"骨架盖住 -->
     <view wx:if="{{memoryState.current}}" class="portrait-body">
       <textarea
         wx:if="{{portraitEditing}}"
@@ -43,18 +66,41 @@
         bindinput="onPortraitSummaryInput"
       />
       <text wx:else class="portrait-summary">{{memoryState.current.summary}}</text>
+      <!-- 云端生成失败时不能静默：本机推测版本仍展示，但要明确说明并给出重试 -->
+      <view wx:if="{{portraitGenerateFailed && !portraitEditing}}" class="portrait-generate-error">
+        <text class="portrait-generate-error-copy">云端生成失败，当前展示的是本机推测版本</text>
+        <text class="portrait-generate-error-retry" data-reason="重试生成" bindtap="generatePortrait">重试</text>
+      </view>
       <view wx:if="{{portraitEditing}}" class="portrait-actions">
         <button class="portrait-primary" loading="{{portraitSaving}}" bindtap="savePortraitEdit">保存修改</button>
         <button class="portrait-secondary" bindtap="cancelPortraitEdit">取消</button>
       </view>
     </view>
 
+    <!-- 首次进入、云端还没返回：明确的加载态，不是空态 -->
+    <view wx:elif="{{!memoryLoaded}}" class="portrait-loading-card">
+      <text class="portrait-loading-copy">正在读取 Oneiro 对你的理解…</text>
+      <view class="portrait-loading-bars">
+        <view class="portrait-loading-bar"></view>
+        <view class="portrait-loading-bar"></view>
+        <view class="portrait-loading-bar is-short"></view>
+      </view>
+    </view>
+
+    <!-- 加载完成但请求失败：区别于「真的还没有」，给出可理解的原因和重试 -->
+    <view wx:elif="{{portraitLoadError}}" class="portrait-empty-card">
+      <text class="portrait-empty-title">阶段画像暂时加载不出来</text>
+      <text class="portrait-empty-copy">可能是网络不稳定，不影响你已保存的资料。可以重新加载，或先生成一份本机画像。</text>
+      <text class="portrait-empty-retry" bindtap="loadProfileMemory">重新加载</text>
+    </view>
+
+    <!-- 加载已完成，确认云端和本机都没有画像：真正的空态 + 下一步引导 -->
     <view wx:else class="portrait-empty-card">
       <text class="portrait-empty-title">还没有形成可查看的阶段画像</text>
       <text class="portrait-empty-copy">先保存基础资料，或记录一个梦。Oneiro 会从这些真实线索开始理解你。</text>
     </view>
 
-    <view wx:if="{{!portraitEditing}}" class="portrait-links-row">
+    <view wx:if="{{!portraitEditing && (memoryState.current || memoryLoaded)}}" class="portrait-links-row">
       <button wx:if="{{memoryState.current}}" class="portrait-link-btn" bindtap="startPortraitEdit">修改这段理解</button>
       <button wx:if="{{memoryState.current}}" class="portrait-link-btn" bindtap="togglePortraitUse">{{memoryState.current.useInFutureReadings === false ? '恢复用于解读' : '暂停用于解读'}}</button>
       <button class="portrait-link-btn" loading="{{portraitLoading}}" disabled="{{portraitLoading}}" data-reason="手动刷新" bindtap="generatePortrait">{{memoryState.current ? '手动刷新' : '生成第一份阶段画像'}}</button>

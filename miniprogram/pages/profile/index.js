@@ -77,6 +77,12 @@ Page({
     genderOptions: ['不填写', '男', '女'],
     genderIndex: 0,
     saving: false,
+    // `memoryLoaded` guards the empty-state card: it starts false so the
+    // first render shows a loading state instead of flashing "no portrait
+    // yet" while the async cloud fetch in loadProfileMemory() is pending.
+    memoryLoaded: false,
+    portraitLoadError: false,
+    portraitGenerateFailed: false,
     portraitLoading: false,
     portraitSaving: false,
     portraitEditing: false,
@@ -85,6 +91,7 @@ Page({
     revisit: null,
     revisitAnswering: false,
     revisitAnswerText: '',
+    revisitDisabled: false,
     lifeNotes: [],
     memoryState: emptyMemoryState(),
     insights: dreamMemory.buildInsights([])
@@ -100,6 +107,10 @@ Page({
       profile: Object.assign(emptyProfile(), saved),
       genderIndex: genderIndexFor(saved.gender),
       memoryState: state,
+      // If a cached snapshot already exists locally there is nothing to
+      // block the empty-state on; only a truly cold cache waits for the
+      // cloud round trip in loadProfileMemory() before it may render empty.
+      memoryLoaded: !!state.current,
       insights: insights,
       lifeNotes: dreamMemory.autoExtractedRealLifeContext(archive).map(function (text, index) {
         return { id: '', localKey: 'local-' + index, text: text, localOnly: true };
@@ -116,7 +127,9 @@ Page({
 
   loadRevisit: function () {
     var that = this;
-    if (wx.getStorageSync('oneiro:revisitDisabled')) {
+    var disabled = !!wx.getStorageSync('oneiro:revisitDisabled');
+    this.setData({ revisitDisabled: disabled });
+    if (disabled) {
       this.setData({ revisit: null, revisitAnswering: false, revisitAnswerText: '' });
       return;
     }
@@ -164,8 +177,18 @@ Page({
     var revisit = this.data.revisit;
     wx.setStorageSync('oneiro:revisitDisabled', true);
     if (revisit && revisit.localId) cloudBase.skipRevisit(revisit.localId);
-    this.setData({ revisit: null, revisitAnswering: false, revisitAnswerText: '' });
+    this.setData({ revisit: null, revisitAnswering: false, revisitAnswerText: '', revisitDisabled: true });
     wx.showToast({ title: '已关闭，之后不会再提醒', icon: 'none' });
+  },
+
+  // Recovers from the one-way `oneiro:revisitDisabled` flag: previously
+  // nothing in the app could clear it once a user tapped "关闭提醒", so the
+  // revisit feature was permanently gone for them. This gives it back.
+  enableRevisitPrompts: function () {
+    wx.removeStorageSync('oneiro:revisitDisabled');
+    this.setData({ revisitDisabled: false });
+    this.loadRevisit();
+    wx.showToast({ title: '已恢复回访提醒', icon: 'none' });
   },
 
   loadLifeNotes: function () {
@@ -254,12 +277,23 @@ Page({
   loadProfileMemory: function () {
     var that = this;
     cloudBase.getProfileMemory(function (result) {
-      if (!result || !result.ok) return;
+      if (!result || !result.ok) {
+        // The fetch itself failed (network/cloud error). Only surface this
+        // as a distinct "failed to load" state when we have nothing else to
+        // show yet — if a portrait is already displayed (from local cache
+        // or a just-created draft), a background fetch failure shouldn't
+        // disturb it.
+        that.setData({ memoryLoaded: true, portraitLoadError: !that.data.memoryState.current });
+        return;
+      }
       var remote = normalizeMemoryState(result);
       var local = normalizeMemoryState(that.data.memoryState);
-      if (!remote.current && !remote.latestDraft && !remote.history.length && local.history.length) return;
+      if (!remote.current && !remote.latestDraft && !remote.history.length && local.history.length) {
+        that.setData({ memoryLoaded: true, portraitLoadError: false });
+        return;
+      }
       persistMemoryState(remote);
-      that.setData({ memoryState: remote });
+      that.setData({ memoryState: remote, memoryLoaded: true, portraitLoadError: false });
     });
   },
 
@@ -383,7 +417,7 @@ Page({
 
     if (this.data.portraitLoading) return;
     localPortrait = this.createLocalPortraitDraft(reason);
-    this.setData({ portraitLoading: true, portraitEditing: false });
+    this.setData({ portraitLoading: true, portraitEditing: false, portraitGenerateFailed: false });
     analytics.trackEvent('profile_portrait_generate', {
       dreamCount: this.data.insights.dreamCount,
       reason: reason
@@ -392,7 +426,12 @@ Page({
       var state = normalizeMemoryState(that.data.memoryState);
       that.setData({ portraitLoading: false });
       if (!result || !result.ok || !result.snapshot) {
-        wx.showToast({ title: '已更新为本机画像', icon: 'none' });
+        // Cloud generation failed. The local heuristic draft created above
+        // is still shown as `memoryState.current`, so this is never a blank
+        // screen — but stay visibly honest about the failure with a retry
+        // affordance instead of a toast the user may miss.
+        that.setData({ portraitGenerateFailed: true });
+        wx.showToast({ title: '云端生成失败，已展示本机版本', icon: 'none' });
         return;
       }
       var remotePortrait = Object.assign({}, withClientId(result.snapshot), { status: 'confirmed', isCurrent: true });
@@ -406,7 +445,7 @@ Page({
       state.current = remotePortrait;
       state.lastGeneratedDreamCount = that.data.insights.dreamCount;
       persistMemoryState(state);
-      that.setData({ memoryState: state });
+      that.setData({ memoryState: state, portraitGenerateFailed: false });
       wx.showToast({ title: '阶段画像已更新', icon: 'success' });
     });
   },
@@ -415,6 +454,51 @@ Page({
     var portrait = this.data.memoryState.current;
     if (!portrait) return;
     this.setData({ portraitEditing: true, portraitEditSummary: portrait.summary || '' });
+  },
+
+  // wxml 的「暂停用于解读 / 恢复用于解读」一直 bindtap 到这个名字，但页面上
+  // 从来没有实现过它（git 里查无此方法），点一下就抛 "is not a function"。
+  // 云端能力 cloudBase.toggleProfilePortrait 早就在了，这里把它接上：
+  // 先本地翻转让界面立刻响应，云端失败再回滚并说明，不留下和云端不一致的状态。
+  togglePortraitUse: function () {
+    var that = this;
+    var state = normalizeMemoryState(this.data.memoryState);
+    var portrait = state.current;
+    if (!portrait) return;
+
+    var nextUse = portrait.useInFutureReadings === false;
+    var targetId = snapshotId(portrait);
+
+    function applyUse(useInFutureReadings) {
+      var next = normalizeMemoryState(that.data.memoryState);
+      if (!next.current) return;
+      next.current = Object.assign({}, next.current, { useInFutureReadings: useInFutureReadings });
+      next.history = next.history.map(function (item) {
+        return snapshotId(item) === targetId
+          ? Object.assign({}, item, { useInFutureReadings: useInFutureReadings })
+          : item;
+      });
+      persistMemoryState(next);
+      that.setData({ memoryState: next });
+    }
+
+    applyUse(nextUse);
+    analytics.trackEvent('profile_portrait_toggle_use', { useInFutureReadings: nextUse });
+
+    // 纯本机草稿还没有云端快照 id，本地翻转即是全部状态
+    if (!targetId || targetId.indexOf('local-') === 0) {
+      wx.showToast({ title: nextUse ? '已恢复用于解读' : '已暂停用于解读', icon: 'none' });
+      return;
+    }
+
+    cloudBase.toggleProfilePortrait(targetId, nextUse, function (result) {
+      if (!result || !result.ok) {
+        applyUse(!nextUse);
+        wx.showToast({ title: '暂时没有改成功，请稍后再试', icon: 'none' });
+        return;
+      }
+      wx.showToast({ title: nextUse ? '已恢复用于解读' : '已暂停用于解读', icon: 'none' });
+    });
   },
 
   onPortraitSummaryInput: function (event) {
