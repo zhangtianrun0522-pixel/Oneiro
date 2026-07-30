@@ -338,6 +338,194 @@ function isStaleInterpretationWrite(current, incoming) {
     incomingStatus !== currentStatus;
 }
 
+function isConcurrentReadyWrite(current, incoming) {
+  const currentRevision = Math.max(0, Math.floor(Number(current && current.interpretationRevision) || 0));
+  const incomingRevision = Math.max(0, Math.floor(Number(incoming && incoming.interpretationRevision) || 0));
+  return currentRevision === incomingRevision &&
+    String((current && current.status) || '') === 'ready' &&
+    String((incoming && incoming.status) || '') === 'ready';
+}
+
+function mergedChatMessages(currentMessages, incomingMessages) {
+  const merged = [];
+  const seen = {};
+  (Array.isArray(currentMessages) ? currentMessages : []).concat(
+    Array.isArray(incomingMessages) ? incomingMessages : []
+  ).forEach(function (message) {
+    const key = [
+      String(message && message.role || ''),
+      String(message && message.content || ''),
+      new Date(message && message.createdAt || 0).getTime()
+    ].join('|');
+    if (!message || !message.content || seen[key]) return;
+    seen[key] = true;
+    merged.push(message);
+  });
+  merged.sort(function (left, right) {
+    return new Date(left && left.createdAt || 0).getTime() - new Date(right && right.createdAt || 0).getTime();
+  });
+  return merged.slice(-12);
+}
+
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function hasValue(value) {
+  return value !== undefined && value !== null && value !== '';
+}
+
+function imageQualityStatusRank(status) {
+  const ranks = { idle: 0, queued: 1, polling: 2, ready: 3 };
+  const normalized = String(status || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(ranks, normalized) ? ranks[normalized] : -1;
+}
+
+function imageVersionToken(value) {
+  const token = nonEmptyString(value);
+  // Tokens are generated for a request, not inferred from arbitrary image
+  // URLs. The sortable base-36 millisecond portion lets the server reject an
+  // old manual refresh snapshot after a newer one has reached the cloud.
+  const match = /^(?:refresh|image)-([0-9a-z]+)-[a-z0-9_-]{4,64}$/i.exec(token);
+  if (!match) return null;
+  const timestamp = parseInt(match[1], 36);
+  if (!Number.isSafeInteger(timestamp) || timestamp <= 0) return null;
+  return { value: token, timestamp: timestamp };
+}
+
+function imageContentRank(result) {
+  const value = result || {};
+  const status = imageQualityStatusRank(value.image_quality_status);
+  const quality = nonEmptyString(value.image_quality).toLowerCase();
+  if (quality === 'high' && status === 3) return 40;
+  if (status === 3) return 30;
+  if (quality === 'high') return 20;
+  return Math.max(0, status);
+}
+
+function hasImageContent(result) {
+  const value = result || {};
+  return !!(nonEmptyString(value.image_file_id) || nonEmptyString(value.imageUrl));
+}
+
+function copyImageBundle(source, target) {
+  ['image_file_id', 'imageUrl', 'image_provider', 'image_model',
+    'image_style_version', 'image_cache_hit', 'image_format', 'image_bytes',
+    'image_visual_plan', 'image_quality_check', 'image_quality',
+    'image_quality_job_id', 'image_quality_status',
+    'image_generation_token', 'image_refresh_token']
+    .forEach(function (field) {
+      if (source[field] !== undefined) target[field] = source[field];
+    });
+}
+
+function mergeImageFields(currentResult, incomingResult, result) {
+  const currentHasImage = hasImageContent(currentResult);
+  const incomingHasImage = hasImageContent(incomingResult);
+  const currentRefresh = imageVersionToken(currentResult.image_refresh_token);
+  const incomingRefresh = imageVersionToken(incomingResult.image_refresh_token);
+  const currentGeneration = imageVersionToken(currentResult.image_generation_token);
+  const incomingGeneration = imageVersionToken(incomingResult.image_generation_token);
+  const sameGeneration = currentGeneration && incomingGeneration &&
+    currentGeneration.value === incomingGeneration.value;
+  const incomingNewerRefresh = incomingRefresh &&
+    (!currentRefresh || incomingRefresh.timestamp > currentRefresh.timestamp ||
+      (incomingRefresh.timestamp === currentRefresh.timestamp && incomingRefresh.value > currentRefresh.value));
+  const incomingOlderRefresh = currentRefresh && (!incomingRefresh ||
+    incomingRefresh.timestamp < currentRefresh.timestamp ||
+    (incomingRefresh.timestamp === currentRefresh.timestamp && incomingRefresh.value < currentRefresh.value));
+
+  if (incomingHasImage && !currentHasImage) {
+    // The first resolved image is safe to accept even for an older client.
+    copyImageBundle(incomingResult, result);
+    return;
+  }
+
+  if (incomingHasImage && incomingNewerRefresh) {
+    // A successfully completed manual refresh is a new requested version.
+    copyImageBundle(incomingResult, result);
+    return;
+  }
+
+  if (incomingHasImage && !incomingOlderRefresh && sameGeneration &&
+    imageContentRank(incomingResult) > imageContentRank(currentResult)) {
+    // The high-quality image belongs to the same generation and atomically
+    // replaces every image field instead of producing a mixed fast/high card.
+    copyImageBundle(incomingResult, result);
+    return;
+  }
+
+  if (!incomingHasImage && sameGeneration && !incomingOlderRefresh &&
+    imageContentRank(currentResult) < 40 &&
+    imageQualityStatusRank(incomingResult.image_quality_status) > imageQualityStatusRank(currentResult.image_quality_status)) {
+    // A quality task progresses after the fast image was saved. Advance only
+    // its job state for this generation; a completed high image cannot be
+    // moved back to queued/polling by a delayed snapshot.
+    ['image_quality_job_id', 'image_quality_status']
+      .forEach(function (field) {
+        if (incomingResult[field] !== undefined) result[field] = incomingResult[field];
+      });
+    return;
+  }
+
+  if (!currentHasImage && !incomingHasImage) {
+    // Job progress is useful before the first image, but cannot overwrite a
+    // ready image above because that path deliberately falls through.
+    ['image_quality_job_id', 'image_quality_status', 'image_generation_token', 'image_refresh_token']
+      .forEach(function (field) {
+        if (incomingResult[field] !== undefined) result[field] = incomingResult[field];
+      });
+  }
+}
+
+function mergeConcurrentReadyWrite(current, incoming) {
+  const currentResult = current && current.result && typeof current.result === 'object' ? current.result : {};
+  const incomingResult = incoming && incoming.result && typeof incoming.result === 'object' ? incoming.result : {};
+  // A same-revision client write is commonly an old page snapshot finishing
+  // after a server image/quality update. Start from current so it can never
+  // replace the latest interpreted card or any cloud-derived image fields.
+  const result = Object.assign({}, currentResult);
+  const incomingReflection = nonEmptyString(incomingResult.reflection_answer);
+  const currentReflection = nonEmptyString(currentResult.reflection_answer);
+
+  mergeImageFields(currentResult, incomingResult, result);
+
+  // A non-empty incoming reflection is a new refinement only until one has
+  // reached the cloud record. Once present, current owns the entire
+  // refinement bundle so an older client snapshot cannot roll it back.
+  if (incomingReflection && !currentReflection) {
+    ['reflection_answer', 'public_title', 'title', 'card_insight',
+      'personal_connection', 'finalized_at', 'refinement_provider']
+      .forEach(function (field) {
+        if (incomingResult[field] !== undefined && incomingResult[field] !== null && incomingResult[field] !== '') {
+          result[field] = incomingResult[field];
+        }
+      });
+  }
+
+  return Object.assign({}, current, {
+    result: result,
+    chatMessages: mergedChatMessages(current && current.chatMessages, incoming && incoming.chatMessages),
+    feedback: incoming && incoming.feedback || current && current.feedback || '',
+    feedbackAt: incoming && incoming.feedback
+      ? incoming.feedbackAt
+      : current && current.feedbackAt || null,
+    createdAt: current && current.createdAt || incoming && incoming.createdAt || new Date(),
+    updatedAt: new Date()
+  });
+}
+
+function mergedDreamWrite(record) {
+  return {
+    ok: true,
+    id: record && record._id || '',
+    updated: true,
+    merged: true,
+    status: 'ready',
+    interpretationRevision: Math.max(0, Math.floor(Number(record && record.interpretationRevision) || 0))
+  };
+}
+
 async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
   const jobId = deletionJobId(openid, dream.localId);
   const legacyJob = await findDeletionJob(openid, dream.localId);
@@ -346,6 +534,11 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
   if (typeof db.runTransaction !== 'function') {
     if (existingRecord) {
       if (existingRecord.deletionPending) return { ok: false, reason: 'dream_deleted' };
+      if (isConcurrentReadyWrite(existingRecord, dream)) {
+        const merged = mergeConcurrentReadyWrite(existingRecord, dream);
+        await db.collection('dream_entries').doc(existingRecord._id).update({ data: merged });
+        return mergedDreamWrite(existingRecord);
+      }
       if (isStaleInterpretationWrite(existingRecord, dream)) {
         return { ok: false, reason: 'stale_interpretation_write' };
       }
@@ -363,6 +556,11 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
     if (existingRecord) {
       const current = await getDocument(transaction.collection('dream_entries'), existingRecord._id);
       if (!current || current.deletionPending) return { ok: false, reason: 'dream_deleted' };
+      if (isConcurrentReadyWrite(current, dream)) {
+        const merged = mergeConcurrentReadyWrite(current, dream);
+        await transaction.collection('dream_entries').doc(existingRecord._id).update({ data: merged });
+        return mergedDreamWrite(current);
+      }
       if (isStaleInterpretationWrite(current, dream)) {
         return { ok: false, reason: 'stale_interpretation_write' };
       }

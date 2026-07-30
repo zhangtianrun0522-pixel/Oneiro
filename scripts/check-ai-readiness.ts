@@ -30,6 +30,7 @@ type InterpretDreamModule = {
     dreamText: string,
     baziChart: unknown
   ) => void;
+  sanitizeMetaphysicalText?: (value: unknown, fallback?: string, maxLength?: number) => string;
   buildBaziChart?: (profile: Record<string, unknown>) => Record<string, any>;
 };
 
@@ -186,7 +187,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false): 
   };
 
   const source = exposeParser
-    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.buildBaziChart = buildBaziChart;'
+    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.sanitizeMetaphysicalText = sanitizeMetaphysicalText;\nmodule.exports.buildBaziChart = buildBaziChart;'
     : read(interpretDreamPath);
   vm.runInNewContext(source, sandbox, { filename: interpretDreamPath });
   return commonJsModule.exports;
@@ -228,7 +229,7 @@ for (const expected of [
   'chatAboutDream',
   'reading_hook',
   'alternative_reading',
-  'oneiro-freeform-reading-v0.3',
+  'oneiro-freeform-reading-v0.4-metaphysical-lens',
 ]) {
   assertIncludes(interpretDreamPath, expected);
 }
@@ -410,6 +411,15 @@ const completeModelPayload = {
   dream_translation: '你看见西红柿里爆出一颗水蜜桃，画面停在变化发生的一刻。',
   reading_hook: '西红柿的外壳与水蜜桃的出现形成了清楚转折。',
   cultural_symbolism: '西红柿与水蜜桃在这里构成一组关于果实变化的共同意象。',
+  metaphysical_resonance: '',
+  metaphysical_basis: '',
+  metaphysical_reading: {
+    temperament: '',
+    dream_echo: '',
+    tension: '',
+    rhythm: '',
+    basis: '',
+  },
   underneath: '西红柿里出现水蜜桃，也许对应工作中某件熟悉事情突然显露不同结果。',
   possible_connections: [
     '西红柿里出现水蜜桃，可能对应工作中熟悉流程出现意外结果。',
@@ -536,6 +546,273 @@ assert.equal(baziChart.available, true);
 assert.equal(baziChart.precision, 'true_solar_time');
 assert.equal(baziChart.location.name, '青岛');
 assert.equal(baziChart.calculationVersion, 'bazi-v0.6-engine');
+
+const chartModelPayload = JSON.parse(JSON.stringify(completeModelPayload));
+chartModelPayload.metaphysical_resonance = '梦中西红柿里爆出水蜜桃；日主甲木的表达在这里仅作为观察这次变化的技术参照。';
+chartModelPayload.metaphysical_basis = '四柱计算显示日主为甲木，梦中西红柿里爆出水蜜桃这一事实是本次解读的落点。';
+chartModelPayload.metaphysical_reading = {
+  temperament: '梦中西红柿里爆出水蜜桃这一动作，让日主甲木的向外生发只作为当下观察线索。',
+  dream_echo: '梦中水蜜桃从西红柿里出现，与五行木的生发意象形成有限呼应。',
+  tension: '梦中西红柿的外壳与水蜜桃的出现并置，十神资料只用来观察这份拉扯。',
+  rhythm: '梦中爆出水蜜桃的瞬间提示先记录变化；日主甲木不构成对后续结果的判断。',
+  basis: '四柱中的日主甲木与梦中西红柿里爆出水蜜桃这一具体画面相对照。',
+};
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  chartModelPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  baziChart
+));
+const chartModelResult = normalizeAiResult(
+  chartModelPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  9,
+  'AI 梦卡',
+  null,
+  baziChart,
+  null
+);
+assert.ok(chartModelResult.metaphysical_resonance);
+assert.ok(chartModelResult.metaphysical_basis);
+assert.ok(chartModelResult.metaphysical_reading.dream_echo);
+
+const incompleteChartPayload = JSON.parse(JSON.stringify(chartModelPayload));
+incompleteChartPayload.metaphysical_reading.tension = '';
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  incompleteChartPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  baziChart
+));
+const incompleteChartResult = normalizeAiResult(
+  incompleteChartPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  10,
+  'AI 梦卡',
+  null,
+  baziChart,
+  null
+);
+assert.match(incompleteChartResult.metaphysical_reading.tension, /四柱结构/);
+
+const missingMetaphysicalKeysPayload = JSON.parse(JSON.stringify(completeModelPayload));
+delete missingMetaphysicalKeysPayload.metaphysical_resonance;
+delete missingMetaphysicalKeysPayload.metaphysical_basis;
+delete missingMetaphysicalKeysPayload.metaphysical_reading;
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  missingMetaphysicalKeysPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  baziChart
+));
+const missingMetaphysicalKeysResult = normalizeAiResult(
+  missingMetaphysicalKeysPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  11,
+  'AI 梦卡',
+  null,
+  baziChart,
+  null
+);
+assert.match(missingMetaphysicalKeysResult.metaphysical_resonance, /四柱|日主|五行/);
+assert.match(missingMetaphysicalKeysResult.metaphysical_basis, /四柱|日主|五行/);
+assert.match(missingMetaphysicalKeysResult.metaphysical_reading.basis, /四柱|日主|五行/);
+assert.doesNotMatch(JSON.stringify(missingMetaphysicalKeysResult.metaphysical_reading), /运势|吉凶|凶吉|注定|必然|命运/);
+
+const shortDreamChartPayload = JSON.parse(JSON.stringify(completeModelPayload));
+shortDreamChartPayload.dream_facts = { objects: ['猫'] };
+shortDreamChartPayload.symbols = ['猫'];
+shortDreamChartPayload.visual_plan = {
+  main_event: '一只猫出现',
+  setting: '梦中画面',
+  preserve_elements: ['猫']
+};
+shortDreamChartPayload.metaphysical_resonance = '梦中一只猫出现，日主甲木只作为观察这个画面的技术参照。';
+shortDreamChartPayload.metaphysical_basis = '四柱计算显示日主为甲木。';
+shortDreamChartPayload.metaphysical_reading = {
+  temperament: '日主甲木只作为本次观察的技术参照。',
+  dream_echo: '梦中一只猫出现，与五行木的生发意象形成有限呼应。',
+  tension: '梦中一只猫停留的画面，十神资料只用来观察这份停顿。',
+  rhythm: '日主甲木不构成对后续结果的判断。',
+  basis: '四柱中的日主甲木是本次确定性计算的技术锚点。',
+};
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  shortDreamChartPayload,
+  '我梦见一只猫。',
+  baziChart
+));
+const shortDreamFallbackPayload = JSON.parse(JSON.stringify(shortDreamChartPayload));
+delete shortDreamFallbackPayload.metaphysical_resonance;
+delete shortDreamFallbackPayload.metaphysical_basis;
+delete shortDreamFallbackPayload.metaphysical_reading;
+const shortDreamFallbackResult = normalizeAiResult(
+  shortDreamFallbackPayload,
+  '我梦见一只猫。',
+  {},
+  12,
+  'AI 梦卡',
+  null,
+  baziChart,
+  null
+);
+assert.deepEqual(JSON.parse(JSON.stringify(shortDreamFallbackResult.dream_facts.objects)), ['猫']);
+assert.match(shortDreamFallbackResult.metaphysical_resonance, /猫/);
+assert.match(shortDreamFallbackResult.metaphysical_reading.temperament, /猫/);
+
+const ungroundedChartPayload = JSON.parse(JSON.stringify(chartModelPayload));
+ungroundedChartPayload.metaphysical_resonance = '日主甲木只作为技术参照。';
+ungroundedChartPayload.metaphysical_reading.temperament = '日主甲木只作为技术参照。';
+ungroundedChartPayload.metaphysical_reading.dream_echo = '五行木只作为技术参照。';
+ungroundedChartPayload.metaphysical_reading.tension = '十神只作为技术参照。';
+ungroundedChartPayload.metaphysical_reading.rhythm = '日主甲木只作为技术参照。';
+ungroundedChartPayload.metaphysical_basis = '四柱计算显示日主甲木。';
+ungroundedChartPayload.metaphysical_reading.basis = '四柱中的日主甲木是技术锚点。';
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  ungroundedChartPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  baziChart
+));
+const groundedFallbackResult = normalizeAiResult(
+  ungroundedChartPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  11,
+  'AI 梦卡',
+  null,
+  baziChart,
+  null
+);
+assert.match(groundedFallbackResult.metaphysical_resonance, /爆出/);
+assert.match(groundedFallbackResult.metaphysical_reading.temperament, /爆出/);
+
+const predictiveChartPayload = JSON.parse(JSON.stringify(chartModelPayload));
+predictiveChartPayload.metaphysical_resonance = '梦中西红柿里爆出水蜜桃，预示未来运势会变好。';
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  predictiveChartPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  baziChart
+));
+const predictiveFallbackResult = normalizeAiResult(
+  predictiveChartPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  12,
+  'AI 梦卡',
+  null,
+  baziChart,
+  null
+);
+assert.doesNotMatch(predictiveFallbackResult.metaphysical_resonance, /预示|未来运势|会变好/);
+assert.match(predictiveFallbackResult.metaphysical_resonance, /日主|五行/);
+assert.equal(
+  exposedInterpretDream.sanitizeMetaphysicalText?.('梦中西红柿里爆出水蜜桃，运势会变好。'),
+  ''
+);
+const contaminatedBasePayload = JSON.parse(JSON.stringify(completeModelPayload));
+contaminatedBasePayload.metaphysical_resonance = '梦中西红柿里爆出水蜜桃。';
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  contaminatedBasePayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  null
+));
+const noChartResult = normalizeAiResult(
+  contaminatedBasePayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  13,
+  'AI 梦卡',
+  null,
+  null,
+  null
+);
+assert.equal(noChartResult.metaphysical_resonance, '');
+assert.equal(noChartResult.metaphysical_basis, '');
+assert.deepEqual(JSON.parse(JSON.stringify(noChartResult.metaphysical_reading)), {
+  temperament: '',
+  dream_echo: '',
+  tension: '',
+  rhythm: '',
+  basis: '',
+});
+const technicalLeakPayload = JSON.parse(JSON.stringify(chartModelPayload));
+technicalLeakPayload.reading_hook = '日主甲木让西红柿里爆出水蜜桃更醒目。';
+assert.doesNotThrow(() => validateAiSemanticPayload(
+  technicalLeakPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  baziChart
+));
+const technicalLeakResult = normalizeAiResult(
+  technicalLeakPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  14,
+  'AI 梦卡',
+  null,
+  baziChart,
+  null
+);
+assert.equal(technicalLeakResult.reading_hook, '这段话让画面形成了一处需要暂缓定论的张力。');
+assert.doesNotMatch(technicalLeakResult.reading_hook, /四柱|八字|日主|五行|十神|排盘|命盘|命理|命格/);
+
+const restrictedDreamText = '我梦见别人说我的命运由八字决定。';
+const restrictedDreamPayload = JSON.parse(JSON.stringify(completeModelPayload));
+restrictedDreamPayload.title = '八字决定';
+restrictedDreamPayload.card_theme_label = '命理';
+restrictedDreamPayload.dream_translation = restrictedDreamText;
+restrictedDreamPayload.reading_hook = restrictedDreamText;
+restrictedDreamPayload.integration_question = restrictedDreamText;
+restrictedDreamPayload.image = restrictedDreamText;
+restrictedDreamPayload.image_prompt = restrictedDreamText;
+restrictedDreamPayload.dream_facts = { objects: ['八字'] };
+restrictedDreamPayload.symbols = ['八字'];
+restrictedDreamPayload.visual_plan = {
+  main_event: '八字决定',
+  setting: '命理场景',
+  preserve_elements: ['八字']
+};
+assert.doesNotThrow(() => validateAiSemanticPayload(restrictedDreamPayload, restrictedDreamText, null));
+const restrictedDreamResult = normalizeAiResult(
+  restrictedDreamPayload,
+  restrictedDreamText,
+  {},
+  15,
+  'AI 梦卡',
+  null,
+  null,
+  null
+);
+assert.ok(restrictedDreamResult.title);
+assert.ok(restrictedDreamResult.dream_translation);
+assert.ok(restrictedDreamResult.reading_hook);
+assert.ok(restrictedDreamResult.integration_question);
+assert.ok(restrictedDreamResult.image);
+assert.ok(restrictedDreamResult.image_prompt);
+const ordinaryRestrictedResult = JSON.parse(JSON.stringify(restrictedDreamResult));
+delete ordinaryRestrictedResult.metaphysical_resonance;
+delete ordinaryRestrictedResult.metaphysical_basis;
+delete ordinaryRestrictedResult.metaphysical_reading;
+delete ordinaryRestrictedResult.bazi_chart;
+assert.doesNotMatch(
+  JSON.stringify(ordinaryRestrictedResult),
+  /四柱|八字|日主|五行|十神|排盘|命盘|命理|命格|运势|吉凶|凶吉|注定|必然|命运/
+);
+const restrictedChartPayload = JSON.parse(JSON.stringify(restrictedDreamPayload));
+delete restrictedChartPayload.metaphysical_resonance;
+delete restrictedChartPayload.metaphysical_basis;
+delete restrictedChartPayload.metaphysical_reading;
+const restrictedChartResult = normalizeAiResult(
+  restrictedChartPayload,
+  restrictedDreamText,
+  {},
+  16,
+  'AI 梦卡',
+  null,
+  baziChart,
+  null
+);
+assert.match(restrictedChartResult.metaphysical_basis, /四柱|日主|五行/);
+assert.match(restrictedChartResult.metaphysical_resonance, /别人说/);
+assert.doesNotMatch(JSON.stringify(restrictedChartResult.metaphysical_reading), /运势|吉凶|凶吉|注定|必然|命运/);
 
 const staticDreamChat = await loadInterpretDream({}).main({
   chatAboutDream: true,

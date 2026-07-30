@@ -19,6 +19,7 @@ const state = {
     _id: 'record-quality-1',
     openid: 'owner',
     localId: 'dream-quality-1',
+    status: 'ready',
     dreamText: '我在黄色长廊里奔跑，远处有一扇红门。',
     result: { card_theme: 'threshold', symbols: ['长廊', '红门'] }
   },

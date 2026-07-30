@@ -13,7 +13,7 @@ const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
 // response. The previous 18s deadline regularly cut off otherwise healthy
 // requests before the model response could be validated.
 const DEFAULT_TIMEOUT_MS = 30000;
-const PROMPT_VERSION = 'oneiro-freeform-reading-v0.3';
+const PROMPT_VERSION = 'oneiro-freeform-reading-v0.4-metaphysical-lens';
 const SCHEMA_VERSION = 'dream-entry-v0.2';
 
 function effectiveTimeoutMs() {
@@ -87,7 +87,7 @@ const SYSTEM_PROMPT = [
   '全局红线三：不得虚构用户未提供的个人经历、历史记忆或背景信息，不预测命运，不做医疗、创伤、关系、职业或人格诊断。',
   '宽松表达骨架：下面字段必须存在，但表达长度、句数和数组条数由梦的材料决定；表达字段允许为空，possible_connections 可以是空数组。不要为了填满字段而重复、扩写或发明内容。',
   '不得虚构用户未提供的个人经历、历史记忆或背景信息，不预测命运，不做医疗、创伤、关系、职业或人格诊断。',
-  '禁止在任何输出字段中出现以下词语：四柱、八字、日主、五行、排盘、命盘、命理、命格、运势、吉凶、注定、必然。',
+  '四柱、八字、日主、五行、十神、排盘、命盘、命理、命格等技术术语只允许出现在 metaphysical_resonance、metaphysical_basis 与 metaphysical_reading 内；其他字段不得出现。任何字段均不得出现运势、吉凶、凶吉、注定、必然或命运，也不得作预测。',
   '只问一个与当次梦直接相关、容易回答的问题。',
   '视觉规划必须做减法：只选1个主事件、最多1个异常规则、2-4个关键元素和最多1个隐藏象征，复杂梦境总共不超过7个可识别元素。',
   '视觉元素优先级：主事件 > 异常规则 > 情绪相关元素 > 用户反复提及元素 > 普通环境细节；不得为了神秘感添加原梦中没有的月亮、钥匙、花藤、眼睛或神秘符号。',
@@ -149,8 +149,10 @@ const SYSTEM_PROMPT = [
 function buildInterpretationSystemPrompt(baziChart) {
   if (baziChart && baziChart.available) {
     return SYSTEM_PROMPT + '\n' + [
-      '当前采用含出生节律的解读模板。核心意图：只在出生节律参考与本梦有具体呼应时，照亮这次梦的情绪纹理或行动节奏；没有呼应时相关字段可以为空。',
-      '出生节律段落只能依据用户上下文中已提供的参考，以“出生节律”“内在气质底色”“东方文化视角”等文化表达书写，不重复固定资料。',
+      '当前采用含出生节律的解读模板。核心意图：用出生节律参考照亮这次梦的情绪纹理或行动节奏；材料不足时如实说明只看见了梦中这一处呼应，但相关字段仍须完成。',
+      'metaphysical_resonance、metaphysical_basis 和 metaphysical_reading 的 temperament、dream_echo、tension、rhythm、basis 必须全部非空。metaphysical_resonance 必须引用本梦的具体人物、物件、动作或场景；temperament、dream_echo、tension、rhythm 中至少两项也要有这种可核对的梦中呼应。',
+      'metaphysical_basis 与 metaphysical_reading.basis 必须使用用户上下文中确定性计算得出的一个技术锚点：四柱、日主、五行或十神之一；basis 不必重复梦境原文，不得推出未来、吉凶或命运。',
+      '出生节律段落只能依据用户上下文中已提供的参考，不重复固定资料；技术术语只写在命理字段内。',
       '文化象征、心理视角和出生节律要各自服务自己的核心意图，不要为了完整而互相改写。',
       '短梦只有一个清晰细节时，承认材料有限，不发明第二个细节、人物、物件、积水或水体；原文只有“雨/暴雨”时保留原词。'
     ].join('\n');
@@ -158,8 +160,7 @@ function buildInterpretationSystemPrompt(baziChart) {
 
   return SYSTEM_PROMPT + '\n' + [
     '当前采用基础梦境解读模板，不得引入任何未提供的个人资料或背景推断。',
-    'metaphysical_resonance 必须输出空字符串。',
-    'metaphysical_basis 必须输出空字符串。'
+    'metaphysical_resonance、metaphysical_basis，以及 metaphysical_reading 的 temperament、dream_echo、tension、rhythm、basis 必须全部输出空字符串。'
   ].join('\n');
 }
 
@@ -224,11 +225,18 @@ function asString(value, fallback, maxLength) {
   return (text || fallback).slice(0, limit);
 }
 
+const PREDICTIVE_METAPHYSICAL_PATTERN = /运势|吉凶|凶吉|注定|必然|命运/;
+const METAPHYSICAL_TECHNICAL_PATTERN = /四柱|八字|日主|五行|十神|排盘|命盘|命理|命格/;
+
+function hasPredictiveMetaphysicalLanguage(value) {
+  return PREDICTIVE_METAPHYSICAL_PATTERN.test(String(value || ''));
+}
+
 function sanitizeMetaphysicalText(value, fallback, maxLength) {
   const limit = maxLength || 700;
   const text = typeof value === 'string' ? value.trim() : '';
 
-  if (/四柱|八字|日主|五行|排盘|命盘|命理|命格|运势|吉凶|注定|必然/.test(text)) {
+  if (hasPredictiveMetaphysicalLanguage(text)) {
     return '';
   }
 
@@ -253,7 +261,41 @@ function normalizeSymbols(value) {
 }
 
 function repairDreamTerms(value) {
-  return typeof value === 'string' ? value.trim() : '';
+  const fallback = arguments.length > 1 ? arguments[1] : '';
+  const text = typeof value === 'string' ? value.trim() : '';
+  const fallbackText = typeof fallback === 'string' ? fallback.trim() : '';
+
+  // Technical chart language belongs exclusively to the dedicated
+  // metaphysical fields. A malformed model field must not make the full
+  // reading fail or let that vocabulary bleed into the ordinary reading.
+  if (text && !METAPHYSICAL_TECHNICAL_PATTERN.test(text) && !hasPredictiveMetaphysicalLanguage(text)) {
+    return text;
+  }
+  if (fallbackText && !METAPHYSICAL_TECHNICAL_PATTERN.test(fallbackText) && !hasPredictiveMetaphysicalLanguage(fallbackText)) {
+    return fallbackText;
+  }
+  return '';
+}
+
+function safeBaseFallback(field) {
+  const fallbacks = {
+    emotional_weather: '这个梦留下了一点需要慢慢辨认的感受。',
+    oracle: '先停在画面与感受上，不急着为它下结论。',
+    card_insight: '这个梦把一句让人停住的话放到了画面中央。',
+    dream_translation: '梦里出现了一段让你停住的话，画面停在你听见它的那一刻。',
+    reading_hook: '这段话让画面形成了一处需要暂缓定论的张力。',
+    mirror: '一句话在梦里留下了停顿。',
+    alternative_reading: '这也可能只是梦里一段需要慢慢消化的话。',
+    integration_question: '这段话让你最在意的感受是什么？',
+    one_small_act: '记下这段话带来的感受',
+    image: '一个安静的梦中场景，人物停在一句话前。',
+    image_prompt: 'A quiet dream scene with a person pausing before an unfinished conversation.',
+    echo: '先看看这段话留下的感受。',
+    visual_text: '梦中一个安静的片段',
+    visual_event: '梦中一个停留的画面',
+    visual_setting: '梦中场景'
+  };
+  return fallbacks[field] || '';
 }
 
 function groundedFactArray(value, dreamText, maxItems, maxLength) {
@@ -279,8 +321,8 @@ function normalizeDreamFacts(rawFacts, dreamText) {
     objects: groundedFactArray(raw.objects, text, 6, 40),
     actions: groundedFactArray(raw.actions, text, 6, 50),
     transitions: groundedFactArray(raw.transitions || raw.events, text, 3, 120),
-    emotions: asStringArray(raw.emotions, [], 6, 30),
-    time_sense: asStringArray(raw.time_sense || raw.timeSense, [], 6, 30)
+    emotions: asStringArray(raw.emotions, [], 6, 30).map(function (item) { return repairDreamTerms(item, ''); }).filter(Boolean),
+    time_sense: asStringArray(raw.time_sense || raw.timeSense, [], 6, 30).map(function (item) { return repairDreamTerms(item, ''); }).filter(Boolean)
   };
 }
 
@@ -300,11 +342,11 @@ const visualCompositionIds = [
 function asWeightedCharacters(value) {
   return (Array.isArray(value) ? value : []).map(function (item) {
     if (typeof item === 'string') {
-      return { role: '人物', description: asString(item, '', 80), importance: 0.7 };
+      return { role: '人物', description: repairDreamTerms(asString(item, '', 80), ''), importance: 0.7 };
     }
     return {
       role: asString(item && item.role, '人物', 24),
-      description: asString(item && item.description, '', 100),
+      description: repairDreamTerms(asString(item && item.description, '', 100), ''),
       importance: Math.min(1, Math.max(0, Number(item && item.importance) || 0.7))
     };
   }).filter(function (item) {
@@ -317,10 +359,10 @@ function asWeightedCharacters(value) {
 function asWeightedObjects(value) {
   return (Array.isArray(value) ? value : []).map(function (item) {
     if (typeof item === 'string') {
-      return { name: asString(item, '', 60), importance: 0.6, visualizable: true };
+      return { name: repairDreamTerms(asString(item, '', 60), ''), importance: 0.6, visualizable: true };
     }
     return {
-      name: asString(item && item.name, '', 60),
+      name: repairDreamTerms(asString(item && item.name, '', 60), ''),
       importance: Math.min(1, Math.max(0, Number(item && item.importance) || 0.6)),
       visualizable: item && item.visualizable !== false
     };
@@ -334,7 +376,7 @@ function asWeightedObjects(value) {
 function uniqueVisualElements(value, maxItems) {
   const seen = {};
   return (Array.isArray(value) ? value : []).map(function (item) {
-    return asString(item, '', 80);
+    return repairDreamTerms(asString(item, '', 80), '');
   }).filter(function (item) {
     const key = item.toLowerCase();
     if (!item || seen[key]) return false;
@@ -348,8 +390,8 @@ function normalizeVisualPlan(rawPlan, dreamText, dreamFacts, symbols) {
   const facts = dreamFacts || {};
   const characters = asWeightedCharacters(raw.characters);
   const objects = asWeightedObjects(raw.objects);
-  const emotions = asStringArray(raw.emotion || raw.emotions, facts.emotions || [], 3, 30);
-  const anomalies = asStringArray(raw.anomalies || [raw.anomaly], [], 1, 120);
+  const emotions = asStringArray(raw.emotion || raw.emotions, facts.emotions || [], 3, 30).map(function (item) { return repairDreamTerms(item, ''); }).filter(Boolean);
+  const anomalies = asStringArray(raw.anomalies || [raw.anomaly], [], 1, 120).map(function (item) { return repairDreamTerms(item, ''); }).filter(Boolean);
   const rawComposition = raw.composition && typeof raw.composition === 'object' ? raw.composition : {};
   const requestedComposition = asString(rawComposition.template || rawComposition.id, '', 40);
   const compositionId = visualCompositionIds.indexOf(requestedComposition) >= 0
@@ -369,7 +411,7 @@ function normalizeVisualPlan(rawPlan, dreamText, dreamFacts, symbols) {
 
   const preserveElements = uniqueVisualElements(candidates, 4);
   const visualSymbols = uniqueVisualElements(symbols, 5);
-  const hiddenSymbol = asString(raw.hidden_symbol, '', 80);
+  const hiddenSymbol = repairDreamTerms(asString(raw.hidden_symbol, '', 80), '');
   const actions = Array.isArray(facts.actions) ? facts.actions : [];
   const transitions = Array.isArray(facts.transitions) ? facts.transitions : [];
   const places = Array.isArray(facts.places) ? facts.places : [];
@@ -381,13 +423,16 @@ function normalizeVisualPlan(rawPlan, dreamText, dreamFacts, symbols) {
   });
   const rawMainEvent = asString(raw.main_event || raw.mainEvent, '', 180);
   const groundedMainEvent = groundedFactArray([rawMainEvent], dreamText, 1, 180)[0] || '';
-  const mainEvent = groundedMainEvent || transitions[0] || actions[0] || String(dreamText || '').slice(0, 180);
-  const setting = asString(raw.setting, places[0] || '梦中场景', 100);
+  const mainEvent = repairDreamTerms(
+    groundedMainEvent || transitions[0] || actions[0] || String(dreamText || '').slice(0, 180),
+    safeBaseFallback('visual_event')
+  );
+  const setting = repairDreamTerms(asString(raw.setting, places[0] || safeBaseFallback('visual_setting'), 100), safeBaseFallback('visual_setting'));
   if (!preserveElements.length && mainEvent) preserveElements.push(mainEvent);
 
   return {
     version: 'oneiro-visual-plan-v1',
-    raw_text: String(dreamText || '').slice(0, 1200),
+    raw_text: repairDreamTerms(String(dreamText || '').slice(0, 1200), safeBaseFallback('visual_text')),
     main_event: mainEvent,
     emotion: emotions,
     emotion_intensity: Math.min(1, Math.max(0, Number(raw.emotion_intensity || raw.emotionIntensity) || 0.65)),
@@ -396,15 +441,15 @@ function normalizeVisualPlan(rawPlan, dreamText, dreamFacts, symbols) {
     objects: normalizedObjects,
     anomalies: anomalies,
     symbols: visualSymbols,
-    memory_elements: asStringArray(raw.memory_elements, [], 3, 80),
+    memory_elements: asStringArray(raw.memory_elements, [], 3, 80).map(function (item) { return repairDreamTerms(item, ''); }).filter(Boolean),
     preserve_elements: preserveElements,
     hidden_symbol: hiddenSymbol,
     composition: {
       template: compositionId,
-      subject_position: asString(rawComposition.subject_position, '', 160),
-      visual_flow: asString(rawComposition.visual_flow, '', 180),
-      spatial_layers: asString(rawComposition.spatial_layers, '', 180),
-      negative_space: asString(rawComposition.negative_space, '保留约40%低密度呼吸空间', 120)
+      subject_position: repairDreamTerms(asString(rawComposition.subject_position, '', 160), ''),
+      visual_flow: repairDreamTerms(asString(rawComposition.visual_flow, '', 180), ''),
+      spatial_layers: repairDreamTerms(asString(rawComposition.spatial_layers, '', 180), ''),
+      negative_space: repairDreamTerms(asString(rawComposition.negative_space, '保留约40%低密度呼吸空间', 120), '保留约40%低密度呼吸空间')
     }
   };
 }
@@ -969,6 +1014,153 @@ function freeformText(value, maxLength) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength || 700) : '';
 }
 
+function dreamAnchorFragments(dreamText) {
+  const compact = String(dreamText || '').replace(/[\s，。！？、；：“”‘’（）()《》【】,.!?:;\-]/g, '');
+  const fragments = [];
+  let index;
+  let length;
+
+  for (index = 0; index < compact.length - 1; index += 1) {
+    for (length = 2; length <= 6 && index + length <= compact.length; length += 1) {
+      const fragment = compact.slice(index, index + length);
+      if (!/^(我梦|梦见|了一|一个|里面|然后)/.test(fragment)) fragments.push(fragment);
+    }
+  }
+
+  return fragments;
+}
+
+function isGroundedMetaphysicalText(value, dreamText) {
+  const text = String(value || '').trim();
+  return !!text && dreamAnchorFragments(dreamText).some(function (fragment) {
+    return text.indexOf(fragment) !== -1;
+  });
+}
+
+function metaphysicalReadingFields(reading) {
+  return ['temperament', 'dream_echo', 'tension', 'rhythm', 'basis'].map(function (field) {
+    return { field: field, value: reading && reading[field] };
+  });
+}
+
+function validateMetaphysicalContract(payload, dreamText, chartAvailable, errorPrefix) {
+  const reading = payload && payload.metaphysical_reading;
+  const allFields = [
+    { field: 'metaphysical_resonance', value: payload && payload.metaphysical_resonance },
+    { field: 'metaphysical_basis', value: payload && payload.metaphysical_basis }
+  ].concat(metaphysicalReadingFields(reading));
+  const nonEmpty = allFields.filter(function (item) { return String(item.value || '').trim(); });
+
+  if (!chartAvailable) {
+    if (nonEmpty.length) throw new Error(errorPrefix + ' must keep metaphysical fields empty without a birth chart');
+    return;
+  }
+  if (!reading || typeof reading !== 'object') throw new Error(errorPrefix + ' did not include birth-rhythm structure');
+  if (nonEmpty.length !== allFields.length) {
+    throw new Error(errorPrefix + ' has incomplete metaphysical fields: ' + allFields.filter(function (item) {
+      return !String(item.value || '').trim();
+    }).map(function (item) { return item.field; }).join(','));
+  }
+  if (nonEmpty.some(function (item) { return hasPredictiveMetaphysicalLanguage(item.value); })) {
+    throw new Error(errorPrefix + ' contains predictive metaphysical language');
+  }
+  if (!METAPHYSICAL_TECHNICAL_PATTERN.test(String(payload.metaphysical_basis || '')) ||
+      !METAPHYSICAL_TECHNICAL_PATTERN.test(String(reading.basis || ''))) {
+    throw new Error(errorPrefix + ' is missing deterministic chart anchors');
+  }
+  if (!isGroundedMetaphysicalText(payload.metaphysical_resonance, dreamText)) {
+    throw new Error(errorPrefix + ' must ground metaphysical resonance in a dream fact');
+  }
+  const groundedReadingAspects = ['temperament', 'dream_echo', 'tension', 'rhythm'].filter(function (field) {
+    return isGroundedMetaphysicalText(reading[field], dreamText);
+  });
+  if (groundedReadingAspects.length < 2) {
+    throw new Error(errorPrefix + ' must ground at least two metaphysical reading aspects in dream facts');
+  }
+}
+
+function validateNoMetaphysicalTechnicalLeak(payload, errorPrefix) {
+  const nonMetaphysical = Object.assign({}, payload || {});
+  delete nonMetaphysical.metaphysical_resonance;
+  delete nonMetaphysical.metaphysical_basis;
+  delete nonMetaphysical.metaphysical_reading;
+
+  if (METAPHYSICAL_TECHNICAL_PATTERN.test(JSON.stringify(nonMetaphysical))) {
+    throw new Error(errorPrefix + ' contains metaphysical technical terms outside metaphysical fields');
+  }
+}
+
+function metaphysicalDreamAnchor(dreamFacts, dreamText) {
+  const facts = dreamFacts || {};
+  const candidates = []
+    .concat(facts.actions || [])
+    .concat(facts.transitions || [])
+    .concat(facts.objects || [])
+    .concat(facts.places || [])
+    .concat(facts.people || [])
+    .map(function (item) { return String(item || '').trim(); })
+    .filter(Boolean);
+  if (candidates.length) {
+    const candidate = candidates[0].slice(0, 24);
+    // A single-character extracted fact (for example, "猫") cannot satisfy
+    // the two-character grounding contract by itself. Keep grounding strict
+    // everywhere else; only expand this deterministic fallback anchor with
+    // the smallest surrounding phrase from the actual dream text.
+    if (candidate.length === 1) {
+      const compact = String(dreamText || '').replace(/[\s，。！？、；：“”‘’（）()《》【】,.!?:;\-]/g, '');
+      const index = compact.indexOf(candidate);
+      if (index >= 0) {
+        return compact.slice(Math.max(0, index - 2), Math.min(compact.length, index + 2)) || candidate;
+      }
+    }
+    return candidate;
+  }
+  return String(dreamText || '')
+    .replace(/^[\s\S]{0,3}?梦见/, '')
+    .replace(/运势|吉凶|凶吉|注定|必然|命运|四柱|八字|日主|五行|十神|排盘|命盘|命理|命格/g, '')
+    .replace(/[，。！？、；：“”‘’（）()《》【】,.!?:;\-\s]+/g, '')
+    .slice(0, 12) || '这个梦';
+}
+
+function buildMetaphysicalFallback(baziChart, dreamFacts, dreamText) {
+  const chart = baziChart || {};
+  const profile = chart.chartProfile || {};
+  const dayMaster = String(chart.dayMaster || '').trim() || '未知';
+  const dayElement = String(profile.dayMasterElement || '').trim();
+  const dominant = Array.isArray(profile.dominantElements) && profile.dominantElements.length
+    ? String(profile.dominantElements[0])
+    : dayElement;
+  const elementLabel = dominant || dayElement || '未突出';
+  const anchor = metaphysicalDreamAnchor(dreamFacts, dreamText);
+  const pillarText = chart.pillars
+    ? [chart.pillars.year, chart.pillars.month, chart.pillars.day, chart.pillars.time].filter(Boolean).join('、')
+    : '';
+  const basis = '依据真太阳时校正后的四柱' + (pillarText ? '（' + pillarText + '）' : '') +
+    '，以' + dayMaster + '日主和' + elementLabel + '五行结构作本次文化参照；不用于预测。';
+
+  return {
+    resonance: '从四柱中的' + dayMaster + '日主与' + elementLabel + '五行结构看，梦里的“' + anchor +
+      '”可被理解为这次被调动的行动方式；这只是命理视角下的有限呼应。',
+    basis: basis,
+    reading: {
+      temperament: '梦里的“' + anchor + '”调动了' + dayMaster + '日主所代表的内在应对底色。',
+      dream_echo: '“' + anchor + '”与' + elementLabel + '五行的结构意象形成一处有限呼应。',
+      tension: '把“' + anchor + '”放回四柱结构里看，更值得留意的是当下的拉扯，而不是推断结果。',
+      rhythm: '围绕“' + anchor + '”，先记录一个今天能观察到的变化；不据此预测后续。',
+      basis: basis
+    }
+  };
+}
+
+function modelMetaphysicalText(value, fallback, options) {
+  const settings = options || {};
+  const text = sanitizeMetaphysicalText(freeformText(value, settings.maxLength || 700), '', settings.maxLength || 700);
+  if (!text) return fallback;
+  if (settings.requireTechnical && !METAPHYSICAL_TECHNICAL_PATTERN.test(text)) return fallback;
+  if (settings.requireGrounded && !isGroundedMetaphysicalText(text, settings.dreamText)) return fallback;
+  return text;
+}
+
 function requireCompleteModelResult(result, chartAvailable) {
   const requiredStrings = [
     'title',
@@ -1007,11 +1199,6 @@ function requireCompleteModelResult(result, chartAvailable) {
     throw new Error('AI provider normalized result lost visual planning fields');
   }
   if (!result.omens || typeof result.omens !== 'object') throw new Error('AI provider normalized result lost color guidance');
-  if (chartAvailable) {
-    const reading = result.metaphysical_reading || {};
-    if (!reading || typeof reading !== 'object') throw new Error('AI provider normalized result lost birth-rhythm reading');
-  }
-
   return result;
 }
 
@@ -1052,11 +1239,14 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
   const rawMetaphysicalReading = raw && raw.metaphysical_reading && typeof raw.metaphysical_reading === 'object'
     ? raw.metaphysical_reading
     : {};
+  const metaphysicalFallback = chartAvailable
+    ? buildMetaphysicalFallback(baziChart, dreamFacts, dreamText)
+    : { resonance: '', basis: '', reading: { temperament: '', dream_echo: '', tension: '', rhythm: '', basis: '' } };
   const normalized = {
-    title: asString(raw && raw.title, '', 24),
+    title: repairDreamTerms(asString(raw && raw.title, '', 24), '梦境记录'),
     card_no: 'NO. ' + String(cardIndex).padStart(3, '0'),
     card_theme: normalizeTheme(raw && raw.card_theme, ''),
-    card_theme_label: cardThemeLabel,
+    card_theme_label: repairDreamTerms(cardThemeLabel, '梦中线索'),
     dream_facts: dreamFacts,
     visual_plan: visualPlan,
     bazi_chart: baziChart || { available: false, precision: 'missing' },
@@ -1072,60 +1262,78 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
       raw && raw.emotional_weather,
       '',
       180
-    ), dreamText),
+    ), safeBaseFallback('emotional_weather')),
     oracle: repairDreamTerms(asString(
       raw && raw.oracle,
       '',
       360
-    ), dreamText),
+    ), safeBaseFallback('oracle')),
     card_insight: repairDreamTerms(asString(
       raw && raw.card_insight,
       '',
       360
-    ), dreamText),
+    ), safeBaseFallback('card_insight')),
     dream_translation: repairDreamTerms(asString(
       raw && raw.dream_translation,
       '',
       700
-    ), dreamText),
+    ), safeBaseFallback('dream_translation')),
     reading_hook: repairDreamTerms(asString(
       raw && raw.reading_hook,
       '',
       560
-    ), dreamText),
+    ), safeBaseFallback('reading_hook')),
     metaphysical_resonance: chartAvailable
-      ? sanitizeMetaphysicalText(
-          freeformText(raw && raw.metaphysical_resonance, 700),
-          '',
-          700
-        )
+      ? modelMetaphysicalText(raw && raw.metaphysical_resonance, metaphysicalFallback.resonance, {
+          dreamText: dreamText,
+          requireGrounded: true,
+          maxLength: 700
+        })
       : '',
     metaphysical_basis: chartAvailable
-      ? sanitizeMetaphysicalText(
-          repairDreamTerms(raw && raw.metaphysical_basis, dreamText),
-          '',
-          360
-      )
+      ? modelMetaphysicalText(raw && raw.metaphysical_basis, metaphysicalFallback.basis, {
+          requireTechnical: true,
+          maxLength: 360
+        })
       : '',
     metaphysical_reading: chartAvailable
       ? {
-          temperament: sanitizeMetaphysicalText(freeformText(rawMetaphysicalReading.temperament, 520), '', 520),
-          dream_echo: sanitizeMetaphysicalText(freeformText(rawMetaphysicalReading.dream_echo, 520), '', 520),
-          tension: sanitizeMetaphysicalText(freeformText(rawMetaphysicalReading.tension, 520), '', 520),
-          rhythm: sanitizeMetaphysicalText(freeformText(rawMetaphysicalReading.rhythm, 520), '', 520),
-          basis: sanitizeMetaphysicalText(freeformText(rawMetaphysicalReading.basis, 360), '', 360)
+          temperament: modelMetaphysicalText(rawMetaphysicalReading.temperament, metaphysicalFallback.reading.temperament, {
+            dreamText: dreamText,
+            requireGrounded: true,
+            maxLength: 520
+          }),
+          dream_echo: modelMetaphysicalText(rawMetaphysicalReading.dream_echo, metaphysicalFallback.reading.dream_echo, {
+            dreamText: dreamText,
+            requireGrounded: true,
+            maxLength: 520
+          }),
+          tension: modelMetaphysicalText(rawMetaphysicalReading.tension, metaphysicalFallback.reading.tension, {
+            dreamText: dreamText,
+            requireGrounded: true,
+            maxLength: 520
+          }),
+          rhythm: modelMetaphysicalText(rawMetaphysicalReading.rhythm, metaphysicalFallback.reading.rhythm, {
+            dreamText: dreamText,
+            requireGrounded: true,
+            maxLength: 520
+          }),
+          basis: modelMetaphysicalText(rawMetaphysicalReading.basis, metaphysicalFallback.reading.basis, {
+            requireTechnical: true,
+            maxLength: 360
+          })
         }
       : { temperament: '', dream_echo: '', tension: '', rhythm: '', basis: '' },
-    underneath: freeformText(raw && raw.underneath, 700),
-    cultural_symbolism: freeformText(raw && raw.cultural_symbolism, 700),
+    underneath: repairDreamTerms(freeformText(raw && raw.underneath, 700), ''),
+    cultural_symbolism: repairDreamTerms(freeformText(raw && raw.cultural_symbolism, 700), ''),
     mirror: repairDreamTerms(asString(
       raw && raw.mirror,
       '',
       700
-    ), dreamText),
+    ), safeBaseFallback('mirror')),
     possible_connections: (function () {
       const candidateConnections = asStringArray(raw && raw.possible_connections, [], 3, 260).map(function (item) {
-        return repairDreamTerms(item, dreamText);
+        return repairDreamTerms(item, '');
       });
       return candidateConnections;
     }()),
@@ -1133,35 +1341,36 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
       raw && raw.alternative_reading,
       '',
       360
-    ), dreamText),
+    ), safeBaseFallback('alternative_reading')),
     memory_profile: dreamMemory,
     integration_question: repairDreamTerms(asString(
       raw && raw.integration_question,
       '',
       160
-    ), dreamText),
+    ), safeBaseFallback('integration_question')),
     one_small_act: repairDreamTerms(asString(
       raw && raw.one_small_act,
       '',
       80
-    ), dreamText),
+    ), safeBaseFallback('one_small_act')),
     image: repairDreamTerms(asString(
       raw && raw.image,
       '',
       420
-    ), dreamText),
+    ), safeBaseFallback('image')),
     image_prompt: repairDreamTerms(asString(
       raw && raw.image_prompt,
       '',
       360
-    ), dreamText),
-    echo: repairDreamTerms(asString(raw && raw.echo, '', 220), dreamText),
+    ), safeBaseFallback('image_prompt')),
+    echo: repairDreamTerms(asString(raw && raw.echo, '', 220), safeBaseFallback('echo')),
     omens: {
       lucky_color_name: asString(rawOmens.lucky_color_name, '', 24),
-      reason: repairDreamTerms(asString(rawOmens.reason, '', 220), dreamText)
+      reason: repairDreamTerms(asString(rawOmens.reason, '', 220), '')
     }
   };
 
+  validateMetaphysicalContract(normalized, dreamText, chartAvailable, 'AI provider normalized result');
   return requireCompleteModelResult(normalized, chartAvailable);
 }
 
@@ -1341,10 +1550,9 @@ function validateAiSemanticPayload(raw, dreamText, baziChart) {
     throw new Error('AI provider response did not include a visual plan structure');
   }
   if (!isRecord(omens)) throw new Error('AI provider response did not include color guidance');
-  if (baziChart && baziChart.available) {
-    const metaphysical = raw && raw.metaphysical_reading;
-    if (!isRecord(metaphysical)) throw new Error('AI provider response did not include birth-rhythm structure');
-  }
+  // Metaphysical content is optional model enrichment. Schema defects here
+  // must never discard an otherwise valid base dream reading; normalization
+  // supplies a deterministic, non-predictive chart-backed fallback.
 }
 
 function providerConfig() {

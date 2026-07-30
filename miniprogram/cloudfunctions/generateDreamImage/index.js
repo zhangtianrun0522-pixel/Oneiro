@@ -48,6 +48,56 @@ const QUALITY_DEFAULT_SIZE = '768x1024';
 const QUALITY_DEFAULT_QUALITY = 'medium';
 const QUALITY_ADAPTER_VERSION = 'image2-quality-v2';
 
+// Keep image generation behind the same high-risk boundary as interpretation.
+// Dream records are client-writable through sync, so `status: ready` alone is
+// not sufficient authorization to send text to a paid image provider.
+const highRiskPatterns = [
+  {
+    pattern: /自杀|轻生|不想活|结束生命|自残|伤害自己/,
+    reason: 'self_harm',
+    message: '这个梦里有很重的痛感。请先联系身边可信任的人，或当地紧急支持；Oneiro 暂不生成分享梦卡。'
+  },
+  {
+    pattern: /杀人|杀了|伤害别人|报复|血腥/,
+    reason: 'harm',
+    message: '这个梦可能涉及高风险伤害内容。为了安全，Oneiro 暂不生成分享梦卡。'
+  },
+  {
+    pattern: /诊断|得病|癌症|抑郁症|焦虑症|处方|吃药/,
+    reason: 'medical',
+    message: 'Oneiro 不能提供医疗或诊断判断。你可以改写成梦里的画面和感受，再抽取梦卡。'
+  }
+];
+
+function imageSafetyError(content) {
+  const text = String(content || '').replace(/\s+/g, '');
+  let i;
+
+  for (i = 0; i < highRiskPatterns.length; i += 1) {
+    if (highRiskPatterns[i].pattern.test(text)) {
+      return {
+        ok: false,
+        blocked: true,
+        reason: highRiskPatterns[i].reason,
+        message: highRiskPatterns[i].message
+      };
+    }
+  }
+
+  return null;
+}
+
+// `visualPlan` can originate from a synced result or an event payload. Check
+// the server-normalized plan and the exact provider prompt rather than
+// trusting either client-controlled source.
+function generationSafetyError(context) {
+  if (!context) return null;
+  return imageSafetyError([
+    JSON.stringify(context.visualPlan || {}),
+    String(context.generationPrompt || '')
+  ].join('\n'));
+}
+
 function parseResponseBody(raw) {
   const text = String(raw || '').trim();
   const dataLines = [];
@@ -423,6 +473,16 @@ async function findOwnedDream(openid, sourceDreamId) {
   return dream;
 }
 
+function readyDreamOrError(dream) {
+  if (!dream) return { error: { ok: false, reason: 'dream_not_found' } };
+  if (String(dream.status || '') !== 'ready') {
+    return { error: { ok: false, reason: 'dream_not_ready', status: String(dream.status || 'unknown') } };
+  }
+  const safetyError = imageSafetyError(dream.dreamText);
+  if (safetyError) return { error: safetyError };
+  return { dream: dream };
+}
+
 function detectImageFormat(buffer) {
   if (!buffer || buffer.length < 1024) {
     throw new Error('generated image payload is unexpectedly small');
@@ -615,7 +675,7 @@ async function reserveImage(key, fileID, cloudPath, generationPrompt, visualPlan
       );
       const currentDream = await getDocument(transaction.collection('dream_entries'), dream._id);
 
-      if (tombstone || !currentDream || currentDream.deletionPending ||
+      if (tombstone || !currentDream || currentDream.deletionPending || currentDream.status !== 'ready' ||
         currentDream.openid !== openid || currentDream.localId !== sourceDreamId) {
         return null;
       }
@@ -1202,7 +1262,8 @@ async function preparePrimaryContext(event, openid) {
   const sourceDreamId = String((event && event.dreamId) || '').trim().slice(0, 100);
   if (!sourceDreamId) return { error: { ok: false, reason: 'missing_dream_id' } };
   const dream = await findOwnedDream(openid, sourceDreamId);
-  if (!dream) return { error: { ok: false, reason: 'dream_not_found' } };
+  const ready = readyDreamOrError(dream);
+  if (ready.error) return ready;
   const prompt = String((event && event.prompt) || '').trim();
   const theme = normalizeTheme(String((event && event.theme) || 'mist').trim());
   const visualPlan = event && event.visualPlan && typeof event.visualPlan === 'object' ? event.visualPlan : null;
@@ -1210,6 +1271,9 @@ async function preparePrimaryContext(event, openid) {
     return { error: { ok: false, reason: 'missing_dream_content' } };
   }
   const config = configuredProvider();
+  const context = buildGenerationContext(prompt, theme, visualPlan, dream, event && event.stylePreset, config, 0);
+  const safetyError = generationSafetyError(context);
+  if (safetyError) return { error: safetyError };
   return {
     sourceDreamId: sourceDreamId,
     dream: dream,
@@ -1217,7 +1281,7 @@ async function preparePrimaryContext(event, openid) {
     theme: theme,
     visualPlan: visualPlan,
     config: config,
-    context: buildGenerationContext(prompt, theme, visualPlan, dream, event && event.stylePreset, config, 0)
+    context: context
   };
 }
 
@@ -1366,6 +1430,9 @@ async function finalizePrimaryImage(event, openid) {
     return { ok: false, reason: 'primary_job_not_found' };
   }
   job._id = jobId;
+  const dream = await findOwnedDream(openid, sourceDreamId);
+  const ready = readyDreamOrError(dream);
+  if (ready.error) return { ok: false, status: 'cancelled', jobId: jobId, reason: ready.error.reason };
   const complete = await primaryJobResult(job);
   if (complete) return complete;
   if (job.status === 'failed' || job.status === 'cancelled') return { ok: false, status: job.status, jobId: jobId, reason: job.reason || 'primary_finalize_failed', stage: job.stage || 'download' };
@@ -1391,17 +1458,6 @@ async function finalizePrimaryImage(event, openid) {
   });
   if (!leased) return { ok: true, status: job.status || 'finalizing', jobId: jobId };
 
-  const dream = await findOwnedDream(openid, sourceDreamId);
-  if (!dream) {
-    await writePrimaryJob(db, jobId, {
-      status: 'cancelled',
-      reason: 'dream_not_found',
-      provider_image_url: '',
-      updated_at: db.serverDate(),
-      finished_at: db.serverDate()
-    });
-    return { ok: false, status: 'cancelled', jobId: jobId, reason: 'dream_not_found' };
-  }
   const config = configuredProvider();
   try {
     const result = await finalizeImageResult({ url: job.provider_image_url }, config, primaryJobContext(job), job.theme || 'mist', openid, sourceDreamId, dream, Date.now());
@@ -1514,7 +1570,8 @@ async function prepareQualityContext(event, openid) {
   const sourceDreamId = String((event && event.dreamId) || '').trim().slice(0, 100);
   if (!sourceDreamId) return { error: { ok: false, reason: 'missing_dream_id' } };
   const dream = await findOwnedDream(openid, sourceDreamId);
-  if (!dream) return { error: { ok: false, reason: 'dream_not_found' } };
+  const ready = readyDreamOrError(dream);
+  if (ready.error) return ready;
   const prompt = String((event && event.prompt) || '').trim();
   const theme = normalizeTheme(String((event && event.theme) || 'mist').trim());
   const visualPlan = event && event.visualPlan && typeof event.visualPlan === 'object' ? event.visualPlan : null;
@@ -1523,6 +1580,8 @@ async function prepareQualityContext(event, openid) {
   }
   const config = configuredQualityProvider();
   const context = buildGenerationContext(prompt, theme, visualPlan, dream, event && event.stylePreset, config, 0);
+  const safetyError = generationSafetyError(context);
+  if (safetyError) return { error: safetyError };
   return { sourceDreamId, dream, theme, config, context };
 }
 
@@ -1685,9 +1744,10 @@ async function pollQualityJob(event, openid) {
   }
   if (polled.image && (polled.image.b64 || polled.image.url)) {
     const dream = await findOwnedDream(openid, sourceDreamId);
-    if (!dream) {
+    const ready = readyDreamOrError(dream);
+    if (ready.error) {
       await updateQualityJobIfActive(db, jobId, { status: 'cancelled', updated_at: db.serverDate(), finished_at: db.serverDate() });
-      return { ok: false, status: 'cancelled', reason: 'dream_not_found' };
+      return { ok: false, status: 'cancelled', reason: ready.error.reason };
     }
     const context = {
       stylePreset: job.style_preset || 'production',
@@ -1748,6 +1808,8 @@ async function generateImage(prompt, theme, requestedVisualPlan, openid, sourceD
   const generationPrompt = isSeedreamModel(config.model)
     ? visualPlanner.buildSeedreamGenerationPrompt(visualPlan, stylePreset)
     : visualPlanner.buildGenerationPrompt(visualPlan, stylePreset);
+  const safetyError = generationSafetyError({ visualPlan: visualPlan, generationPrompt: generationPrompt });
+  if (safetyError) return safetyError;
   const referenceCount = Array.isArray(referenceImageUrls) ? referenceImageUrls.length : 0;
   const key = cacheKey(generationPrompt, config.model, styleVersion, referenceCount);
 
@@ -2053,6 +2115,11 @@ exports.main = async function (event) {
   if (!dream) {
     return { ok: false, reason: 'dream_not_found' };
   }
+  if (String(dream.status || '') !== 'ready') {
+    return { ok: false, reason: 'dream_not_ready', status: String(dream.status || 'unknown') };
+  }
+  const safetyError = imageSafetyError(dream.dreamText);
+  if (safetyError) return safetyError;
 
   if (!prompt && !String(dream.dreamText || '').trim() && !requestedVisualPlan) {
     return { ok: false, reason: 'missing_dream_content', message: 'dream content required' };

@@ -355,7 +355,10 @@ const readyRevisionWrite = await saveDreamMain({ dream: {
   id: 'dream-pending-contract',
   dreamText: '等待云端模型解读',
   status: 'ready',
-  result: { title: '已完成', symbols: ['云端模型'] },
+  result: {
+    title: '已完成',
+    symbols: ['云端模型']
+  },
   interpretationRevision: 1,
   createdAt: now,
 } });
@@ -373,20 +376,165 @@ assert.equal(stalePendingWrite.reason, 'stale_interpretation_write');
 const storedReadyDream = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-pending-contract');
 assert.equal(storedReadyDream.status, 'ready');
 assert.equal(storedReadyDream.result.title, '已完成');
-storedReadyDream.result.image_file_id = 'cloud://newer-image.png';
+storedReadyDream.result.title = '云端更新后的标题';
+storedReadyDream.result.card_insight = '云端更新后的卡背文案';
 storedReadyDream.updatedAt = new Date(now.getTime() + 5000);
 const staleReadyOverwrite = await saveDreamMain({ dream: {
   id: 'dream-pending-contract',
   dreamText: '等待云端模型解读',
   status: 'ready',
-  result: { title: '已完成', symbols: ['云端模型'] },
+  result: {
+    public_title: '新的精修公开标题',
+    title: '新的精修标题',
+    card_insight: '新的精修卡背文案',
+    personal_connection: '新的精修私人关联',
+    finalized_at: '2026-07-31T12:00:00.000Z',
+    refinement_provider: 'deepseek-refinement-v1',
+    image_file_id: 'cloud://first-fast-image.png',
+    imageUrl: 'https://temp.example/first-fast-image.png',
+    image_provider: 'openai',
+    image_model: 'gpt-image-1',
+    image_format: 'png',
+    image_bytes: 1200,
+    image_quality_job_id: 'quality-first-job',
+    image_quality_status: 'polling',
+    image_generation_token: 'image-mdr0a0bc-firstjob',
+    symbols: ['云端模型'],
+    reflection_answer: '这是并发写入的新反馈'
+  },
+  chatMessages: [{
+    role: 'user',
+    content: '这是生图期间新增的聊天',
+    createdAt: new Date(now.getTime() + 6000),
+  }],
   interpretationRevision: 1,
   createdAt: now,
   updatedAt: now,
 } });
-assert.equal(staleReadyOverwrite.ok, false);
-assert.equal(staleReadyOverwrite.reason, 'stale_interpretation_write');
-assert.equal(storedReadyDream.result.image_file_id, 'cloud://newer-image.png');
+assert.equal(staleReadyOverwrite.ok, true);
+assert.equal(staleReadyOverwrite.merged, true);
+assert.equal(staleReadyOverwrite.updated, true);
+assert.equal(storedReadyDream.result.image_file_id, 'cloud://first-fast-image.png');
+assert.equal(storedReadyDream.result.imageUrl, 'https://temp.example/first-fast-image.png');
+assert.equal(storedReadyDream.result.image_provider, 'openai');
+assert.equal(storedReadyDream.result.image_model, 'gpt-image-1');
+assert.equal(storedReadyDream.result.image_format, 'png');
+assert.equal(storedReadyDream.result.image_bytes, 1200);
+assert.equal(storedReadyDream.result.image_quality_job_id, 'quality-first-job');
+assert.equal(storedReadyDream.result.image_quality_status, 'polling');
+assert.equal(storedReadyDream.result.public_title, '新的精修公开标题');
+assert.equal(storedReadyDream.result.title, '新的精修标题');
+assert.equal(storedReadyDream.result.card_insight, '新的精修卡背文案');
+assert.equal(storedReadyDream.result.reflection_answer, '这是并发写入的新反馈');
+assert.equal(storedReadyDream.result.personal_connection, '新的精修私人关联');
+assert.equal(storedReadyDream.result.finalized_at, '2026-07-31T12:00:00.000Z');
+assert.equal(storedReadyDream.result.refinement_provider, 'deepseek-refinement-v1');
+assert.equal(storedReadyDream.chatMessages[0].content, '这是生图期间新增的聊天');
+
+// This is the actual page-quality write shape: its ready/high result shares
+// the fast image's generation token and must replace the whole image bundle.
+const highQualityPromotion = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract', dreamText: '等待云端模型解读', status: 'ready', interpretationRevision: 1, createdAt: now,
+  result: {
+    image_file_id: 'cloud://newer-high-image.png',
+    imageUrl: 'https://temp.example/newer-high-image.png',
+    image_provider: 'quality-provider', image_model: 'quality-model',
+    image_quality_job_id: 'quality-newer-job', image_quality_status: 'ready', image_quality: 'high',
+    image_generation_token: 'image-mdr0a0bc-firstjob'
+  }
+} });
+assert.equal(highQualityPromotion.ok, true);
+assert.equal(storedReadyDream.result.image_file_id, 'cloud://newer-high-image.png');
+assert.equal(storedReadyDream.result.image_model, 'quality-model');
+assert.equal(storedReadyDream.result.image_quality, 'high');
+
+const oldRefinementSnapshot = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract',
+  dreamText: '等待云端模型解读',
+  status: 'ready',
+  result: {
+    public_title: '旧精修公开标题不应覆盖',
+    title: '旧精修标题不应覆盖',
+    card_insight: '旧精修卡背不应覆盖',
+    personal_connection: '旧精修私人关联不应覆盖',
+    finalized_at: '2026-07-30T12:00:00.000Z',
+    refinement_provider: 'old-refinement-provider',
+    reflection_answer: '旧精修答案不应覆盖',
+    image_file_id: 'cloud://old-fast-image.png',
+    imageUrl: 'https://temp.example/old-fast-image.png',
+    image_provider: 'old-fast-provider',
+    image_quality_job_id: 'quality-old-job',
+    image_quality_status: 'polling',
+    image_generation_token: 'image-mdr0a0bc-firstjob'
+  },
+  interpretationRevision: 1,
+  createdAt: now,
+  updatedAt: now,
+} });
+assert.equal(oldRefinementSnapshot.ok, true);
+assert.equal(oldRefinementSnapshot.merged, true);
+assert.equal(storedReadyDream.result.reflection_answer, '这是并发写入的新反馈');
+assert.equal(storedReadyDream.result.public_title, '新的精修公开标题');
+assert.equal(storedReadyDream.result.title, '新的精修标题');
+assert.equal(storedReadyDream.result.card_insight, '新的精修卡背文案');
+assert.equal(storedReadyDream.result.personal_connection, '新的精修私人关联');
+assert.equal(storedReadyDream.result.finalized_at, '2026-07-31T12:00:00.000Z');
+assert.equal(storedReadyDream.result.refinement_provider, 'deepseek-refinement-v1');
+assert.equal(storedReadyDream.result.image_file_id, 'cloud://newer-high-image.png');
+assert.equal(storedReadyDream.result.imageUrl, 'https://temp.example/newer-high-image.png');
+assert.equal(storedReadyDream.result.image_provider, 'quality-provider');
+assert.equal(storedReadyDream.result.image_quality_job_id, 'quality-newer-job');
+assert.equal(storedReadyDream.result.image_quality_status, 'ready');
+
+// A manual refresh carries a request token. Its completed fast image is a
+// newer requested version and therefore replaces the prior high-quality
+// bundle atomically; an old refresh snapshot can never put the high card back.
+const refreshedImageWrite = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract',
+  dreamText: '等待云端模型解读', status: 'ready', interpretationRevision: 1, createdAt: now,
+  result: {
+    image_file_id: 'cloud://refreshed-fast-image.png',
+    imageUrl: 'https://temp.example/refreshed-fast-image.png',
+    image_provider: 'refresh-provider', image_model: 'refresh-model',
+    image_quality: 'fast', image_quality_status: 'idle',
+    image_generation_token: 'refresh-mdr0a1bc-newrefresh',
+    image_refresh_token: 'refresh-mdr0a1bc-newrefresh'
+  }
+} });
+assert.equal(refreshedImageWrite.ok, true);
+assert.equal(storedReadyDream.result.image_file_id, 'cloud://refreshed-fast-image.png');
+assert.equal(storedReadyDream.result.imageUrl, 'https://temp.example/refreshed-fast-image.png');
+assert.equal(storedReadyDream.result.image_provider, 'refresh-provider');
+assert.equal(storedReadyDream.result.image_model, 'refresh-model');
+assert.equal(storedReadyDream.result.image_refresh_token, 'refresh-mdr0a1bc-newrefresh');
+assert.equal(storedReadyDream.result.image_quality_status, 'idle');
+
+// After a refresh fast image is stored, the same generation may advance into
+// a quality queue without replacing that image or carrying the old high state.
+const refreshedQualityQueued = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract', dreamText: '等待云端模型解读', status: 'ready', interpretationRevision: 1, createdAt: now,
+  result: {
+    image_quality: 'fast', image_quality_status: 'polling', image_quality_job_id: 'quality-refresh-job',
+    image_generation_token: 'refresh-mdr0a1bc-newrefresh', image_refresh_token: 'refresh-mdr0a1bc-newrefresh'
+  }
+} });
+assert.equal(refreshedQualityQueued.ok, true);
+assert.equal(storedReadyDream.result.image_file_id, 'cloud://refreshed-fast-image.png');
+assert.equal(storedReadyDream.result.image_quality, 'fast');
+assert.equal(storedReadyDream.result.image_quality_status, 'polling');
+assert.equal(storedReadyDream.result.image_quality_job_id, 'quality-refresh-job');
+
+const delayedOldRefresh = await saveDreamMain({ dream: {
+  id: 'dream-pending-contract', dreamText: '等待云端模型解读', status: 'ready', interpretationRevision: 1, createdAt: now,
+  result: {
+    image_file_id: 'cloud://stale-high-image.png', imageUrl: 'https://temp.example/stale-high-image.png',
+    image_provider: 'stale-provider', image_quality: 'high', image_quality_status: 'ready',
+    image_generation_token: 'refresh-mdr0a0bc-oldrefresh', image_refresh_token: 'refresh-mdr0a0bc-oldrefresh'
+  }
+} });
+assert.equal(delayedOldRefresh.ok, true);
+assert.equal(storedReadyDream.result.image_file_id, 'cloud://refreshed-fast-image.png');
+assert.equal(storedReadyDream.result.image_quality, 'fast');
 
 database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => item.localId !== 'dream-pending-contract');
 const archiveList = await saveDreamMain({ action: 'list' });

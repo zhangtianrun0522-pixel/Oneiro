@@ -451,6 +451,7 @@ async function run() {
     _id: 'record-1',
     openid: 'owner',
     localId: 'dream-1',
+    status: 'ready',
     dreamText: '我在废弃车站等车，铁轨通向海里，另一个我提着灯走来。',
     dreamFacts: { emotions: ['焦虑', '期待'], places: ['废弃车站'], objects: ['铁轨', '灯'] },
     result: { symbols: ['车站', '海', '灯'], visual_plan: visualPlan }
@@ -465,6 +466,65 @@ async function run() {
   assert.equal(result.reason, 'dream_not_found');
 
   state.deletion = false;
+  state.dream.status = 'pending';
+  result = await imageFunction.main({ prompt: 'moon', dreamId: 'dream-1' });
+  assert.equal(result.reason, 'dream_not_ready');
+  assert.equal(result.status, 'pending');
+
+  state.dream.status = 'ready';
+  state.dream.dreamText = '我梦见自己想自杀，四周没有人。';
+  const providerCallsBeforeBlockedDream = state.providerCalls;
+  result = await imageFunction.main({ prompt: 'moon', dreamId: 'dream-1' });
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, 'self_harm');
+  assert.equal(state.providerCalls, providerCallsBeforeBlockedDream, 'blocked dream must not reach the image provider');
+
+  state.dream.dreamText = '我在废弃车站等车，铁轨通向海里，另一个我提着灯走来。';
+  state.dream.result.visual_plan = Object.assign({}, visualPlan, {
+    emotion: ['我想自杀']
+  });
+  const providerCallsBeforeUnsafeStoredPlan = state.providerCalls;
+  result = await imageFunction.main({ prompt: 'moon', dreamId: 'dream-1' });
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, 'self_harm');
+  assert.equal(state.providerCalls, providerCallsBeforeUnsafeStoredPlan, 'unsafe stored visual plan must not reach legacy generation');
+  result = await imageFunction.main({ action: 'startPrimaryImage', prompt: 'moon', dreamId: 'dream-1' });
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, 'self_harm');
+  assert.equal(state.providerCalls, providerCallsBeforeUnsafeStoredPlan, 'unsafe stored visual plan must not reach primary generation');
+
+  state.dream.result = { symbols: ['车站', '海', '灯'] };
+  result = await imageFunction.main({
+    prompt: 'moon',
+    dreamId: 'dream-1',
+    visualPlan: {
+      emotion: ['焦虑'],
+      composition: { subject_position: '我正计划伤害别人' }
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, 'harm');
+  assert.equal(state.providerCalls, providerCallsBeforeUnsafeStoredPlan, 'unsafe requested visual plan must not reach legacy generation');
+
+  result = await imageFunction.main({
+    action: 'startQuality',
+    prompt: 'moon',
+    dreamId: 'dream-1',
+    visualPlan: {
+      emotion: ['焦虑'],
+      composition: { visual_flow: '按处方吃药后等待诊断' }
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, 'medical');
+  assert.equal(state.providerCalls, providerCallsBeforeUnsafeStoredPlan, 'unsafe requested visual plan must not reach quality generation');
+
+  state.dream.result = { symbols: ['车站', '海', '灯'], visual_plan: visualPlan };
   state.providerImageUrl = 'https://provider.example.com/legacy-seedream.png';
   state.transactionDeletion = true;
   result = await imageFunction.main({ prompt: 'moon', dreamId: 'dream-1' });

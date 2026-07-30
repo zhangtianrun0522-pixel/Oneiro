@@ -264,8 +264,14 @@ function generateDreamImage(prompt, dreamId, theme, visualPlan, options, callbac
     visualPlan: visualPlan && typeof visualPlan === 'object' ? visualPlan : null,
     forceRefresh: !!(options && options.forceRefresh)
   };
+  // This request token accompanies the image bundle when it is persisted. It
+  // is deliberately generated once per request so a later manual refresh can
+  // be ordered against delayed page snapshots on the server.
+  var imageGenerationToken = (payload.forceRefresh ? 'refresh-' : 'image-') +
+    Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  payload.imageGenerationToken = imageGenerationToken;
   if (payload.forceRefresh) {
-    payload.requestId = 'refresh-' + String(Date.now()) + '-' + Math.random().toString(36).slice(2, 10);
+    payload.requestId = imageGenerationToken;
   }
   var startPollAttempts = 0;
   var finalizePollAttempts = 0;
@@ -273,7 +279,12 @@ function generateDreamImage(prompt, dreamId, theme, visualPlan, options, callbac
   var maxFinalizePollAttempts = 16;
 
   function finish(result) {
-    if (callback) callback(result);
+    if (callback) {
+      callback(Object.assign({}, result || {}, {
+        imageGenerationToken: imageGenerationToken,
+        imageRefreshToken: payload.forceRefresh ? imageGenerationToken : ''
+      }));
+    }
   }
 
   function finalize(jobId) {

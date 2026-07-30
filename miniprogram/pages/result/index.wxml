@@ -48,8 +48,12 @@
     <view wx:if="{{imageQualityStatus === 'ready'}}" class="card-image-notice quality-ready-notice">
       <text>高清画面已更新</text>
     </view>
+    <view wx:if="{{imageStatus === 'ready' && imageSyncPending}}" class="card-image-notice">
+      <text>{{imageErrorMessage || '画面已生成，梦册同步待重试'}}</text>
+      <button class="image-retry" bindtap="retryDreamImageSync">重试同步</button>
+    </view>
     <view wx:if="{{imageStatus === 'failed'}}" class="card-image-notice">
-      <text>当前展示基础梦象</text>
+      <text>{{imageErrorMessage || '当前展示基础梦象'}}</text>
       <button class="image-retry" bindtap="retryDreamImage">重新生成画面</button>
     </view>
 
@@ -155,6 +159,32 @@
       <text class="reading-label">今天的小行动</text>
       <text class="reading-copy">{{dream.result.one_small_act}}</text>
     </view>
+  </view>
+
+  <!-- 回应问题后更新为最终梦卡；定稿后保留用户的回答，形成从初版解读到继续聊梦的可见链条。 -->
+  <view wx:if="{{!interpretationUnavailable}}" class="dream-refinement">
+    <text class="reading-label">回应这个梦</text>
+    <text wx:if="{{dream.result.integration_question}}" class="refinement-question">{{dream.result.integration_question}}</text>
+
+    <block wx:if="{{dream.result.finalized_at || dream.result.reflection_answer}}">
+      <view class="refinement-complete">
+        <text class="refinement-status">{{refinementSyncPending ? '最终梦卡待同步' : '最终梦卡已更新'}}</text>
+        <text class="refinement-answer">{{dream.result.reflection_answer}}</text>
+        <button wx:if="{{refinementSyncPending}}" class="refinement-retry" bindtap="retryRefinementSync">重试同步</button>
+      </view>
+    </block>
+
+    <block wx:else>
+      <textarea
+        class="refinement-input"
+        value="{{refineAnswer}}"
+        maxlength="500"
+        placeholder="写下你的联想、感受或不同意见"
+        placeholder-class="refinement-placeholder"
+        bindinput="onRefineAnswerInput"
+      ></textarea>
+      <button class="refinement-submit" loading="{{refining}}" disabled="{{refining}}" bindtap="refineDreamCard">更新最终梦卡</button>
+    </block>
   </view>
 
   <!-- 聊聊这个梦：放在阅读内容结束之后、操作栏（收藏/分享/删除）之前，

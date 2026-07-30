@@ -1,6 +1,18 @@
 # Oneiro Project Progress
 
-Last updated: 2026-07-29
+Last updated: 2026-07-31
+
+## 梦卡稳定性、命理视角与反馈链路修复（2026-07-31）
+
+- 当前工作分支：`codex/fix-memory-sync-palette`。
+- 梦卡失败不再把云端同步冲突误报为图片供应商失败。图片已生成但写回失败时保留本地画面并提供独立同步重试；切换页面后可恢复同一个两阶段生成任务，`primary_generation_pending` 等在途状态不会用 `forceRefresh` 启动第二个付费任务。
+- 同 revision 的并发写入改为字段级、单调合并：首次图片和高清任务 ID 可进入云端，快速图可原子升级为高清图，较新的手动刷新可替换旧图，旧页面快照不能回退标题、卡背、聊天、精修回答、高清图或任务状态。
+- 结果页恢复“回应这个梦 → 最终梦卡 → 聊聊这个梦”链路。精修保存失败时保留本地结果并显示待同步，重载后仍可重试；只有云端保存成功才显示已更新。
+- 命理附加视角恢复四柱、日主、五行等确定性技术锚点，但不作运势或未来预测。模型缺失、留空、未落到梦中事实或混入预测词时，由服务端确定性排盘结果补齐命理字段，不再让可选命理内容拖垮基础梦卡；普通解读字段会清理命理术语泄漏。
+- 生图服务端同时校验存储梦文本、服务器规范化后的视觉计划和最终供应商提示词；客户端伪造 `ready` 或恶意 `visual_plan` 不能绕过高风险内容闸门。
+- 最终验证：`npm run check:mini-release`、`npm run build`、`git diff --check`，以及五个变更 JS 文件的 `node --check` 全部通过；第五轮只读终审无 P0/P1。Vite 仅保留既有的 620.09 kB 主包体积建议警告。
+- 已将 `interpretDream`（26.0 KB）、`generateDreamImage`（42.2 KB）、`saveDream`（9.0 KB）部署到 `cloud1-d9gb0sjvg6a8d9864`。线上健康检查确认解读模型 `deepseek-v4-flash` 与生图模型 `doubao-seedream-5-0-lite-260128` 均已配置，两阶段生图管线正常，内部请求预算 55 秒。
+- 本轮修复前的真实 Seedream 烟测已成功：供应商约 44.1 秒返回，约 2.7 秒完成落库，临时梦境和资产清理成功。最新真机预览：`/private/tmp/oneiro-preview-dream-flow-stability-20260731.png`，预览包 207,291 bytes。
 
 ## Seedream 5.0 Lite 正式生图接入（2026-07-29）
 

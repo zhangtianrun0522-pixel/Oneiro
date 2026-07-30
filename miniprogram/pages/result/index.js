@@ -146,6 +146,34 @@ function imageFailureMessage(reason) {
   return '画面暂时没生成出来，点击重试';
 }
 
+function imageFailureDetails(response, fallbackReason) {
+  var reason = String((response && response.reason) || fallbackReason || 'image_generation_failed').slice(0, 300);
+  var message = String((response && response.message) || '').trim().slice(0, 300);
+  return {
+    reason: reason,
+    message: message,
+    displayMessage: message || (imageFailureMessage(reason) + '（' + reason + '）'),
+    provider: String((response && response.provider) || '')
+  };
+}
+
+function syncFailureDetails(response) {
+  var reason = String((response && response.reason) || 'cloud_sync_pending').slice(0, 300);
+  var message = String((response && response.message) || '').trim().slice(0, 300);
+  return {
+    reason: reason,
+    message: message,
+    displayMessage: message || ('云端同步未完成（' + reason + '），点击重试')
+  };
+}
+
+// These responses can mean that the cloud function returned before the
+// provider job settled. Retrying them must resume the deterministic job, not
+// allocate a second paid image request.
+function isResumableImageFailure(reason) {
+  return /primary_generation_pending|cloud_result_expired|cloud_call_failed/.test(String(reason || '').toLowerCase());
+}
+
 function scrubLocalPortraitSource(dreamId) {
   var state = wx.getStorageSync('oneiro:profileMemory') || {};
   var changed = false;
@@ -513,6 +541,7 @@ Page({
     imageStatus: 'idle',
     imageErrorMessage: '',
     imageLoadError: '',
+    imageSyncPending: false,
     aiImageFileId: '',
     aiImageLocalPath: '',
     imageQualityStatus: 'idle',
@@ -529,6 +558,7 @@ Page({
     retryingInterpretation: false,
     refineAnswer: '',
     refining: false,
+    refinementSyncPending: false,
     dream: {
       dreamText: '',
       result: {}
@@ -576,6 +606,14 @@ Page({
       return;
     }
 
+    // Older local records predate explicit interpretation statuses. Only a
+    // non-empty result earns this compatibility upgrade; pending/blocked data
+    // remains unavailable and cannot reach image generation.
+    if (!dream.status && dream.result && typeof dream.result === 'object' && Object.keys(dream.result).length) {
+      dream = Object.assign({}, dream, { status: 'ready' });
+      persistLocalDream(dream);
+    }
+
     var interpretationUnavailable = dream.status !== 'ready' ||
       !dream.result ||
       typeof dream.result !== 'object' ||
@@ -611,6 +649,7 @@ Page({
       displayTimestamp: displayTimestamp,
       cardBackInsight: cardBackInsight(dream.result),
       imageQualityStatus: dream.result.image_quality_status || 'idle',
+      refinementSyncPending: !!dream.refinementSyncPending,
       possibleConnections: possibleConnections,
       interpretationUnavailable: interpretationUnavailable,
       entryReady: true
@@ -751,11 +790,16 @@ Page({
           that.requestDreamImage();
           return;
         }
+        var failure = syncFailureDetails(saveResult);
         that.setData({
           imageStatus: 'failed',
-          imageErrorMessage: '云端同步未完成，画面稍后可重试',
-          imageLoadError: 'cloud_sync_pending'
+          imageErrorMessage: failure.displayMessage,
+          imageLoadError: failure.reason
         });
+        analytics.trackEvent('generated_image_sync_fail', {
+          dreamId: dream.id || '', reason: failure.reason, message: failure.message
+        });
+        wx.showToast({ title: failure.displayMessage, icon: 'none' });
       });
       that.setData({
         retryingInterpretation: false,
@@ -814,7 +858,23 @@ Page({
     var result = this.data.dream.result || {};
     var prompt = result.image_prompt || result.image || '';
 
-    if (result.imageUrl || result.image_file_id || result.imageFileId || result.fileID || result.fileId || (!prompt && !result.visual_plan)) {
+    var hasSavedImage = !!(result.imageUrl || result.image_file_id || result.imageFileId || result.fileID || result.fileId);
+    if (hasSavedImage || (!prompt && !result.visual_plan)) {
+      if (hasSavedImage && dream.cloudSynced !== true) {
+        that.setData({ imageSyncPending: true });
+        cloudBase.saveDream(dream, function (saveResult) {
+          dream.cloudSynced = !!(saveResult && saveResult.ok);
+          persistLocalDream(dream);
+          that.setData({
+            dream: dream,
+            imageSyncPending: !dream.cloudSynced,
+            imageErrorMessage: dream.cloudSynced ? '' : syncFailureDetails(saveResult).displayMessage,
+            imageLoadError: dream.cloudSynced ? '' : syncFailureDetails(saveResult).reason
+          });
+          if (done) done();
+        });
+        return;
+      }
       if (done) {
         done();
       }
@@ -843,13 +903,19 @@ Page({
           image_format: imageRes.imageFormat || '',
           image_bytes: Number(imageRes.imageBytes || 0),
           image_visual_plan: imageRes.visualPlan || result.visual_plan || null,
-          image_quality_check: imageRes.qualityCheck || null
+          image_quality_check: imageRes.qualityCheck || null,
+          image_quality: 'fast',
+          image_quality_status: 'idle',
+          image_quality_job_id: '',
+          image_generation_token: imageRes.imageGenerationToken || currentDream.result.image_generation_token || '',
+          image_refresh_token: imageRes.imageRefreshToken || ''
         });
+        currentDream.cloudSynced = false;
         persistLocalDream(currentDream);
-        cloudBase.saveDream(currentDream);
         that.setData({
           dream: currentDream,
-          aiImageFileId: imageRes.fileID || ''
+          aiImageFileId: imageRes.fileID || '',
+          imageSyncPending: true
         });
         cloudBase.resolveCloudImage(imageRes.fileID || '', imageRes.imageUrl, function (localPath, loadError) {
           that.setData({
@@ -857,6 +923,30 @@ Page({
             imageStatus: localPath ? 'ready' : 'failed',
             imageErrorMessage: localPath ? '' : imageFailureMessage(loadError || 'cloud_image_load_failed'),
             imageLoadError: localPath ? '' : String(loadError || 'cloud_image_load_failed').slice(0, 300)
+          });
+          cloudBase.saveDream(currentDream, function (saveResult) {
+            currentDream.cloudSynced = !!(saveResult && saveResult.ok);
+            persistLocalDream(currentDream);
+            if (currentDream.cloudSynced) {
+              that.setData({
+                dream: currentDream,
+                imageSyncPending: false,
+                imageErrorMessage: localPath ? '' : that.data.imageErrorMessage,
+                imageLoadError: localPath ? '' : that.data.imageLoadError
+              });
+              return;
+            }
+            var failure = syncFailureDetails(saveResult);
+            that.setData({
+              dream: currentDream,
+              imageSyncPending: true,
+              imageErrorMessage: failure.displayMessage,
+              imageLoadError: failure.reason
+            });
+            analytics.trackEvent('generated_image_result_sync_fail', {
+              dreamId: currentDream.id || '', reason: failure.reason, message: failure.message
+            });
+            wx.showToast({ title: failure.displayMessage, icon: 'none' });
           });
           if (!localPath) {
             analytics.trackEvent('generated_image_load_fail', {
@@ -878,14 +968,20 @@ Page({
           latencyMs: imageRes.latencyMs || 0
         });
       } else {
+        var failure = imageFailureDetails(imageRes, 'image_generation_failed');
         that.setData({
           imageStatus: 'failed',
-          imageErrorMessage: imageFailureMessage(imageRes && (imageRes.reason || imageRes.message))
+          imageSyncPending: false,
+          imageErrorMessage: failure.displayMessage,
+          imageLoadError: failure.reason
         });
         analytics.trackEvent('generated_image_fail', {
           dreamId: currentDream.id || '',
-          reason: imageRes && imageRes.reason ? imageRes.reason : 'unknown'
+          reason: failure.reason,
+          message: failure.message,
+          provider: failure.provider
         });
+        wx.showToast({ title: failure.displayMessage, icon: 'none' });
         if (done) {
           done();
         }
@@ -905,15 +1001,20 @@ Page({
           startGeneration();
           return;
         }
+        var failure = syncFailureDetails(saveResult);
         that.setData({
           imageStatus: 'failed',
-          imageErrorMessage: '云端同步未完成，画面稍后可重试',
-          imageLoadError: 'cloud_sync_pending'
+          imageSyncPending: false,
+          imageErrorMessage: failure.displayMessage,
+          imageLoadError: failure.reason
         });
         analytics.trackEvent('generated_image_fail', {
           dreamId: dream.id || '',
-          reason: 'cloud_sync_pending'
+          reason: failure.reason,
+          message: failure.message,
+          failureType: 'sync'
         });
+        wx.showToast({ title: failure.displayMessage, icon: 'none' });
         if (done) done();
       });
       return;
@@ -1087,6 +1188,18 @@ Page({
 
   retryDreamImage: function () {
     var dream = this.data.dream;
+    var resumeExistingJob = isResumableImageFailure(this.data.imageLoadError);
+
+    if (resumeExistingJob) {
+      this.setData({
+        imageStatus: 'idle',
+        imageErrorMessage: '',
+        imageLoadError: '',
+        imageSyncPending: false
+      });
+      this.requestDreamImage();
+      return;
+    }
 
     if (dream && dream.result) {
       dream.result = Object.assign({}, dream.result, {
@@ -1095,6 +1208,9 @@ Page({
         imageFileId: '',
         fileID: '',
         fileId: '',
+        image_generation_token: '',
+        image_refresh_token: '',
+        image_quality: 'fast',
         image_quality_job_id: '',
         image_quality_status: 'idle'
       });
@@ -1104,6 +1220,7 @@ Page({
       imageStatus: 'idle',
       imageErrorMessage: '',
       imageLoadError: '',
+      imageSyncPending: false,
       aiImageFileId: '',
       aiImageLocalPath: '',
       imageQualityStatus: 'idle',
@@ -1112,6 +1229,11 @@ Page({
     });
     this.stopDreamImageQualityPolling();
     this.requestDreamImage(null, { forceRefresh: true });
+  },
+
+  retryDreamImageSync: function () {
+    if (!this.data.imageSyncPending) return;
+    this.requestDreamImage();
   },
 
   openDreamChat: function () {
@@ -1166,10 +1288,12 @@ Page({
         refinement_provider: result.provider || ''
       });
       dream.updatedAt = new Date().toISOString();
+      dream.refinementSyncPending = true;
+      dream.cloudSynced = false;
       persistLocalDream(dream);
-      cloudBase.saveDream(dream);
       that.setData({
         dream: dream,
+        refinementSyncPending: true,
         cardBackInsight: cardBackInsight(dream.result),
         refineAnswer: '',
         shareImagePath: '',
@@ -1177,12 +1301,43 @@ Page({
         sharePath: ''
       });
       that.renderShareCard({ silent: true, force: true });
-      analytics.trackEvent('dream_refine_success', {
-        dreamId: dream.id || '',
-        provider: result.provider || '',
-        fallback: !!result.fallback
+      cloudBase.saveDream(dream, function (saveResult) {
+        dream.refinementSyncPending = !(saveResult && saveResult.ok);
+        dream.cloudSynced = !dream.refinementSyncPending;
+        persistLocalDream(dream);
+        that.setData({ dream: dream, refinementSyncPending: dream.refinementSyncPending });
+        if (dream.refinementSyncPending) {
+          analytics.trackEvent('dream_refine_sync_fail', {
+            dreamId: dream.id || '',
+            reason: String(saveResult && saveResult.reason || 'cloud_sync_pending')
+          });
+          wx.showToast({ title: '最终梦卡待同步', icon: 'none' });
+          return;
+        }
+        analytics.trackEvent('dream_refine_success', {
+          dreamId: dream.id || '',
+          provider: result.provider || '',
+          fallback: !!result.fallback
+        });
+        wx.showToast({ title: '最终梦卡已更新', icon: 'success' });
       });
-      wx.showToast({ title: '最终梦卡已更新', icon: 'success' });
+    });
+  },
+
+  retryRefinementSync: function () {
+    var that = this;
+    var dream = this.data.dream;
+    if (!dream || !dream.refinementSyncPending) return;
+    cloudBase.saveDream(dream, function (saveResult) {
+      dream.refinementSyncPending = !(saveResult && saveResult.ok);
+      dream.cloudSynced = !dream.refinementSyncPending;
+      persistLocalDream(dream);
+      that.setData({ dream: dream, refinementSyncPending: dream.refinementSyncPending });
+      if (dream.refinementSyncPending) {
+        wx.showToast({ title: syncFailureDetails(saveResult).displayMessage, icon: 'none' });
+        return;
+      }
+      wx.showToast({ title: '最终梦卡已同步', icon: 'success' });
     });
   },
 

@@ -367,7 +367,13 @@ function createWxMock(): WxMock {
       options.success({ tempFilePath: '/tmp/oneiro-ai-image.png' });
     },
     callFunction(options: Record<string, any>) {
-      wx.cloudCalls.push({ name: options.name, data: options.data });
+      // saveDream receives a mutable page object. Record its call-time shape
+      // so later quality updates cannot make an earlier fast-image write look
+      // like a high-image write in this integration test.
+      wx.cloudCalls.push({
+        name: options.name,
+        data: options.name === 'saveDream' ? structuredClone(options.data) : options.data
+      });
       if (options.name === 'login') {
         options.success({ result: { openid: 'mock-openid' } });
         return;
@@ -463,7 +469,7 @@ function createWxMock(): WxMock {
             ok: true,
             provider: 'mock-cloud',
             model: 'mock-grounded-model',
-            promptVersion: 'oneiro-freeform-reading-v0.3',
+            promptVersion: 'oneiro-freeform-reading-v0.4-metaphysical-lens',
             schemaVersion: 'dream-entry-v0.2',
             result: {
               title: '云影',
@@ -497,6 +503,14 @@ function createWxMock(): WxMock {
                 '追逐也可能只是紧张感在梦里的偶然组合。',
               ],
               metaphysical_resonance: 'Runtu的摩羯气质让追逐和学校显得更像责任感的提醒。',
+              metaphysical_basis: '四柱中的日主与五行只作为这次学校追逐梦的文化参照。',
+              metaphysical_reading: {
+                temperament: '学校与追逐调动了日主所代表的主动承担。',
+                dream_echo: '学校走廊与五行流转形成有限呼应。',
+                tension: '追逐与迟到让十神关系只呈现为边界拉扯。',
+                rhythm: '先写下学校里最紧张的一刻，不预测后续。',
+                basis: '四柱、日主与五行来自确定性历法计算。',
+              },
               integration_question: '如果追逐会替你说一句真话，它想提醒什么？',
               one_small_act: '写下正在追你的事。',
               image: '云端梦卡画面以追逐、学校为核心。',
@@ -821,6 +835,12 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', '文化象征'],
   ['miniprogram/pages/result/index.wxml', '心理视角'],
   ['miniprogram/pages/result/index.wxml', '聊聊这个梦'],
+  ['miniprogram/pages/result/index.wxml', 'class="dream-refinement"'],
+  ['miniprogram/pages/result/index.wxml', 'bindinput="onRefineAnswerInput"'],
+  ['miniprogram/pages/result/index.wxml', 'bindtap="refineDreamCard"'],
+  ['miniprogram/pages/result/index.wxml', 'bindtap="retryDreamImageSync"'],
+  ['miniprogram/pages/result/index.wxml', 'bindtap="retryRefinementSync"'],
+  ['miniprogram/pages/result/index.wxml', '最终梦卡已更新'],
   ['miniprogram/pages/result/index.wxml', 'class="core-observation"'],
   ['miniprogram/pages/result/index.wxml', 'dream.result.reading_hook'],
   // 设计稿去掉了「三个视角」分组标题，三个 block 直接平铺。原先断言这个
@@ -871,7 +891,6 @@ for (const [path, expected] of [
 
 for (const [path, unexpected] of [
   ['miniprogram/pages/result/index.wxml', '把这张梦卡变成你的'],
-  ['miniprogram/pages/result/index.wxml', 'class="refine-card"'],
   ['miniprogram/pages/result/index.wxml', '生成分享话题卡'],
 ] as const) {
   assertNotIncludes(path, unexpected);
@@ -1368,7 +1387,7 @@ assert.equal(archiveAfterDream[0].interpretationProvider, 'mock-cloud');
 assert.equal(archiveAfterDream[0].status, 'ready');
 assert.equal(archiveAfterDream[0].dreamFacts.places[0], '学校');
 assert.equal(archiveAfterDream[0].interpretationMeta.schemaVersion, 'dream-entry-v0.2');
-assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.3');
+assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.4-metaphysical-lens');
 assert.equal(archiveAfterDream[0].result.title, '云影');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream'));
 assert.equal(
@@ -1392,12 +1411,31 @@ assert.equal(resultPage.data.dream.result.image_style_version, 'oneiro-seedream-
 assert.equal(resultPage.data.dream.result.image_visual_plan.composition.template, 'threshold_depth');
 assert.equal(resultPage.data.dream.result.image_quality_check.passed, true);
 assert.equal(resultPage.data.aiImageLocalPath, '/tmp/oneiro-ai-image.png');
+const qualityImageSave = wx.cloudCalls.filter((call) =>
+  call.name === 'saveDream' && call.data?.dream?.id === resultPage.data.dream.id &&
+  call.data?.dream?.result?.image_quality === 'high'
+).slice(-1)[0];
+assert.ok(qualityImageSave);
+assert.match(qualityImageSave.data.dream.result.image_generation_token, /^image-[0-9a-z]+-[a-z0-9_-]{4,64}$/);
+assert.equal(qualityImageSave.data.dream.result.image_quality_status, 'ready');
 assert.match(resultPage.data.displayTimestamp, /^\d{4}\.\d{2}\.\d{2} · \d{2}:\d{2}$/);
 assert.equal(resultPage.data.cardFlipped, false);
 const reopenedResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 reopenedResultPage.onLoad({ id: archiveAfterDream[0].id });
 assert.equal(reopenedResultPage.data.aiImageLocalPath, '/tmp/oneiro-ai-image.png');
 assert.equal(reopenedResultPage.data.imageStatus, 'ready');
+const legacyReadyDream = Object.assign({}, archiveAfterDream[0], {
+  id: 'legacy-ready-without-status',
+  status: undefined,
+  result: Object.assign({}, archiveAfterDream[0].result),
+});
+wx.storage['oneiro:dreamArchive'] = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).concat([legacyReadyDream]);
+const legacyReadyResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+legacyReadyResultPage.onLoad({ id: legacyReadyDream.id });
+assert.equal(legacyReadyResultPage.data.dream.status, 'ready');
+assert.equal(legacyReadyResultPage.data.interpretationUnavailable, false);
+legacyReadyResultPage.openDreamChat();
+assert.ok(last(wx.navigations).startsWith('/pages/dream-chat/index?id=legacy-ready-without-status'));
 const activeDream = app.globalData.currentDream as any;
 const currentDreamResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 currentDreamResultPage.onLoad({});
@@ -1444,6 +1482,85 @@ assert.equal(
   '梦者在学校里被追赶并错过考试'
 );
 assert.ok(wx.cloudCalls.some((call) => call.name === 'generateDreamImage' && call.data?.action === 'finalizePrimaryImage'));
+
+// Once the provider image exists, a failed result write must keep the picture
+// visible and retry only the cloud sync. It must not trigger another paid
+// generation request.
+const imageResultSyncDream = Object.assign({}, archiveAfterDream[0], {
+  id: 'image-result-sync-dream',
+  cloudSynced: true,
+  result: Object.assign({}, archiveAfterDream[0].result, {
+    imageUrl: '',
+    image_file_id: '',
+    imageFileId: '',
+    fileID: '',
+    fileId: '',
+  }),
+});
+wx.storage['oneiro:dreamArchive'] = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).concat([imageResultSyncDream]);
+const imageResultSyncPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+imageResultSyncPage.onLoad({ id: imageResultSyncDream.id });
+const generationCallsBeforeImageSyncFailure = wx.cloudCalls.filter(
+  (call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage'
+).length;
+wx.failNextDreamSave = true;
+imageResultSyncPage.requestDreamImage();
+assert.equal(imageResultSyncPage.data.imageStatus, 'ready');
+assert.equal(imageResultSyncPage.data.imageSyncPending, true);
+assert.equal(imageResultSyncPage.data.dream.cloudSynced, false);
+const generationCallsAfterImageSyncFailure = wx.cloudCalls.filter(
+  (call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage'
+).length;
+assert.equal(generationCallsAfterImageSyncFailure, generationCallsBeforeImageSyncFailure + 1);
+imageResultSyncPage.requestDreamImage();
+assert.equal(imageResultSyncPage.data.imageStatus, 'ready');
+assert.equal(imageResultSyncPage.data.imageSyncPending, false);
+assert.equal(imageResultSyncPage.data.dream.cloudSynced, true);
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage').length,
+  generationCallsAfterImageSyncFailure
+);
+
+// The visible sync retry keeps the generated image intact and never asks the
+// provider for another image.
+imageResultSyncPage.data.dream.cloudSynced = false;
+imageResultSyncPage.setData({ imageSyncPending: true });
+const generationCallsBeforeSyncOnlyRetry = wx.cloudCalls.filter(
+  (call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage'
+).length;
+imageResultSyncPage.retryDreamImageSync();
+assert.equal(imageResultSyncPage.data.imageStatus, 'ready');
+assert.equal(imageResultSyncPage.data.imageSyncPending, false);
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage').length,
+  generationCallsBeforeSyncOnlyRetry
+);
+
+// A cloud response can arrive before its provider job settles. Retrying that
+// state resumes the existing deterministic job instead of creating a refresh
+// request with a new paid job identity.
+const pendingImageDream = Object.assign({}, archiveAfterDream[0], {
+  id: 'pending-image-job-dream',
+  cloudSynced: true,
+  result: Object.assign({}, archiveAfterDream[0].result, {
+    imageUrl: '', image_file_id: '', imageFileId: '', fileID: '', fileId: ''
+  })
+});
+wx.storage['oneiro:dreamArchive'] = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).concat([pendingImageDream]);
+const pendingImagePage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+pendingImagePage.onLoad({ id: pendingImageDream.id });
+pendingImagePage.setData({
+  imageStatus: 'failed',
+  imageLoadError: 'primary_generation_pending',
+  imageErrorMessage: '画面仍在生成'
+});
+pendingImagePage.retryDreamImage();
+const resumeImageCall = wx.cloudCalls.filter(
+  (call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage'
+).slice(-1)[0];
+assert.equal(resumeImageCall?.data?.forceRefresh, false);
+assert.equal(resumeImageCall?.data?.requestId, undefined);
+
 resultPage.data.dream.result = Object.assign({}, resultPage.data.dream.result, {
   imageUrl: 'https://expired.example.com/image.png',
   image_file_id: 'cloud://expired/image.png',
@@ -1454,10 +1571,20 @@ resultPage.data.dream.result = Object.assign({}, resultPage.data.dream.result, {
 resultPage.retryDreamImage();
 const retryImageCall = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage').slice(-1)[0];
 assert.equal(retryImageCall?.data?.forceRefresh, true);
+assert.match(retryImageCall?.data?.requestId, /^refresh-[0-9a-z]+-[a-z0-9_-]{4,64}$/);
 assert.equal(resultPage.data.dream.result.image_file_id, 'cloud://mock/generated-dream-images/mock.png');
 assert.equal(resultPage.data.dream.result.imageFileId, '');
 assert.equal(resultPage.data.dream.result.fileID, '');
 assert.equal(resultPage.data.dream.result.fileId, '');
+const refreshFastImageSave = wx.cloudCalls.filter((call) =>
+  call.name === 'saveDream' && call.data?.dream?.id === resultPage.data.dream.id &&
+  call.data?.dream?.result?.image_refresh_token === retryImageCall.data.requestId &&
+  call.data?.dream?.result?.image_quality === 'fast' &&
+  call.data?.dream?.result?.image_quality_status === 'idle'
+).slice(-1)[0];
+assert.ok(refreshFastImageSave);
+assert.equal(refreshFastImageSave.data.dream.result.image_generation_token, retryImageCall.data.requestId);
+assert.equal(refreshFastImageSave.data.dream.result.image_quality_job_id, '');
 
 // A locally ready card with no confirmed cloud save must remain available.
 // Image generation is deferred until the retry save succeeds; this covers
@@ -1483,6 +1610,7 @@ assert.equal(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').
 assert.equal(syncRetryPage.data.dream.status, 'ready');
 assert.equal(syncRetryPage.data.dream.cloudSynced, false);
 assert.equal(syncRetryPage.data.imageStatus, 'failed');
+assert.match(syncRetryPage.data.imageErrorMessage, /mock_save_failed/);
 assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === syncRetryDream.id)?.cloudSynced,
   false
@@ -1523,7 +1651,37 @@ resultPage.refineDreamCard();
 assert.equal(resultPage.data.dream.result.title, '期限门');
 assert.equal(resultPage.data.dream.result.public_title, '云影');
 assert.ok(resultPage.data.dream.result.personal_connection.includes('截止时间'));
+assert.equal(resultPage.data.dream.result.reflection_answer, '我最近确实很怕赶不上期限。');
+assert.ok(resultPage.data.dream.result.finalized_at);
+assert.equal(resultPage.data.dream.refinementSyncPending, false);
+assert.equal(resultPage.data.dream.cloudSynced, true);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.refineDream));
+
+// Refinement is stored locally first, but its success state is not shown as
+// cloud-final until saveDream confirms it. A later reload exposes the retry.
+const refinementSyncDream = Object.assign({}, archiveAfterDream[0], {
+  id: 'refinement-sync-dream',
+  result: Object.assign({}, archiveAfterDream[0].result, {
+    reflection_answer: '', finalized_at: '', personal_connection: ''
+  })
+});
+wx.storage['oneiro:dreamArchive'] = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).concat([refinementSyncDream]);
+const refinementSyncPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+refinementSyncPage.onLoad({ id: refinementSyncDream.id });
+refinementSyncPage.onRefineAnswerInput({ detail: { value: '这次我想到的是换工作时的不确定。' } });
+wx.failNextDreamSave = true;
+refinementSyncPage.refineDreamCard();
+assert.equal(refinementSyncPage.data.refinementSyncPending, true);
+assert.equal(refinementSyncPage.data.dream.refinementSyncPending, true);
+assert.equal(refinementSyncPage.data.dream.cloudSynced, false);
+assert.ok(wx.toasts.includes('最终梦卡待同步'));
+const reloadedRefinementSyncPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+reloadedRefinementSyncPage.onLoad({ id: refinementSyncDream.id });
+assert.equal(reloadedRefinementSyncPage.data.refinementSyncPending, true);
+reloadedRefinementSyncPage.retryRefinementSync();
+assert.equal(reloadedRefinementSyncPage.data.refinementSyncPending, false);
+assert.equal(reloadedRefinementSyncPage.data.dream.refinementSyncPending, false);
+assert.equal(reloadedRefinementSyncPage.data.dream.cloudSynced, true);
 resultPage.prepareShareCard();
 assert.equal(
   wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('你的回答让学校与追逐落在了现实期限上'),
@@ -1558,6 +1716,10 @@ assert.equal(dreamChatPage.data.messages.length, 3);
 assert.equal(dreamChatPage.data.turnCount, 1);
 assert.ok(dreamChatPage.data.messages[2].content.includes('期限感'));
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.chatAboutDream));
+assert.equal(
+  last(wx.cloudCalls.filter((call) => call.name === 'interpretDream' && call.data.chatAboutDream)).data.dreamResult.reflection_answer,
+  '我最近确实很怕赶不上期限。'
+);
 assert.equal(
   wx.cloudCalls.filter((call) => call.name === 'saveDream' && call.data.action === 'addLifeNote').length,
   lifeNoteCallsBeforeChat + 1
