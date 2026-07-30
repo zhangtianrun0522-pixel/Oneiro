@@ -156,14 +156,30 @@
     </view>
   </view>
 
+  <!-- 聊聊这个梦：放在阅读内容结束之后、操作栏（收藏/分享/删除）之前，
+       做成一个独立可点卡片（浅底色块 + 细边框 + 明确箭头），比普通文字链更
+       醒目，避免被忽略；不做成朱砂实心按钮，保持暖纸/深墨的克制调性 -->
+  <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry" bindtap="openDreamChat">
+    <view class="chat-entry-copy">
+      <text class="reading-label">聊聊这个梦</text>
+      <text class="chat-entry-question">{{dream.result.integration_question}}</text>
+    </view>
+    <view class="chat-entry-arrow-badge">
+      <text class="chat-entry-arrow">→</text>
+    </view>
+  </view>
+
   <!-- 底部操作：设计稿是一行三个平级文字链（收藏 / 分享 / 删除），
        不再用实心主按钮。「保存完整解读」「再记一个梦」「梦境档案」
        设计稿没有画，收进下面一个克制的「更多」折叠，不与这一行抢视觉权重。
-       未生成解读时只保留删除入口。 -->
+       未生成解读时只保留删除入口。收藏/分享前面的圆圈与斜箭头图标改用
+       CSS 绘制（border/transform），不再用 Unicode 字符 ◌ ↗——真机上
+       iOS 会把 ↗ 渲染成彩色 emoji、◌ 渲染成不一致的字形，字宽/基线/字重
+       都跟中文文本对不齐，把这一行的间距顶得不均匀。 -->
   <view class="primary-actions">
-    <button wx:if="{{!interpretationUnavailable}}" class="primary-action-link" bindtap="saveCard">◌ {{cardSaved ? '已收藏梦卡' : '收藏梦卡'}}</button>
-    <button wx:if="{{!interpretationUnavailable && !sharePath}}" class="primary-action-link" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard">↗ 分享梦卡</button>
-    <button wx:if="{{!interpretationUnavailable && sharePath}}" class="primary-action-link" open-type="share">↗ 分享梦卡</button>
+    <button wx:if="{{!interpretationUnavailable}}" class="primary-action-link" bindtap="saveCard"><text class="action-icon icon-save"></text>{{cardSaved ? '已收藏梦卡' : '收藏梦卡'}}</button>
+    <button wx:if="{{!interpretationUnavailable && !sharePath}}" class="primary-action-link" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard"><text class="action-icon icon-share"></text>分享梦卡</button>
+    <button wx:if="{{!interpretationUnavailable && sharePath}}" class="primary-action-link" open-type="share"><text class="action-icon icon-share"></text>分享梦卡</button>
     <button class="primary-action-link primary-action-delete" bindtap="deleteDream">删除梦境</button>
   </view>
 
@@ -176,15 +192,6 @@
     <button wx:if="{{!interpretationUnavailable}}" class="text-button" bindtap="saveFullReading">保存完整解读</button>
     <button class="text-button" bindtap="newDream">再记一个梦</button>
     <button class="text-button" bindtap="openArchive">梦境档案</button>
-  </view>
-
-  <!-- 聊聊这个梦：设计稿放在页面最底部，所有解读内容与操作区之后 -->
-  <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry" bindtap="openDreamChat">
-    <view class="chat-entry-copy">
-      <text class="reading-label-neutral">聊聊这个梦</text>
-      <text class="chat-entry-question">{{dream.result.integration_question}}</text>
-    </view>
-    <text class="chat-entry-arrow">→</text>
   </view>
 
   <text wx:if="{{shareImagePath}}" class="share-ready">梦卡图已准备，可保存或分享</text>
