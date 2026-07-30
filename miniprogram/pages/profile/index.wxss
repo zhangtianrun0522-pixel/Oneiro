@@ -1,237 +1,205 @@
 .profile-screen { padding-bottom: calc(64rpx + env(safe-area-inset-bottom)); }
 
-/* 页面头部下的第一道版式节奏，改用旧金细线 */
-.profile-intro {
+/* ── 对齐设计稿 3c：本页不再使用「卡片盒」语言，改为纯文字流 +
+   细线分区，只有「昨日梦回访」与「历史版本」两处保留浅色底块。
+   下面每条颜色都用相对亮度公式核算过，数值见各分组注释；
+   设计稿里 rgba(33,29,23,0.35/0.4/0.45) 与 #B8863B 用作文字时
+   在暖纸上只有 2.1–2.7:1，一律替换为已校准 token：
+     --gold-ink  #8a5d29  ~4.5–4.85:1  用于强调型小标签/标签文字
+     --ink-70    rgba(.72) ~5.9–6.1:1  用于中性小标签/可点文字链
+     --ink-55    rgba(.58) ~3.9:1      仅用于「已暂停」这类非关键弱化状态
+     --cinnabar-ink #b23a32 ~4.7–5.0:1 用于「删除」这类危险小字
+   --gold-line (#b8863b) 即使 100% 不透明在暖纸上也只有 2.74:1，
+   达不到文字的 4.5:1，也够不到装饰图形的 3:1，因此全部改为仅用于
+   低透明度的点缀边框（历史版本盒左边线、标签描边），不作为任何
+   文字色使用；这类点缀细线本身不承载必须信息，移除也不影响内容
+   可读，视为纯装饰不做 3:1 强制。 ── */
+
+.profile-header {
+  flex-shrink: 0;
+}
+
+/* 覆盖 app.wxss 全局 .title（19px 宋体），本页头图更克制：16px 无衬线 */
+.profile-header .title {
+  font-family: var(--font-sans);
+  font-size: 32rpx;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+.profile-subtitle {
   display: block;
-  margin-top: var(--space-tight);
-  padding: 24rpx 0;
-  border-top: 1rpx solid rgba(184, 134, 59, 0.35);
-  border-bottom: 1rpx solid rgba(184, 134, 59, 0.35);
-  color: rgba(33, 29, 23, 0.58);
-  font-size: var(--fs-aux);
-  line-height: 1.75;
-}
-
-.memory-section {
-  margin-top: var(--space-block);
-  padding: 30rpx;
-  border: 0;
-  border-radius: 0;
-  background: var(--paper-raised);
-}
-
-/* 「阶段画像」是本页最重要的结论，右上角叠一枚极简命理刻度环——
-   1rpx 旧金 8% 透明度的圆，从卡角探出，纯装饰、不抢内容。
-   z-index:0 让本元素成为新的层叠上下文根，::before/::after 用
-   z-index:-1 沉到文字之下、背景之上，不会盖住任何正文。 */
-.portrait-section {
-  position: relative;
-  z-index: 0;
-  overflow: hidden;
-  border-top: 2rpx solid rgba(184, 134, 59, 0.62);
-  background: var(--paper-raised);
-}
-
-.portrait-section::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  top: -70rpx;
-  right: -70rpx;
-  width: 200rpx;
-  height: 200rpx;
-  border: 1rpx solid rgba(184, 134, 59, 0.08);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-.portrait-section::after {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  top: 26rpx;
-  right: 46rpx;
-  width: 12rpx;
-  height: 1rpx;
-  background: rgba(184, 134, 59, 0.1);
-  box-shadow:
-    -30rpx 26rpx 0 0 rgba(184, 134, 59, 0.1),
-    14rpx 54rpx 0 0 rgba(184, 134, 59, 0.1),
-    -46rpx 70rpx 0 0 rgba(184, 134, 59, 0.1);
-  pointer-events: none;
-}
-
-.facts-section { background: transparent; }
-
-.supporting-section {
-  margin-top: var(--space-group);
-  padding: 22rpx 24rpx;
-}
-
-.supporting-section .memory-title {
-  font-size: var(--fs-aux);
-}
-
-.supporting-section .memory-summary {
-  margin-top: var(--space-tight);
-  font-size: var(--fs-aux);
-}
-
-.supporting-section .memory-kicker {
-  font-size: var(--fs-label);
-}
-
-.fact-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 20rpx;
-  margin-top: 12rpx;
-  padding: 12rpx 0;
-  border-top: 1rpx solid rgba(33, 29, 23, 0.1);
-}
-
-.fact-copy {
-  flex: 1;
-  min-width: 0;
-  color: rgba(33, 29, 23, 0.72);
-  font-size: var(--fs-aux);
-  line-height: 1.7;
-}
-
-.fact-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 26rpx;
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  line-height: 1.7;
-}
-
-.section-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20rpx;
-}
-
-.memory-kicker,
-.memory-title,
-.memory-summary,
-.monthly-label,
-.monthly-title,
-.monthly-copy,
-.portrait-status,
-.portrait-summary,
-.portrait-reason,
-.portrait-note,
-.history-title,
-.form-section-title {
-  display: block;
-}
-
-.memory-kicker {
-  color: var(--ink-55);
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 4rpx;
-}
-
-.memory-title {
   margin-top: 8rpx;
-  color: #211d17;
-  font-size: var(--fs-body);
-  font-weight: 650;
-}
-
-/* profile 页唯一的朱砂点睛：阶段画像是本页最重要的结论，标题前落一枚印章方块 */
-.portrait-section .memory-title::before {
-  content: '';
-  display: inline-block;
-  width: 8rpx;
-  height: 8rpx;
-  margin-right: 10rpx;
-  background: var(--cinnabar);
-  vertical-align: middle;
-}
-
-.memory-count,
-.portrait-version {
-  color: var(--gold-ink);
+  color: var(--ink-70);
   font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 2rpx;
+  line-height: 1.5;
 }
 
-.portrait-focus-label {
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 800;
+/* ── 昨日梦回访：设计稿唯一的实底卡片，暖金底块 + 无边框 ──
+   #EDE4D0 是设计稿指定的实色（非 token），核算：
+     --gold-ink  on #EDE4D0 = 4.52:1  （标题小标签）
+     --ink       on #EDE4D0 = 13.26:1 （正文/问题）
+     --ink-70    on #EDE4D0 = 5.87:1  （回答/跳过/关闭提醒可点文字） */
+.profile-revisit {
+  margin-top: var(--space-group);
+  padding: 28rpx 32rpx;
+  border-radius: 4rpx;
+  background: #ede4d0;
 }
 
-.memory-summary {
-  margin-top: var(--space-tight);
-  color: rgba(33, 29, 23, 0.68);
-  font-size: var(--fs-aux);
-  line-height: 1.75;
-}
-
-/* 与 .portrait-focus-label 等同类小标签保持一致的旧金墨色，
-   之前遗漏未随暖纸主题转换，浅暖金字在纸色背景上几乎不可读 */
-.portrait-status {
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 2rpx;
-}
-
-/* 「暂停用于解读」与「用于解读中」不能共用同一枚肯定色——
-   暂停态改用中性墨灰，与仍在生效的旧金色形成清楚的区分度 */
-.portrait-status.is-paused {
-  color: var(--ink-55);
-}
-
-.portrait-card {
-  margin-top: var(--space-tight);
-  padding: 26rpx;
-  border: 1rpx solid rgba(33, 29, 23, 0.13);
-  border-radius: 0;
-  background: transparent;
-}
-
-.portrait-feature {
-  padding: 30rpx 28rpx;
-  border-color: rgba(184, 134, 59, 0.42);
-  background: rgba(242, 236, 223, 0.52);
-}
-
-.portrait-empty-title {
+.profile-revisit-kicker,
+.profile-revisit-title,
+.profile-revisit-question,
+.profile-revisit-disable {
   display: block;
-  color: rgba(33, 29, 23, 0.74);
+}
+
+.profile-revisit-kicker {
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.profile-revisit-title {
+  margin-top: 12rpx;
+  color: var(--ink);
   font-size: var(--fs-aux);
   font-weight: 600;
 }
 
-.portrait-empty-copy {
-  display: block;
-  margin-top: 12rpx;
-  color: rgba(33, 29, 23, 0.52);
+.profile-revisit-question {
+  margin-top: 8rpx;
+  font-family: var(--font-serif);
+  color: var(--ink);
   font-size: var(--fs-aux);
-  line-height: 1.7;
+  line-height: 1.6;
 }
+
+.profile-revisit-actions {
+  display: flex;
+  align-items: center;
+  gap: 32rpx;
+  margin-top: 20rpx;
+}
+
+/* 回答 / 跳过 / 关闭提醒 三个动作全部降为文字链，呼应设计稿的
+   扁平语言；button 已被 app.wxss 的 `button{width:auto!important}`
+   复位，这里只补文字样式 */
+.profile-revisit-answer,
+.profile-revisit-skip {
+  margin: 0 !important;
+  min-height: var(--tap-min);
+  font-size: 23rpx;
+  line-height: var(--tap-min);
+}
+
+.profile-revisit-answer {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.profile-revisit-skip {
+  color: var(--ink-70);
+}
+
+.profile-revisit-disable {
+  min-height: var(--tap-min);
+  color: var(--ink-70);
+  font-size: 23rpx;
+  line-height: var(--tap-min);
+}
+
+.profile-revisit-answer::after,
+.profile-revisit-skip::after {
+  border: 0;
+}
+
+.profile-revisit-composer {
+  margin-top: var(--space-group);
+}
+
+.profile-revisit-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 120rpx;
+  max-height: 260rpx;
+  padding: 20rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.16);
+  border-radius: 0;
+  background: #fdfaf2;
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  line-height: 1.6;
+}
+
+.profile-revisit-send {
+  display: block;
+  width: 150rpx !important;
+  margin-top: var(--space-tight);
+  margin-left: auto;
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.profile-revisit-send::after {
+  border: 0;
+}
+
+/* ── 通用：小标签 / 计数 / 分区细线 ──
+   --ink-70 on --paper = 6.10:1，覆盖本页所有「阶段画像·V3」
+   「最近的线索」「系统提取的现实线索」「基础资料」这类结构性
+   眉题，以及「共 3 版」「N 条」这类计数、和全部可点文字链 */
+.section-label {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.section-meta {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.section-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.section-divider {
+  margin-top: var(--space-group);
+  padding-top: 28rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.08);
+}
+
+/* ── 阶段画像：设计稿里本页最重要的结论，不再挂卡片盒 ── */
+.portrait-block {
+  margin-top: 44rpx;
+}
+
+/* 「用于解读中」= 强调态用 --gold-ink（4.85:1）；
+   「已暂停解读」= 非关键弱化态用 --ink-55（3.95:1，仅限此类次要状态）；
+   「等待形成」= 中性默认态用 --ink-70（6.10:1） */
+.portrait-focus-label {
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+.portrait-focus-label.is-active { color: var(--gold-ink); }
+.portrait-focus-label.is-paused { color: var(--ink-55); }
+.portrait-focus-label.is-waiting { color: var(--ink-70); }
 
 .portrait-summary {
+  display: block;
   margin-top: var(--space-tight);
-  color: #211d17;
+  font-family: var(--font-serif);
+  color: var(--ink);
   font-size: var(--fs-aux);
-  line-height: 1.78;
-}
-
-.portrait-reason,
-.portrait-note {
-  margin-top: var(--space-tight);
-  color: rgba(33, 29, 23, 0.44);
-  font-size: var(--fs-label);
-  line-height: 1.65;
+  line-height: 1.75;
 }
 
 .portrait-editor {
@@ -243,7 +211,26 @@
   border: 1rpx solid rgba(33, 29, 23, 0.2);
   border-radius: 0;
   background: #fdfaf2;
-  color: #211d17;
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  line-height: 1.7;
+}
+
+.portrait-empty-card {
+  margin-top: var(--space-tight);
+}
+
+.portrait-empty-title {
+  display: block;
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+}
+
+.portrait-empty-copy {
+  display: block;
+  margin-top: var(--space-tight);
+  color: var(--ink-70);
   font-size: var(--fs-aux);
   line-height: 1.7;
 }
@@ -255,13 +242,11 @@
   margin-top: var(--space-tight);
 }
 
-/* 方正、克制的纸本语言：内容区按钮不用胶囊圆角 */
 .portrait-primary,
-.portrait-secondary,
-.portrait-generate {
+.portrait-secondary {
   width: auto !important;
   min-height: var(--tap-min);
-  margin: 0;
+  margin: 0 !important;
   padding: 0 26rpx;
   border-radius: 2rpx;
   font-size: var(--fs-label);
@@ -271,57 +256,62 @@
 
 .portrait-primary { border: 1rpx solid var(--ink); background: var(--ink); color: var(--paper); }
 .portrait-secondary { border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
-.portrait-secondary.quiet { color: rgba(33, 29, 23, 0.54); }
-
-/* 暂停用于解读：降为文字操作，不再是一颗按钮 */
-.portrait-link {
-  width: auto !important;
-  min-height: var(--tap-min);
-  margin: 0;
-  padding: 0 4rpx;
-  border: 0 !important;
-  border-radius: 0;
-  background: transparent !important;
-  color: rgba(33, 29, 23, 0.54);
-  font-size: var(--fs-label);
-  line-height: var(--tap-min);
-  text-decoration: underline;
-  text-underline-offset: 6rpx;
-}
-
-.portrait-generate { margin-top: var(--space-tight); border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
 
 .portrait-primary::after,
-.portrait-secondary::after,
-.portrait-link::after,
-.portrait-generate::after {
+.portrait-secondary::after {
   border: 0;
 }
 
-/* 历史版本是阶段画像的从属子列表，不再只用一条上分隔线，
-   换成缩进 + 左侧细金线的容器，读出「附属于上方结论」的层级关系 */
-.portrait-history {
-  margin-top: var(--space-tight);
-  padding: 20rpx 20rpx 20rpx 24rpx;
-  border-top: 0;
-  border-left: 2rpx solid rgba(184, 134, 59, 0.35);
+/* 修改这段理解 / 暂停用于解读 / 手动刷新：设计稿是同一行三个文字链，
+   合并三个原本分散的按钮到一个 flex 行，可见性条件与改稿前完全一致：
+   前两个仅 memoryState.current && !portraitEditing 时出现，
+   第三个（生成/刷新）不受 portraitEditing 影响，始终可点 */
+.portrait-links-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 32rpx;
+  margin-top: 20rpx;
+}
+
+.portrait-link-btn {
+  margin: 0 !important;
+  min-height: var(--tap-min);
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: var(--tap-min);
+}
+
+.portrait-link-btn::after {
+  border: 0;
+}
+
+/* ── 历史版本：唯一保留的浅色底块，从从属子列表变成设计稿的
+   独立小盒子，但保留原有折叠/展开交互（设计稿本身没有画折叠态，
+   产品要求这条功能分支必须保留，因此头部本身仍是 bindtap 开关）。
+   背景 rgba(33,29,23,0.03) 叠加在 --paper 上做文字核算：
+     --ink       on 该底色 = 13.48:1
+     --ink-70    on 该底色 = 5.93:1
+   左边线 --gold-line 0.35 属于纯点缀，不做 3:1 强制（见文件头注释）。 */
+.portrait-history-box {
+  margin-top: 28rpx;
+  padding: 24rpx 28rpx;
   background: rgba(33, 29, 23, 0.03);
+  border-left: 4rpx solid rgba(184, 134, 59, 0.35);
 }
 
-.portrait-history .history-item:first-child {
-  margin-top: 0;
-}
-
-.portrait-history-toggle {
+.portrait-history-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-height: var(--tap-min);
+}
+
+.portrait-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-tight);
   margin-top: var(--space-tight);
-  padding-top: 22rpx;
-  border-top: 1rpx solid rgba(33, 29, 23, 0.1);
-  color: rgba(33, 29, 23, 0.48);
-  font-size: var(--fs-label);
 }
 
 .history-item {
@@ -329,50 +319,116 @@
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
-  margin-top: var(--space-tight);
-  color: rgba(33, 29, 23, 0.48);
-  font-size: var(--fs-label);
 }
 
 .history-copy {
   display: flex;
-  flex: 1;
-  justify-content: space-between;
-  gap: 14rpx;
+  align-items: center;
+  gap: var(--space-tight);
+  min-width: 0;
 }
 
-/* 历史版本回溯：同样降为文字操作 */
+.history-version {
+  color: var(--ink);
+  font-size: 24rpx;
+}
+
+.history-edited-flag {
+  flex-shrink: 0;
+  color: var(--gold-ink);
+  font-size: 20rpx;
+}
+
 .history-restore {
   flex: 0 0 auto;
-  width: auto !important;
   min-height: var(--tap-min);
-  margin: 0;
-  padding: 0 4rpx;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--gold-line);
+  color: var(--ink-70);
   font-size: var(--fs-label);
   line-height: var(--tap-min);
-  text-decoration: underline;
-  text-underline-offset: 6rpx;
 }
 
 .history-restore::after {
   border: 0;
 }
 
-/* .clear-field 提到最小触控高度后，flex-end 会让它比标签高出一截，
-   改为居中对齐 */
+/* ── 最近的线索：真实数据是 dreamCount + stageSummary 一段摘要文字，
+   不是设计稿画的标签云（页面没有关键词计数的数据源，不能在不动
+   index.js 的前提下编出假标签），因此保留原有段落展示，只对齐
+   标题/分隔线/字号这一层视觉规格 ── */
+.recent-clues-summary {
+  display: block;
+  margin-top: 20rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  line-height: 1.75;
+}
+
+/* ── 系统提取的现实线索 ── */
+.facts-empty {
+  display: block;
+  margin-top: var(--space-tight);
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  line-height: 1.7;
+}
+
+.facts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  margin-top: var(--space-tight);
+}
+
+.fact-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.fact-copy {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  line-height: 1.6;
+}
+
+.fact-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-tight);
+  font-size: var(--fs-label);
+}
+
+.fact-edit { color: var(--ink-70); }
+
+/* 「删除」用危险色，--cinnabar 在小字号只有 4.29:1 不够，
+   换成已校准的 --cinnabar-ink：4.69–5.03:1 */
+.fact-delete { color: var(--cinnabar-ink); }
+
+/* ── 基础资料：产品决定保留现有内联表单交互（input + picker +
+   底部保存按钮），这里只对齐标题/说明文案/分隔线的视觉规格。
+   去掉了上一轮的 .basic-info-zone 底色块和它的左右内padding——
+   那层 padding 让基础资料的字段相对其它分区多缩进了 28rpx，
+   现在改用与其它分区相同的 .section-divider（只留 padding-top），
+   横向对齐重新与上方各分区一致 ── */
+.basic-info-note {
+  display: block;
+  margin-top: 20rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+}
+
 .field-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-/* 「清除」不再用朱砂强调危险，降为深墨文字链，与 .portrait-link /
-   .history-restore 的低调操作语言保持一致 */
 .clear-field {
+  margin: 0 !important;
   width: auto !important;
   min-height: var(--tap-min);
   color: var(--ink-70);
@@ -390,147 +446,8 @@
 .privacy-copy {
   display: block;
   margin-top: var(--space-tight);
-  color: rgba(33, 29, 23, 0.42);
+  color: var(--ink-70);
   font-size: var(--fs-label);
   line-height: 1.6;
   text-align: center;
-}
-
-.profile-revisit {
-  margin-top: var(--space-group);
-  padding: 28rpx;
-  border-left: 3rpx solid rgba(184, 134, 59, 0.72);
-  background: #fbf6ec;
-}
-
-.profile-revisit-kicker,
-.profile-revisit-title,
-.profile-revisit-question,
-.profile-revisit-disable {
-  display: block;
-}
-
-.profile-revisit-kicker {
-  color: #b8863b;
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 3rpx;
-}
-
-.profile-revisit-title {
-  margin-top: var(--space-tight);
-  color: #211d17;
-  font-size: var(--fs-aux);
-  font-weight: 600;
-}
-
-.profile-revisit-question {
-  margin-top: var(--space-tight);
-  color: rgba(33, 29, 23, 0.7);
-  font-size: var(--fs-aux);
-  line-height: 1.75;
-}
-
-.profile-revisit-actions {
-  display: flex;
-  gap: 16rpx;
-  margin-top: var(--space-group);
-}
-
-.profile-revisit-answer,
-.profile-revisit-skip,
-.profile-revisit-send {
-  height: 68rpx;
-  margin: 0;
-  border-radius: 0;
-  font-size: var(--fs-label);
-  font-weight: 800;
-  line-height: 68rpx;
-}
-
-.profile-revisit-answer {
-  flex: 1;
-  background: #211d17;
-  color: #fbf6ec;
-}
-
-.profile-revisit-skip {
-  flex: 1;
-  border: 1rpx solid rgba(33, 29, 23, 0.18);
-  background: transparent;
-  color: rgba(33, 29, 23, 0.58);
-}
-
-.profile-revisit-disable {
-  margin-top: var(--space-tight);
-  color: rgba(33, 29, 23, 0.38);
-  font-size: var(--fs-label);
-  text-align: center;
-}
-
-.profile-revisit-composer {
-  margin-top: var(--space-group);
-}
-
-.profile-revisit-textarea {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 120rpx;
-  max-height: 260rpx;
-  padding: 20rpx;
-  border: 1rpx solid rgba(33, 29, 23, 0.16);
-  border-radius: 0;
-  background: #fdfaf2;
-  color: #211d17;
-  font-size: var(--fs-aux);
-  line-height: 1.6;
-}
-
-.profile-revisit-send {
-  display: block;
-  width: 150rpx;
-  margin-top: var(--space-tight);
-  margin-left: auto;
-  background: #211d17;
-  color: #fbf6ec;
-}
-
-.profile-revisit-answer::after,
-.profile-revisit-skip::after,
-.profile-revisit-send::after {
-  border: 0;
-}
-
-/* 「我的基础资料」整体套一层比暖纸略深的底色块，让两大分区从
-   「一条线隔开」变成「两张纸」。叠加 2.5% 深墨半透明，对比度重新
-   核对过：--gold-ink 字号标签 4.63:1、正文墨色 8.0:1，均仍达标。 */
-.basic-info-zone {
-  margin-top: var(--space-block);
-  padding: var(--space-group) 28rpx;
-  background: rgba(33, 29, 23, 0.025);
-}
-
-.basic-info-zone .zone-title {
-  margin-top: 0;
-}
-
-/* ── 页面分为两个明确分区 ── */
-.zone-title {
-  display: block;
-  margin: var(--space-block) 0 0;
-  padding-bottom: 16rpx;
-  border-bottom: 2rpx solid var(--ink);
-  color: var(--ink);
-  font-family: var(--font-serif);
-  font-size: var(--fs-title);
-  font-weight: 600;
-  letter-spacing: 2rpx;
-}
-
-.zone-note {
-  display: block;
-  margin-top: var(--space-tight);
-  color: var(--ink-55);
-  font-size: var(--fs-label);
-  line-height: 1.6;
 }

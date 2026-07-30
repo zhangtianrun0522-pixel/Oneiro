@@ -157,7 +157,7 @@
   flex: 0 0 var(--tap-min);
   width: var(--tap-min) !important;
   height: var(--tap-min);
-  margin: 0;
+  margin: 0 !important;
   padding: 0;
   border-radius: 50%;
   font-size: var(--fs-label);

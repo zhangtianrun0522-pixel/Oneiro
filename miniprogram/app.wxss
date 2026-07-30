@@ -61,7 +61,14 @@ input {
 
 /* 微信 button 内置 width: 184px 且优先级高于页面 wxss 的普通声明
    （height 不受影响），因此凡是要给 button 设宽度的地方都必须带 !important。
-   这里先统一复位成 auto，避免任何新增 button 悄悄继承 184px。 */
+   这里先统一复位成 auto，避免任何新增 button 悄悄继承 184px。
+
+   同类坑：内置样式还带 margin-left/right: auto（用于块级居中）。放进 flex
+   行时 auto 外边距会均分吞掉容器的全部剩余空间，几个文字链按钮会被摊开成
+   等距分布，看起来像设了 space-around——即使容器只写了 gap。这里不能统一
+   复位：margin 同样只认 !important，而全局 !important 会打败页面里那些
+   刻意用 margin:0 auto 居中的按钮（如首页语音圆环）。因此凡是把 button
+   放进 flex 行的地方，都要在该类上显式写 margin: 0 !important。 */
 button {
   width: auto !important;
   padding: 0;

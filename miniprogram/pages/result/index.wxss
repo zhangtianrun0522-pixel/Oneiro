@@ -745,6 +745,7 @@
 }
 
 .primary-action-link {
+  margin: 0 !important;
   flex: 0 0 auto;
   min-height: var(--tap-min);
   padding: 0 4rpx;
@@ -763,6 +764,7 @@
 }
 
 .text-button {
+  margin: 0 !important;
   flex: 1;
   height: 82rpx;
   padding: 0;

@@ -86,7 +86,6 @@ Page({
     revisitAnswering: false,
     revisitAnswerText: '',
     lifeNotes: [],
-    lifeNotesPreview: [],
     memoryState: emptyMemoryState(),
     insights: dreamMemory.buildInsights([])
   },
@@ -103,9 +102,6 @@ Page({
       memoryState: state,
       insights: insights,
       lifeNotes: dreamMemory.autoExtractedRealLifeContext(archive).map(function (text, index) {
-        return { id: '', localKey: 'local-' + index, text: text, localOnly: true };
-      }),
-      lifeNotesPreview: dreamMemory.autoExtractedRealLifeContext(archive).slice(0, 2).map(function (text, index) {
         return { id: '', localKey: 'local-' + index, text: text, localOnly: true };
       })
     });
@@ -179,7 +175,7 @@ Page({
       var notes = result.notes.map(function (note) {
         return Object.assign({}, note, { localKey: note.id || String(note.createdAt || '') });
       });
-      that.setData({ lifeNotes: notes, lifeNotesPreview: notes.slice(0, 2) });
+      that.setData({ lifeNotes: notes });
     });
   },
 
