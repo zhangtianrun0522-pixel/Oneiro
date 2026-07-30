@@ -4,6 +4,23 @@
   background: var(--paper);
 }
 
+.share-state {
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32rpx;
+  color: var(--ink-70);
+  text-align: center;
+}
+
+.share-state-title {
+  max-width: 80%;
+  font-size: var(--fs-body);
+  line-height: 1.7;
+}
+
 .shared-card {
   position: relative;
   padding: 48rpx 38rpx 44rpx;

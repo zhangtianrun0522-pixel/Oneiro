@@ -1,5 +1,19 @@
 <view class="share-screen">
-  <view class="shared-card">
+  <view wx:if="{{loading}}" class="share-state">
+    <text class="share-state-title">正在打开梦卡</text>
+  </view>
+
+  <view wx:elif="{{errorState === 'not_found'}}" class="share-state">
+    <text class="share-state-title">这张梦卡的分享链接已失效</text>
+    <button class="primary-button" bindtap="startDream">记下我的梦</button>
+  </view>
+
+  <view wx:elif="{{errorState === 'unavailable'}}" class="share-state">
+    <text class="share-state-title">暂时无法加载，请检查网络</text>
+    <button class="primary-button" bindtap="loadShareCard">重试</button>
+  </view>
+
+  <view wx:else class="shared-card">
     <view class="card-header">
       <text>ONEIRO</text>
       <text>{{payload.cardNo}}</text>
@@ -27,5 +41,5 @@
 
   </view>
 
-  <button class="primary-button" bindtap="startDream">记下我的梦</button>
+  <button wx:if="{{!loading && !errorState}}" class="primary-button" bindtap="startDream">记下我的梦</button>
 </view>
