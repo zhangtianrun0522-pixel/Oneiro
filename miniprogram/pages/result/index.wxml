@@ -65,7 +65,7 @@
     <text wx:if="{{!interpretationUnavailable}}" class="core-observation">{{dream.result.reading_hook}}</text>
 
     <view class="original-dream">
-      <text class="reading-label">你记下的原梦</text>
+      <text class="reading-label-neutral">你记下的原梦</text>
       <text class="original-copy">{{dream.dreamText}}</text>
     </view>
 
@@ -74,19 +74,8 @@
       <text class="reading-copy">本次未生成解读，原梦仍已保存。你可以保留记录，或直接删除。</text>
     </view>
 
-    <!-- 聊聊这个梦：紧跟核心观察，不必读完全文才出现 -->
-    <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry" bindtap="openDreamChat">
-      <view class="chat-entry-copy">
-        <text class="reading-label">聊聊这个梦</text>
-        <text class="chat-entry-question">{{dream.result.integration_question}}</text>
-      </view>
-      <text class="chat-entry-arrow">→</text>
-    </view>
-
-    <!-- 第二层：三个视角 -->
-    <view wx:if="{{!interpretationUnavailable}}" class="lens-group">
-      <text class="tier-label">三个视角</text>
-
+    <!-- 第二层：三个视角，设计稿里没有分组标题，三个 block 直接平铺 -->
+    <block wx:if="{{!interpretationUnavailable}}">
       <view wx:if="{{dream.result.cultural_symbolism}}" class="reading-block cultural-reading">
         <text class="reading-label">文化象征</text>
         <text class="reading-copy">{{dream.result.cultural_symbolism}}</text>
@@ -97,47 +86,47 @@
         <text class="reading-copy">{{dream.result.underneath}}</text>
       </view>
 
-    <view wx:if="{{dream.result.metaphysical_resonance || (dream.result.metaphysical_reading && (dream.result.metaphysical_reading.temperament || dream.result.metaphysical_reading.dream_echo || dream.result.metaphysical_reading.tension || dream.result.metaphysical_reading.rhythm))}}" class="reading-block metaphysical-reading">
-      <view class="metaphysical-heading">
-        <text class="reading-label">命理视角</text>
-        <text class="metaphysical-caption">出生节律</text>
+      <view wx:if="{{dream.result.metaphysical_resonance || (dream.result.metaphysical_reading && (dream.result.metaphysical_reading.temperament || dream.result.metaphysical_reading.dream_echo || dream.result.metaphysical_reading.tension || dream.result.metaphysical_reading.rhythm))}}" class="reading-block metaphysical-reading">
+        <view class="metaphysical-heading">
+          <text class="reading-label">命理视角</text>
+          <text class="metaphysical-caption">出生节律</text>
+        </view>
+        <block wx:if="{{dream.result.metaphysical_reading}}">
+          <view wx:if="{{dream.result.metaphysical_reading.temperament}}" class="metaphysical-subsection">
+            <text class="metaphysical-subtitle">这次被调动的底色</text>
+            <text class="metaphysical-copy">{{dream.result.metaphysical_reading.temperament}}</text>
+          </view>
+          <view wx:if="{{dream.result.metaphysical_reading.dream_echo}}" class="metaphysical-subsection">
+            <text class="metaphysical-subtitle">与这个梦的呼应</text>
+            <text class="metaphysical-copy">{{dream.result.metaphysical_reading.dream_echo}}</text>
+          </view>
+          <view wx:if="{{dream.result.metaphysical_reading.tension}}" class="metaphysical-subsection">
+            <text class="metaphysical-subtitle">梦里的拉扯</text>
+            <text class="metaphysical-copy">{{dream.result.metaphysical_reading.tension}}</text>
+          </view>
+          <view wx:if="{{dream.result.metaphysical_reading.rhythm}}" class="metaphysical-subsection metaphysical-rhythm">
+            <text class="metaphysical-subtitle">当下的节奏</text>
+            <text class="metaphysical-copy">{{dream.result.metaphysical_reading.rhythm}}</text>
+          </view>
+        </block>
+        <text wx:if="{{dream.result.metaphysical_resonance}}" class="metaphysical-resonance">{{dream.result.metaphysical_resonance}}</text>
       </view>
-      <block wx:if="{{dream.result.metaphysical_reading}}">
-        <view wx:if="{{dream.result.metaphysical_reading.temperament}}" class="metaphysical-subsection">
-          <text class="metaphysical-subtitle">这次被调动的底色</text>
-          <text class="metaphysical-copy">{{dream.result.metaphysical_reading.temperament}}</text>
-        </view>
-        <view wx:if="{{dream.result.metaphysical_reading.dream_echo}}" class="metaphysical-subsection">
-          <text class="metaphysical-subtitle">与这个梦的呼应</text>
-          <text class="metaphysical-copy">{{dream.result.metaphysical_reading.dream_echo}}</text>
-        </view>
-        <view wx:if="{{dream.result.metaphysical_reading.tension}}" class="metaphysical-subsection">
-          <text class="metaphysical-subtitle">梦里的拉扯</text>
-          <text class="metaphysical-copy">{{dream.result.metaphysical_reading.tension}}</text>
-        </view>
-        <view wx:if="{{dream.result.metaphysical_reading.rhythm}}" class="metaphysical-subsection metaphysical-rhythm">
-          <text class="metaphysical-subtitle">当下的节奏</text>
-          <text class="metaphysical-copy">{{dream.result.metaphysical_reading.rhythm}}</text>
-        </view>
-      </block>
-      <text wx:if="{{dream.result.metaphysical_resonance}}" class="metaphysical-resonance">{{dream.result.metaphysical_resonance}}</text>
-      </view>
-    </view>
+    </block>
 
     <!-- 第三层：完整展开，默认收起 -->
     <view wx:if="{{!interpretationUnavailable}}" class="tier-toggle" bindtap="toggleFullReading">
-      <text class="tier-toggle-label">{{showFullReading ? '收起完整解读' : '展开完整解读'}}</text>
-      <text class="tier-toggle-icon {{showFullReading ? 'is-open' : ''}}">⌄</text>
+      <text class="tier-toggle-label">完整解读</text>
+      <text class="tier-toggle-icon">{{showFullReading ? '收起 ↑' : '展开 ↓'}}</text>
     </view>
 
     <view wx:if="{{showFullReading && !interpretationUnavailable}}" class="tier-full">
       <view class="reading-block">
-        <text class="reading-label">梦里发生了什么</text>
+        <text class="reading-label-neutral">梦里发生了什么</text>
         <text class="reading-copy">{{dream.result.dream_translation}}</text>
       </view>
 
       <view wx:if="{{dream.result.referenced_life_note}}" class="reading-block life-note-reading">
-        <text class="reading-label">你之前提到过</text>
+        <text class="reading-label-neutral">你之前提到过</text>
         <text class="reading-copy">"{{dream.result.referenced_life_note.text}}"</text>
         <view class="life-note-footer" bindtap="openLifeNoteSource">
           <text class="life-note-date">{{dream.result.referenced_life_note.sourceDate}}</text>
@@ -146,7 +135,7 @@
       </view>
 
       <view class="reading-block">
-        <text class="reading-label">与你有关</text>
+        <text class="reading-label-neutral">与你有关</text>
         <view class="connection-list">
           <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{item}}</text>
         </view>
@@ -154,28 +143,29 @@
       </view>
 
       <view wx:if="{{!interpretationUnavailable}}" class="reading-block alternative-reading">
-        <text class="reading-label">另一种可能</text>
+        <text class="reading-label-neutral">另一种可能</text>
         <text class="reading-copy">{{dream.result.alternative_reading}}</text>
       </view>
+    </view>
 
-      <view wx:if="{{dream.result.one_small_act}}" class="reading-block">
-        <text class="reading-label">今天的小行动</text>
-        <text class="reading-copy">{{dream.result.one_small_act}}</text>
-      </view>
+    <!-- 「今天的小行动」不藏在完整解读折叠里，设计稿把它放在折叠区之后、
+         始终可见 -->
+    <view wx:if="{{dream.result.one_small_act && !interpretationUnavailable}}" class="today-act">
+      <text class="reading-label">今天的小行动</text>
+      <text class="reading-copy">{{dream.result.one_small_act}}</text>
     </view>
   </view>
 
-  <!-- 每屏一个实心主按钮：收藏梦卡。分享/保存完整解读/删除全部降级为
-       主按钮下方的一行轻量文字链，不再用第二个按钮块与主按钮抢视觉权重。 -->
-  <block wx:if="{{!interpretationUnavailable}}">
-    <button class="primary-button" bindtap="saveCard">{{cardSaved ? '已收藏梦卡' : '收藏梦卡'}}</button>
-    <view class="action-links">
-      <button wx:if="{{!sharePath}}" class="action-link" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard">分享这张梦卡</button>
-      <button wx:else class="action-link" open-type="share">分享给朋友</button>
-      <button class="action-link" bindtap="saveFullReading">保存完整解读</button>
-      <button class="action-link action-link-delete" bindtap="deleteDream">删除这个梦</button>
-    </view>
-  </block>
+  <!-- 底部操作：设计稿是一行三个平级文字链（收藏 / 分享 / 删除），
+       不再用实心主按钮。「保存完整解读」「再记一个梦」「梦境档案」
+       设计稿没有画，收进下面一个克制的「更多」折叠，不与这一行抢视觉权重。
+       未生成解读时只保留删除入口。 -->
+  <view class="primary-actions">
+    <button wx:if="{{!interpretationUnavailable}}" class="primary-action-link" bindtap="saveCard">◌ {{cardSaved ? '已收藏梦卡' : '收藏梦卡'}}</button>
+    <button wx:if="{{!interpretationUnavailable && !sharePath}}" class="primary-action-link" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard">↗ 分享梦卡</button>
+    <button wx:if="{{!interpretationUnavailable && sharePath}}" class="primary-action-link" open-type="share">↗ 分享梦卡</button>
+    <button class="primary-action-link primary-action-delete" bindtap="deleteDream">删除梦境</button>
+  </view>
 
   <view class="more-toggle" bindtap="toggleMoreActions">
     <text class="more-toggle-label">更多</text>
@@ -183,12 +173,20 @@
   </view>
 
   <view wx:if="{{showMoreActions}}" class="more-actions">
+    <button wx:if="{{!interpretationUnavailable}}" class="text-button" bindtap="saveFullReading">保存完整解读</button>
     <button class="text-button" bindtap="newDream">再记一个梦</button>
     <button class="text-button" bindtap="openArchive">梦境档案</button>
-    <!-- 未生成解读时，删除入口没有出现在上方的 action-links 行里，
-         这里补一个兜底入口，保证原梦仍然可删除 -->
-    <button wx:if="{{interpretationUnavailable}}" class="text-button delete-button" bindtap="deleteDream">删除这个梦</button>
   </view>
+
+  <!-- 聊聊这个梦：设计稿放在页面最底部，所有解读内容与操作区之后 -->
+  <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry" bindtap="openDreamChat">
+    <view class="chat-entry-copy">
+      <text class="reading-label-neutral">聊聊这个梦</text>
+      <text class="chat-entry-question">{{dream.result.integration_question}}</text>
+    </view>
+    <text class="chat-entry-arrow">→</text>
+  </view>
+
   <text wx:if="{{shareImagePath}}" class="share-ready">梦卡图已准备，可保存或分享</text>
   <canvas type="2d" id="shareCanvas" class="share-canvas"></canvas>
 </view>

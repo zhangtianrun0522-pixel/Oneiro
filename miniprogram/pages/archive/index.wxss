@@ -1,18 +1,267 @@
+/* ── 头部：单行「标题 + 计数」，baseline 对齐、两端对齐 ──
+   设计稿 4a 去掉了 ONEIRO/ARCHIVE 品牌行与 Private Dream Archive 英文眉，
+   .archive-header 是页面专属的头部行，不复用 app.wxss 的 .brand/.eyebrow/.title */
+.archive-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.archive-header-title {
+  color: #211d17;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+/* 设计稿字面值 rgba(33,29,23,0.4) 在 --paper(#F2ECDF) 上实测约 2.4:1，
+   11px 小字远达不到 4.5:1；改用已有的 --ink-70 token（同一底色下约 6.1:1）。 */
+.archive-header-count {
+  color: var(--ink-70);
+  font-size: 22rpx;
+}
+
+.filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  margin-top: var(--space-tight);
+  padding: 18rpx 20rpx;
+  border-left: 3rpx solid rgba(184, 134, 59, 0.54);
+  background: var(--paper-raised);
+  color: rgba(33, 29, 23, 0.62);
+  font-size: var(--fs-label);
+}
+
+.filter-clear {
+  flex: 0 0 auto;
+  color: var(--gold-line);
+  font-size: var(--fs-label);
+}
+
 .empty {
   margin-top: var(--space-block);
   padding: 36rpx 0;
   border-top: 1rpx solid rgba(33, 29, 23, 0.12);
-  border-right: 0;
   border-bottom: 1rpx solid rgba(33, 29, 23, 0.12);
-  border-left: 0;
-  border-radius: 0;
   color: rgba(33, 29, 23, 0.5);
   font-size: var(--fs-aux);
   line-height: 1.8;
 }
 
+/* ── 本月观察牌组 ──────────────────────────────────────────
+   .month-observation-deck 是定位容器，背后两层 .deck-shadow（纸色、旋转
+   偏移）垫出「一叠牌」的厚度，.month-observation 是叠在最上面那张深墨卡。
+   数据上只有当月这一张卡（dreamMemory.buildMonthlyCard 不产出历史月份
+   数组），所以只做叠牌厚度的静态视觉，不做设计稿里的左右翻页圆点或
+   「‹ 滑动翻阅其他月份 ›」滑动提示——那会呈现出并不存在的翻页能力。
+   卡片本身给了一个明确的 rpx 高度（对应设计稿 214px），因为绝对定位的
+   .deck-shadow 需要一个有具体高度的定位祖先才能用百分比撑开；卡内文案
+   全部来自 dreamMemory 的模板字符串，长度有界，不会撑爆这个高度。 */
+.month-observation-deck {
+  position: relative;
+  height: 428rpx;
+  margin-top: 40rpx;
+  margin-bottom: 36rpx;
+}
+
+.deck-shadow {
+  position: absolute;
+  border: 2rpx solid rgba(33, 29, 23, 0.1);
+  box-shadow: 0 12rpx 32rpx rgba(33, 29, 23, 0.1);
+}
+
+.deck-shadow-2 {
+  top: 24rpx;
+  left: 28rpx;
+  z-index: 0;
+  width: calc(100% - 28rpx);
+  height: calc(100% - 24rpx);
+  background: #e8dfc9;
+  transform: rotate(3.5deg);
+}
+
+.deck-shadow-1 {
+  top: 12rpx;
+  left: 14rpx;
+  z-index: 1;
+  width: calc(100% - 14rpx);
+  height: calc(100% - 12rpx);
+  background: #ede4d0;
+  transform: rotate(1.5deg);
+}
+
+.month-observation {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 40rpx;
+  background: var(--ink);
+  color: #f5f2e9;
+  box-shadow: 0 28rpx 60rpx rgba(33, 29, 23, 0.28);
+}
+
+.mo-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+/* 深卡上的对比度核算（bg #211d17，相对亮度 L≈0.0127）：
+   - 设计稿字面值 rgba(184,134,59,0.85) 精确核算约 4.13:1，够不到 4.5:1
+     （简报估算的约 4.8:1 有偏差）；改用不透明 --gold-line（#B8863B）,
+     实测约 5.20:1，与本文件其余深卡金色标签保持一致。 */
+.mo-eyebrow {
+  display: block;
+  color: var(--gold-line);
+  font-size: 19rpx;
+  letter-spacing: 6rpx;
+}
+
+/* 设计稿字面值 rgba(245,242,233,0.4) 约 3.51:1，不达标；
+   提到 0.5 后约 4.71:1，通过。卡内其余次级文字统一复用这个不透明度。 */
+.mo-meta {
+  display: block;
+  margin-top: 6rpx;
+  color: rgba(245, 242, 233, 0.5);
+  font-size: 21rpx;
+  letter-spacing: 2rpx;
+}
+
+/* 环形徽标是纯装饰图形，按“装饰图形 ≥3:1”核算：设计稿边框用 0.5 透明度
+   的旧金在深卡上只有约 2.29:1，不够；改成不透明 --gold-line（约 5.20:1）。 */
+.mo-badge {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 52rpx;
+  height: 52rpx;
+  border: 2rpx solid var(--gold-line);
+  border-radius: 50%;
+}
+
+.mo-badge-dot {
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 50%;
+  background: var(--gold-line);
+}
+
+/* 纯分隔线，不承载文字信息，理论上可以豁免非文本对比度要求；
+   为了和卡内其余金色元素统一，这里同样改用不透明 --gold-line。 */
+.mo-divider {
+  width: 44rpx;
+  height: 2rpx;
+  margin: 28rpx 0 24rpx;
+  background: var(--gold-line);
+}
+
+/* rgba(242,236,223,0.85) 在深卡上约 10.6:1，远超 4.5:1 门槛 */
+.mo-copy {
+  display: block;
+  flex: 1;
+  color: rgba(242, 236, 223, 0.85);
+  font-family: var(--font-serif);
+  font-size: 34rpx;
+  line-height: 1.65;
+}
+
+.mo-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+/* 设计稿字面值 rgba(245,242,233,0.45) 约 4.08:1，同样够不到 4.5:1；
+   统一提到 0.5（约 4.71:1），与 .mo-meta 保持一致 */
+.mo-bottom-left {
+  color: rgba(245, 242, 233, 0.5);
+  font-size: 21rpx;
+}
+
+/* 不透明 --gold-line 约 5.20:1，设计稿此处本就是不透明色，无需调整 */
+.mo-bottom-right {
+  flex-shrink: 0;
+  color: var(--gold-line);
+  font-size: 21rpx;
+}
+
+/* ── 重复线索 ──────────────────────────────────────────────
+   浅纸背景上的「眉标签」统一用 --gold-ink（#8A5D29，在 --paper 上约
+   4.85:1，app.wxss 顶部注释已校准），不用设计稿字面值 rgba(33,29,23,0.35)
+   （约 2.12:1，不达标）或 #B8863B（约 2.74:1，同样不达标）。 */
+.recurring-clues {
+  margin-top: 24rpx;
+}
+
+.recurring-clues-label {
+  display: block;
+  color: var(--gold-ink);
+  font-size: 22rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.recurring-clues-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.recurring-clue-tag {
+  padding: 10rpx 20rpx;
+  border-radius: 4rpx;
+  background: rgba(184, 134, 59, 0.12);
+  color: var(--gold-ink);
+  font-size: 22rpx;
+}
+
+/* ── 阶段梦境原型条 ──────────────────────────────────────────
+   设计稿里独立于卡片之外的完整入口，给了明确的 tap 区域（--tap-min）,
+   与卡片底行的快捷角标并存 */
+.archetype-strip {
+  display: flex;
+  min-height: var(--tap-min);
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 40rpx;
+  padding: 24rpx 28rpx;
+  border: 2rpx solid rgba(184, 134, 59, 0.4);
+}
+
+.archetype-strip-label {
+  display: block;
+  color: var(--gold-ink);
+  font-size: 20rpx;
+  letter-spacing: 2rpx;
+}
+
+.archetype-strip-value {
+  display: block;
+  margin-top: 8rpx;
+  color: #211d17;
+  font-family: var(--font-serif);
+  font-size: 26rpx;
+}
+
+/* 设计稿字面值 rgba(33,29,23,0.4) 约 2.4:1，同上不达标，改用 --ink-70 */
+.archetype-strip-arrow {
+  flex-shrink: 0;
+  color: var(--ink-70);
+  font-size: 22rpx;
+}
+
+/* ── 月份分组列表 ─────────────────────────────────────────── */
 .archive-list {
-  margin-top: var(--space-block);
+  margin-top: 40rpx;
 }
 
 .timeline-month {
@@ -23,27 +272,17 @@
   margin-top: 0;
 }
 
+/* 与重复线索/阶段原型标签同一套「眉标签」颜色规则，统一用 --gold-ink */
 .timeline-month-label {
   display: block;
-  color: #211d17;
-  font-size: var(--fs-body);
-  font-weight: 500;
-  letter-spacing: 1rpx;
+  color: var(--gold-ink);
+  font-size: 22rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
 }
 
 .timeline-track {
-  position: relative;
-  margin-top: 10rpx;
-}
-
-.timeline-track::before {
-  position: absolute;
-  top: 18rpx;
-  bottom: 18rpx;
-  left: 19rpx;
-  width: 1rpx;
-  background: rgba(33, 29, 23, 0.16);
-  content: '';
+  margin-top: 20rpx;
 }
 
 .timeline-entry {
@@ -52,73 +291,33 @@
   width: 100%;
   min-height: 168rpx;
   margin: 0;
-  padding: 18rpx 0;
+  padding: 24rpx 0;
   border: 0;
+  border-bottom: 1rpx solid rgba(33, 29, 23, 0.08);
   background: transparent;
   text-align: left;
+}
+
+.timeline-entry:last-child {
+  border-bottom: 0;
 }
 
 .timeline-entry::after {
   border: 0;
 }
 
-.timeline-rail {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36rpx;
-  flex: 0 0 36rpx;
-  align-self: stretch;
-}
-
-.timeline-node {
-  position: relative;
-  z-index: 1;
-  width: 11rpx;
-  height: 11rpx;
-  border: 4rpx solid var(--gold-line);
-  border-radius: 50%;
-  background: var(--paper);
-}
-
-.timeline-node.is-key-node {
-  width: 15rpx;
-  height: 15rpx;
-  border-color: var(--gold-line);
-  background: var(--gold-line);
-  box-shadow: 0 0 0 5rpx rgba(184, 134, 59, 0.12);
-}
-
-/* 「一叠牌」暗示：frame 是不裁切的定位容器，::before 在其身后垫一张
-   偏移的纸色底卡（细描边即可，不需要投影），archive-thumb 本身裁切
-   缩略图并叠一层轻投影，读作最上面那张牌盖住了底下一叠 */
 .archive-thumb-frame {
   position: relative;
-  width: 106rpx;
-  height: 132rpx;
-  flex: 0 0 106rpx;
-}
-
-.archive-thumb-frame::before {
-  content: '';
-  position: absolute;
-  top: 6rpx;
-  left: 6rpx;
-  width: 106rpx;
-  height: 132rpx;
-  border: 1rpx solid rgba(184, 134, 59, 0.3);
-  background: var(--paper-raised);
+  width: 76rpx;
+  height: 100rpx;
+  flex: 0 0 76rpx;
 }
 
 .archive-thumb {
   position: relative;
-  z-index: 1;
-  width: 106rpx;
-  height: 132rpx;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  box-shadow: 0 4rpx 10rpx rgba(33, 29, 23, 0.16);
   background: linear-gradient(145deg, #18202a, #68737c 62%, #e4e4dc);
 }
 
@@ -143,11 +342,11 @@
   align-items: flex-end;
   width: 100%;
   height: 100%;
-  padding: 12rpx 10rpx;
   box-sizing: border-box;
+  padding: 8rpx 7rpx;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(5, 7, 12, 0.48));
   color: rgba(255, 255, 255, 0.72);
-  font-size: 15rpx;
+  font-size: 11rpx;
   font-weight: 800;
   letter-spacing: 1rpx;
 }
@@ -155,247 +354,32 @@
 .timeline-copy {
   min-width: 0;
   flex: 1;
-  padding: 0 16rpx;
+  padding-left: 24rpx;
+}
+
+.archive-title {
+  display: block;
+  color: #211d17;
+  font-family: var(--font-serif);
+  font-size: 27rpx;
+}
+
+/* 设计稿字面值 rgba(33,29,23,0.45) 在 --paper 上实测约 2.74:1，不达标；
+   改用已有的 --ink-70 token（同一底色下约 6.1:1，与 .archive-header-count
+   一致），11px 小字必须过 4.5:1 */
+.archive-meta {
+  display: block;
+  margin-top: 8rpx;
+  overflow: hidden;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .timeline-repeat {
   display: block;
   margin-top: 8rpx;
-  color: rgba(184, 134, 59, 0.86);
-  font-size: var(--fs-label);
-}
-
-.deck-count {
-  display: block;
-  margin-top: var(--space-tight);
-  color: var(--ink-55);
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 5rpx;
-}
-
-.insight-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12rpx;
-  margin-top: var(--space-tight);
-}
-
-/* .insight-key / .insight-value 只出现在深色的 .mo-tags 里，因此按
-   暗底校准：--gold-line 在 #211d17 上 5.2:1，胶囊底用低透明度旧金
-   （flatten 后约 #392e1d）配 92% 暖纸字，实测约 9.6:1，远超 4.5:1 门槛。 */
-.insight-key {
-  color: var(--gold-line);
-  font-size: var(--fs-label);
-  font-weight: 800;
-}
-
-.insight-value {
-  padding: 7rpx 14rpx;
-  border: 1rpx solid rgba(184, 134, 59, 0.35);
-  border-radius: 0;
-  background: rgba(184, 134, 59, 0.16);
-  color: rgba(242, 236, 223, 0.92);
-  font-size: var(--fs-label);
-}
-
-.filter-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24rpx;
-  margin-top: var(--space-tight);
-  padding: 18rpx 20rpx;
-  border-left: 3rpx solid rgba(184, 134, 59, 0.54);
-  background: var(--paper-raised);
-  color: rgba(33, 29, 23, 0.62);
-  font-size: var(--fs-label);
-}
-
-.filter-clear {
-  flex: 0 0 auto;
-  color: var(--gold-line);
-  font-size: var(--fs-label);
-}
-
-.archetype-banner-arrow {
-  color: var(--gold-line);
-}
-
-/* .archive-title 在「关键时刻」条目内外最终显示效果一致（键时刻的
-   .timeline-entry.is-key-moment .archive-title 特化色已并入这条通用规则） */
-.archive-title {
-  display: block;
-  color: #211d17;
-  font-size: var(--fs-body);
-  font-weight: 600;
-  letter-spacing: 1rpx;
-}
-
-.archive-weather {
-  display: block;
-  width: 360rpx;
-  margin-top: 10rpx;
-  overflow: hidden;
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.archive-date {
-  margin-left: auto;
-  color: var(--ink-55);
-  font-size: var(--fs-label);
-  letter-spacing: 4rpx;
-}
-
-.timeline-copy .archive-date {
-  display: block;
-  margin-left: 0;
-  color: var(--ink-55);
-  font-size: var(--fs-label);
-  letter-spacing: 2rpx;
-}
-
-.timeline-copy .archive-weather {
-  width: auto;
-  margin-top: 8rpx;
-}
-
-/* ── 本月观察：合并原「阶段观察 / 本月主牌 / 阶段原型」三张卡 ──
-   现在是全页唯一的反色卡片（深墨底 var(--ink) + 暖纸字 var(--paper)），
-   用来把「本月观察」立成全页视觉主角。.month-observation-deck 是定位
-   容器，背后两层 .deck-shadow（纸色、旋转偏移）垫出「一叠牌」的厚度，
-   .month-observation 本身是叠在最上面那张牌。数据上只有当月这一张卡
-   （dreamMemory.buildMonthlyCard 不产出历史月份数组），所以只做叠牌厚度
-   的静态视觉，不做左右翻页圆点或滑动交互——避免呈现不存在的翻页能力。 */
-.month-observation-deck {
-  position: relative;
-  margin-top: var(--space-block);
-  margin-bottom: 20rpx;
-}
-
-.deck-shadow {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  border: 1rpx solid rgba(184, 134, 59, 0.26);
-  background-color: var(--paper-raised);
-  background-image: var(--paper-noise);
-  background-repeat: repeat;
-  background-size: 64rpx 64rpx;
-  box-shadow: 0 6rpx 16rpx rgba(33, 29, 23, 0.1);
-}
-
-.deck-shadow-2 {
-  z-index: 0;
-  transform: rotate(2.6deg) translate(6rpx, 8rpx);
-}
-
-.deck-shadow-1 {
-  z-index: 1;
-  transform: rotate(1.1deg) translate(3rpx, 4rpx);
-}
-
-.month-observation {
-  position: relative;
-  z-index: 2;
-  padding: var(--space-group);
-  border: 1rpx solid rgba(184, 134, 59, 0.4);
-  background-color: var(--ink);
-  box-shadow: 0 14rpx 30rpx rgba(33, 29, 23, 0.28);
-}
-
-/* archive 页唯一的朱砂点睛：标题前一枚 8rpx 印章方块，纯 CSS 伪元素，
-   不需要改 WXML。深卡底上标签一律用 --gold-line（在 #211d17 上 5.2:1），
-   而不是给浅纸背景校准过的 --gold-ink（在深底上对比度会塌陷）。 */
-.mo-label {
-  display: block;
-  color: var(--gold-line);
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 3rpx;
-}
-
-.mo-label::before {
-  content: '';
-  display: inline-block;
-  width: 8rpx;
-  height: 8rpx;
-  margin-right: 10rpx;
-  background: var(--cinnabar);
-  vertical-align: middle;
-}
-
-.mo-title {
-  display: block;
-  margin-top: var(--space-tight);
-  color: var(--paper);
-  font-family: var(--font-serif);
-  font-size: var(--fs-title);
-  font-weight: 600;
-  letter-spacing: 2rpx;
-}
-
-.mo-divider {
-  width: 44rpx;
-  height: 1rpx;
-  margin: var(--space-tight) 0 12rpx;
-  background: rgba(184, 134, 59, 0.5);
-}
-
-.mo-copy {
-  display: block;
-  color: rgba(242, 236, 223, 0.85);
-  font-size: var(--fs-aux);
-  line-height: 1.72;
-}
-
-.mo-tags { margin-top: var(--space-group); }
-
-.mo-archetype {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-  min-height: var(--tap-min);
-  margin-top: var(--space-tight);
-  padding-top: var(--space-tight);
-  border-top: 1rpx solid rgba(184, 134, 59, 0.3);
-}
-
-.mo-archetype-copy { color: rgba(242, 236, 223, 0.85); font-size: var(--fs-aux); font-weight: 700; }
-.mo-archetype-arrow { flex: 0 0 auto; color: var(--gold-line); font-size: var(--fs-label); font-weight: 700; }
-
-/* 重复线索：insights.recurringSymbols 是既有数据字段，与卡内「情绪/场景/
-   人物」互不重复；坐落在普通纸面背景上，复用与页面其余部分一致的
-   旧金浅底胶囊（--gold-ink 在 --paper 上 4.85:1，已由 app.wxss 顶部注释校准）。 */
-.recurring-clues { margin-top: var(--space-block); }
-
-.recurring-clues-label {
-  display: block;
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 3rpx;
-}
-
-.recurring-clues-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-  margin-top: var(--space-tight);
-}
-
-.recurring-clue-tag {
-  padding: 8rpx 16rpx;
-  border-radius: 0;
-  background: rgba(184, 134, 59, 0.12);
   color: var(--gold-ink);
   font-size: var(--fs-label);
 }

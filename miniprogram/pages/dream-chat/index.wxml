@@ -1,28 +1,31 @@
 <view class="chat-screen">
-  <view class="chat-brand">
-    <text>ONEIRO</text>
-    <text>PRIVATE DREAM NOTEBOOK</text>
-  </view>
+  <!-- 原先的 ONEIRO / PRIVATE DREAM NOTEBOOK 品牌行 + DREAM CONVERSATION
+       英文栏目眉已去掉：微信原生导航栏已经用 index.json 的
+       navigationBarTitleText 显示「聊聊这个梦」，这里不重复渲染
+       ←/标题，只保留设计稿要的第二行上下文（编号 · 梦名）。 -->
   <view class="chat-context" wx:if="{{dream}}">
-    <text class="context-label">DREAM CONVERSATION</text>
-    <text class="context-title">{{dream.result.title}}</text>
+    <text class="context-title">{{dream.result.card_no}}{{dream.result.card_no ? ' · ' : ''}}{{dream.result.title}}</text>
     <text class="context-dream">{{dream.dreamText}}</text>
   </view>
 
   <scroll-view class="message-list" scroll-y scroll-into-view="{{scrollTarget}}">
     <!-- 对话少时贴着输入器往上排，不在中间留一大片空白 -->
     <view class="message-stack">
+      <!-- role='user' → 「你」；role='assistant' 里第一条固定是打开对话的
+           追问（index===0），之后的助手轮次都是「回应」——数据层没有单独
+           的「问题/回应」字段，用位置区分是当前唯一可靠的信号 -->
       <view
         wx:for="{{messages}}"
         wx:key="index"
         id="message-{{index}}"
-        class="message-row {{item.role === 'user' ? 'is-user' : 'is-assistant'}}"
+        class="message-row {{item.role === 'user' ? 'is-user' : (index === 0 ? 'is-question' : 'is-response')}}"
       >
         <text wx:if="{{item.role === 'user'}}" class="message-role">你</text>
+        <text wx:elif="{{index === 0}}" class="message-role">追问</text>
         <text wx:else class="message-role">回应</text>
         <text class="message-copy">{{item.content}}</text>
       </view>
-      <view wx:if="{{sending}}" class="message-row is-assistant is-loading">
+      <view wx:if="{{sending}}" class="message-row is-response is-loading">
         <text class="message-role">回应</text>
         <text class="message-copy">正在沿着这个梦继续想…</text>
       </view>
@@ -50,13 +53,18 @@
       />
       <button
         class="{{recording ? 'voice-button recording' : 'voice-button'}}"
+        aria-label="按住说话"
         disabled="{{sending || recognizing || turnCount >= maxTurns}}"
         bindtap="onVoiceTap"
         bindtouchstart="onVoiceTouchStart"
         bindtouchend="onVoiceTouchEnd"
         bindtouchcancel="onVoiceTouchCancel"
       >{{recording ? recordingSeconds + 's' : '说'}}</button>
-      <button class="send-button" disabled="{{sending || recording || recognizing || turnCount >= maxTurns}}" bindtap="sendMessage">发送</button>
+      <!-- 设计稿没有画语音功能，只画了发送圆钮里的「↑」；语音是真实的
+           按住说话/识别链路，这里保留功能，只把两个按钮都改成设计稿的
+           正圆造型（见下方 wxss），发送按钮的可见内容换成设计稿的箭头，
+           用 aria-label 补回"发送"给辅助功能 -->
+      <button class="send-button" aria-label="发送" disabled="{{sending || recording || recognizing || turnCount >= maxTurns}}" bindtap="sendMessage">↑</button>
     </view>
     <view class="composer-foot">
       <text class="voice-note">{{recognizing ? '正在整理刚才的话…' : recording ? '松开后转成文字' : '按住「说」可以直接讲'}}</text>

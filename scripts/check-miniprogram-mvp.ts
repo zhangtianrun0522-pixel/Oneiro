@@ -835,7 +835,11 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', '聊聊这个梦'],
   ['miniprogram/pages/result/index.wxml', 'class="core-observation"'],
   ['miniprogram/pages/result/index.wxml', 'dream.result.reading_hook'],
-  ['miniprogram/pages/result/index.wxml', '三个视角'],
+  // 设计稿去掉了「三个视角」分组标题，三个 block 直接平铺。原先断言这个
+  // 字符串，改稿后它只剩在一句代码注释里——断言会假通过。改为断言第三个
+  // 视角（命理）的 block 类名：文化/心理已在上面各有一条，三条合起来才真正
+  // 证明三个视角都还在页面上。
+  ['miniprogram/pages/result/index.wxml', 'metaphysical-reading'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="toggleFullReading"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="toggleMoreActions"'],
   ['miniprogram/pages/result/index.wxml', '另一种可能'],
@@ -843,7 +847,8 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', 'bindtap="saveFullReading"'],
   ['miniprogram/pages/result/index.wxml', '收藏梦卡'],
   ['miniprogram/pages/result/index.wxml', '保存完整解读'],
-  ['miniprogram/pages/result/index.wxml', '分享这张梦卡'],
+  // 设计稿把操作区收成一行平级文字链，文案由「分享这张梦卡」缩短为「分享梦卡」
+  ['miniprogram/pages/result/index.wxml', '分享梦卡'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="newDream"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="openArchive"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="deleteDream"'],
@@ -1173,8 +1178,6 @@ const pageModules = {
 const homePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);
 homePage.onLoad({ fromShare: '1' });
 assert.equal(homePage.data.fromShare, true);
-homePage.openProfile();
-assert.equal(last(wx.navigations), '/pages/profile/index');
 const profilePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
 profilePage.onLoad();
 profilePage.onInput({ currentTarget: { dataset: { key: 'nickname' } }, detail: { value: ' Runtu ' } });
@@ -1446,7 +1449,6 @@ for (const expected of [
   'dream_submit_blocked',
   'interpretation_success',
   'dream_deleted',
-  'profile_open',
   'profile_view',
   'profile_saved',
   'dream_chat_open',

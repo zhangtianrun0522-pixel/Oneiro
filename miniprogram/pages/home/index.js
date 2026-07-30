@@ -186,7 +186,6 @@ function refreshPortraitAfterDream(dream) {
 Page({
   data: {
     fromShare: false,
-    recentDreams: [],
     dreamText: '',
     recording: false,
     recordingSeconds: 0,
@@ -630,45 +629,8 @@ Page({
     if (pendingDreamText && pendingDreamText !== this.data.dreamText) {
       this.setData({ dreamText: pendingDreamText });
     }
-    this.refreshRecentDreams();
     this.refreshHeroLabel();
   },
-
-  openProfile: function () {
-    analytics.trackEvent('profile_open', { source: 'home' });
-    tabNav.switchTab('pages/profile/index');
-  },
-
-  openArchive: function () {
-    analytics.trackEvent('archive_open', { source: 'home' });
-    tabNav.switchTab('pages/archive/index');
-  },
-
-  refreshRecentDreams: function () {
-    var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
-    this.setData({
-      recentDreams: archive.slice().sort(function (left, right) {
-        return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
-      }).slice(0, 5).map(function (item) {
-        return {
-          id: item.id,
-          title: item.result && item.result.title ? item.result.title : '一段未命名的梦',
-          date: item.createdAt ? String(item.createdAt).slice(5, 10).replace('-', ' · ') : '',
-          theme: item.result && item.result.card_theme ? item.result.card_theme : 'mist'
-        };
-      })
-    });
-  },
-
-  openRecentDream: function (event) {
-    var id = event.currentTarget.dataset.id;
-    var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
-    var dream = archive.filter(function (item) { return item.id === id; })[0];
-    if (!dream) return;
-    getApp().globalData.currentDream = dream;
-    wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(id) });
-  },
-
 
   onDreamInput: function (event) {
     this.setData({ dreamText: event.detail.value });

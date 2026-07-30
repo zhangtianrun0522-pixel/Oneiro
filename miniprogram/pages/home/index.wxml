@@ -61,20 +61,6 @@
   </view>
 
   <text wx:if="{{fromShare}}" class="share-note">你刚看到的是一张去隐私的梦卡。你也可以从一个画面开始，私密记下自己的梦。</text>
-  <text class="privacy-note">原梦会先保存，出生资料完全自愿。</text>
-
-  <view wx:if="{{recentDreams.length}}" class="recent-section">
-    <view class="recent-heading">
-      <text>最近的梦</text>
-      <text bindtap="openArchive">打开梦境档案 →</text>
-    </view>
-    <scroll-view class="recent-scroll" scroll-x="true" enable-flex="true" show-scrollbar="false">
-      <view wx:for="{{recentDreams}}" wx:key="id" class="recent-card theme-{{item.theme}}" data-id="{{item.id}}" bindtap="openRecentDream">
-        <text class="recent-date">{{item.date}}</text>
-        <text class="recent-title">{{item.title}}</text>
-      </view>
-    </scroll-view>
-  </view>
 </view>
 
 <view wx:if="{{analysisActive}}" class="analysis-overlay">

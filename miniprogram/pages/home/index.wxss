@@ -1,23 +1,23 @@
 /* padding-bottom 交给 app.wxss 的 .screen 统一处理（固定导航 + 安全区），
-   这里只覆写左右和顶部内距。之前写死 70rpx 会让主按钮被底部导航切掉。 */
+   这里只覆写左右和顶部内距。设计稿 padding: 64px 30px 0（1px = 2rpx）。
+   display:flex + flex-direction:column 让 .capture-stage 的 flex:1 能把
+   语音圆环推到屏幕纵向居中——这是清空后首屏「几乎全空」气质的关键。 */
 .screen {
   min-height: 100vh;
-  padding-top: 48rpx;
-  padding-right: 48rpx;
-  padding-left: 48rpx;
+  display: flex;
+  flex-direction: column;
+  padding-top: 128rpx;
+  padding-right: 60rpx;
+  padding-left: 60rpx;
   color: var(--ink);
 }
 
 .brand {
-  margin-bottom: var(--space-block);
-  color: var(--ink);
-  font-size: var(--fs-aux);
-  font-weight: 800;
-  letter-spacing: 7rpx;
-}
-
-.profile {
-  margin-top: var(--space-group);
+  color: rgba(33, 29, 23, 0.3);
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 10rpx;
+  text-align: center;
 }
 
 /* 朱砂只留给 .title-accent 这一处点睛，分享提示条改用旧金细线，
@@ -32,52 +32,23 @@
   line-height: 1.7;
 }
 
-.field-help {
-  display: block;
-  margin-top: var(--space-tight);
-  color: rgba(159, 183, 201, 0.44);
-  font-size: var(--fs-label);
-  line-height: 1.6;
-}
-
-.profile-row {
-  display: flex;
-  gap: 36rpx;
-}
-
-.profile-col {
-  flex: 1;
-  min-width: 0;
-}
-
-.profile-link {
-  width: auto !important;
-  min-height: var(--tap-min);
-  padding: 0 4rpx;
-  border-radius: 0;
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  letter-spacing: 1rpx;
-  line-height: var(--tap-min);
-}
-
 /* ── 手势采集区：不再是「输入框 + 保存按钮」，整块区域本身就是交互体 ──
    文字区可原地点击编辑；语音圆环常驻，长按说话，下滑提交/上滑取消。
-   这一区是全页视觉主角，其余内容（分享横幅、最近的梦）都排在它下方，
-   靠滚动可见，不挤占首屏。 */
+   flex:1 + 纵向居中，让圆环落在屏幕中央偏下，是设计稿「首屏几乎全空」
+   气质的主要来源；下方分享横幅（若存在）排在这一区外，不挤占它。 */
 .capture-stage {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
-  margin-top: 8rpx;
+  justify-content: center;
 }
 
 .capture-eyebrow {
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 3rpx;
+  color: rgba(33, 29, 23, 0.32);
+  font-size: 19rpx;
+  font-weight: 700;
+  letter-spacing: 6rpx;
   text-align: center;
 }
 
@@ -87,14 +58,14 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 260rpx;
-  margin-top: var(--space-tight);
+  height: 344rpx;
+  margin-top: 24rpx;
   padding: 0 8rpx;
 }
 
 .capture-static {
   width: 100%;
-  color: var(--ink-55);
+  color: rgba(33, 29, 23, 0.45);
   font-family: var(--font-serif);
   font-size: var(--fs-title);
   line-height: 1.6;
@@ -106,11 +77,11 @@
 }
 
 /* textarea 默认 height:150px，必须显式给 height 才压得下去；透明背景+
-   无边框，编辑态在视觉上尽量贴近静态展示态，减少「切进了另一个控件」的割裂感 */
+   无边框，字号/字族/居中方式与静态展示态完全一致，避免点进编辑时文字跳动 */
 .capture-textarea {
   box-sizing: border-box;
   width: 100%;
-  height: 220rpx;
+  height: 100%;
   background: transparent;
   color: var(--ink);
   font-family: var(--font-serif);
@@ -121,12 +92,12 @@
 
 .capture-waveform { display: flex; flex-direction: column; align-items: center; }
 .wave-bars { display: flex; align-items: flex-end; justify-content: center; gap: 8rpx; height: 68rpx; }
-.wave-bar { width: 6rpx; border-radius: 4rpx; background: rgba(178, 58, 50, 0.6); animation: wave-breathe 0.9s ease-in-out infinite; }
+.wave-bar { width: 6rpx; border-radius: 4rpx; background: rgba(193, 68, 59, 0.6); animation: wave-breathe 0.9s ease-in-out infinite; }
 @keyframes wave-breathe {
   0%, 100% { transform: scaleY(0.6); opacity: 0.6; }
   50% { transform: scaleY(1); opacity: 1; }
 }
-.capture-waveform-note { display: block; margin-top: 14rpx; color: rgba(178, 58, 50, 0.75); font-size: var(--fs-label); text-align: center; }
+.capture-waveform-note { display: block; margin-top: 14rpx; color: rgba(193, 68, 59, 0.75); font-size: var(--fs-label); text-align: center; }
 
 .capture-recognizing { color: var(--gold-ink); font-size: var(--fs-aux); text-align: center; }
 
@@ -153,30 +124,31 @@
    会失真）——这是项目已踩过的坑。
    极简风格：描边圆环 + 中心一点，颜色随状态切换，不再靠文字标签自证；
    可发现性交给下方的 .capture-hint 一行提示文字承担。
-   静止态叠加一圈缓慢的呼吸光晕（3s 一次，box-shadow 外环从 0 扩到
+   设计稿基础态：120px 圆环 + 8px 实心圆点（1px = 2rpx）。
+   静止态叠加一圈缓慢的呼吸光晕（3.2s 一次，box-shadow 外环从 0 扩到
    18rpx 再淡出），幅度克制，读作「呼吸」而非「闪烁」。 */
 .voice-button {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 220rpx !important;
-  height: 220rpx;
+  width: 240rpx !important;
+  height: 240rpx;
   margin: 0 auto;
   padding: 0;
-  border: 2rpx solid rgba(33, 29, 23, 0.32);
+  border: 1rpx solid rgba(33, 29, 23, 0.22);
   border-radius: 50%;
   background: transparent;
   box-shadow: 0 12rpx 30rpx rgba(109, 79, 38, 0.08), 0 0 0 0 rgba(33, 29, 23, 0.16);
-  animation: voice-button-breathe 3s ease-in-out infinite;
+  animation: voice-button-breathe 3.2s ease-in-out infinite;
   transition: width 0.25s, height 0.25s, border-color 0.25s, background 0.25s;
   touch-action: none;
 }
 .voice-button::after { border: 0; }
 
 .voice-dot {
-  width: 14rpx;
-  height: 14rpx;
+  width: 16rpx;
+  height: 16rpx;
   border-radius: 50%;
   background: rgba(33, 29, 23, 0.4);
   transition: background 0.25s;
@@ -214,32 +186,15 @@
   }
 }
 
-/* 手势最重要的可发现性线索，字号用 --fs-aux 而不是更小的 --fs-label，
-   保证「按住说 / 下滑进入解读」这类操作提示在暖纸底上足够清楚 */
+/* 手势最重要的可发现性线索 */
 .capture-hint {
   display: block;
-  margin-top: var(--space-tight);
-  color: var(--ink-55);
-  font-size: var(--fs-aux);
+  margin-top: 32rpx;
+  color: rgba(33, 29, 23, 0.35);
+  font-size: 23rpx;
   letter-spacing: 0.5rpx;
   text-align: center;
 }
-
-.privacy-note { margin-top: var(--space-tight); color: var(--ink-55); font-size: var(--fs-label); line-height: 1.6; text-align: center; }
-
-.recent-section { margin-top: var(--space-block); }
-.recent-heading { display: flex; align-items: center; justify-content: space-between; min-height: var(--tap-min); color: var(--ink-70); font-size: var(--fs-label); letter-spacing: 1rpx; }
-.recent-scroll { width: 100%; margin-top: var(--space-tight); white-space: nowrap; }
-/* 描边不承担分组职责（卡片本身已用横向滚动+间距分组），换成纸纹底+
-   细投影，比一圈灰描边更像一张有厚度的纸片 */
-.recent-card { display: inline-flex; flex-direction: column; justify-content: space-between; width: 250rpx; height: 172rpx; margin-right: 16rpx; padding: 20rpx; border: 0; background-color: #fbf6ec; background-image: var(--paper-noise); background-repeat: repeat; background-size: 64rpx 64rpx; box-shadow: 0 4rpx 10rpx rgba(33, 29, 23, 0.08); white-space: normal; }
-.recent-card.theme-tide, .recent-card.theme-moon { border-top: 4rpx solid #607f8b; }
-.recent-card.theme-threshold, .recent-card.theme-hearth { border-top: 4rpx solid #b8863b; }
-.recent-card.theme-shadow, .recent-card.theme-archive { border-top: 4rpx solid #526070; }
-.recent-card.theme-falling { border-top: 4rpx solid #b36c62; }
-.recent-date { color: var(--ink-55); font-size: var(--fs-label); letter-spacing: 2rpx; }
-/* 卡名沿用宋体，呼应梦卡本身的书卷气 */
-.recent-title { color: #211d17; font-family: var(--font-serif); font-size: var(--fs-aux); font-weight: 600; line-height: 1.5; }
 
 /* ── 解读进行中的浮层（原 new-dream 页，合并后由首页承载） ── */
 .analysis-overlay {

@@ -10,54 +10,32 @@
   color: var(--ink);
 }
 
-.chat-brand {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: var(--space-block);
-  color: #211d17;
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 6rpx;
-}
-
-.chat-brand text:last-child {
-  color: var(--ink-55);
-  font-size: var(--fs-label);
-  letter-spacing: 2rpx;
-}
-
-/* 语境卡与消息区之间是本页最大的一处版式节奏，改用旧金细线 */
+/* 顶部只保留设计稿要的「编号 · 梦名」一行，去掉英文栏目眉与品牌行，
+   字号对齐设计稿的 10.5px 说明文字 */
 .chat-context {
-  padding: 0 0 28rpx;
+  padding: 0 0 24rpx;
   border-bottom: 1rpx solid rgba(184, 134, 59, 0.4);
 }
 
-.context-label,
-.message-role,
 .guide-label {
   display: block;
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 3rpx;
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
 }
 
 .context-title {
   display: block;
-  margin-top: var(--space-tight);
-  color: #211d17;
-  font-family: var(--font-serif);
-  font-size: var(--fs-title);
-  font-weight: 600;
-  line-height: 1.35;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  letter-spacing: 1rpx;
 }
 
 .context-dream {
   display: -webkit-box;
   margin-top: var(--space-tight);
   overflow: hidden;
-  color: rgba(33, 29, 23, 0.56);
+  color: var(--ink-70);
   font-size: var(--fs-label);
   line-height: 1.7;
   -webkit-box-orient: vertical;
@@ -65,7 +43,7 @@
 }
 
 .guide-list { white-space: nowrap; margin-bottom: 16rpx; }
-.guide-chip { display: inline-block; margin-right: 12rpx; padding: 14rpx 18rpx; border: 1rpx solid rgba(184, 134, 59, 0.5); color: var(--ink-70); font-size: var(--fs-label); line-height: 1.35; }
+.guide-chip { display: inline-block; margin-right: 12rpx; padding: 12rpx 16rpx; border: 1rpx solid rgba(184, 134, 59, 0.5); border-radius: 4rpx; color: var(--ink-70); font-size: 20rpx; line-height: 1.35; }
 
 .message-list {
   flex: 1;
@@ -81,26 +59,62 @@
   padding-top: 20rpx;
 }
 
-/* 内边距/间距对齐参考稿的疏朗感：12px/14px 的气泡内边距，
-   消息之间 16px 的呼吸区（气泡结构本身不改，仍是不对称小圆角） */
+/* 消息间距对齐设计稿：78% 最大宽度，消息之间 16px 呼吸区。
+   标签（你/追问/回应）落在气泡外面，气泡本身改成设计稿的近直角
+   border-radius:2px，不再是旧的不对称小圆角 + 侧边强调线 */
 .message-row {
-  max-width: 88%;
+  max-width: 78%;
   margin-bottom: 32rpx;
-  padding: 24rpx 28rpx;
 }
 
-/* 不对称小圆角给出方向感：AI 消息左上直角贴着旧金强调边，
-   用户消息右上直角贴着深墨强调边，克制不做气泡尾巴 */
-.is-assistant { margin-right: auto; border-left: 3rpx solid rgba(184, 134, 59, 0.68); border-radius: 0 16rpx 16rpx 16rpx; background: #fbf6ec; }
-.is-user { margin-left: auto; border-right: 3rpx solid rgba(33, 29, 23, 0.58); border-radius: 16rpx 0 16rpx 16rpx; background: rgba(33, 29, 23, 0.055); }
-.is-user .message-role { color: rgba(33, 29, 23, 0.52); }
+.is-user { margin-left: auto; }
+.is-question,
+.is-response { margin-right: auto; }
 
-.message-copy {
+/* 「追问」「回应」标签同色：设计稿字面量 rgba(184,134,59,0.9) 在暖纸上
+   只有约 2.45:1，改用已校准的 --gold-ink（4.84:1） */
+.message-role {
   display: block;
-  margin-top: 12rpx;
-  color: rgba(33, 29, 23, 0.78);
-  font-size: var(--fs-aux);
-  line-height: 1.75;
+  margin-bottom: 10rpx;
+  color: var(--gold-ink);
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+/* 「你」标签：设计稿没画（用户气泡没有标签），产品所有者明确要求保留，
+   字面量对照 rgba(33,29,23,0.52) 约 3:1 不够，改用 --ink-70（6.1:1） */
+.is-user .message-role { color: var(--ink-70); }
+
+.message-copy { display: block; }
+
+/* 追问：唯一一个带底色的气泡，宋体斜体 */
+.is-question .message-copy {
+  padding: 24rpx 28rpx;
+  border-radius: 4rpx;
+  background: #ede4d0;
+  color: #211d17;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 27rpx;
+  line-height: 1.7;
+}
+
+/* 用户消息：深墨底、暖纸字，右对齐 */
+.is-user .message-copy {
+  padding: 24rpx 28rpx;
+  border-radius: 4rpx;
+  background: #211d17;
+  color: #f5f2e9;
+  font-size: 26rpx;
+  line-height: 1.7;
+}
+
+/* 回应：无气泡，纯文字，与追问/用户两种"有底色"的消息形成对比 */
+.is-response .message-copy {
+  color: rgba(33, 29, 23, 0.75);
+  font-size: 26rpx;
+  line-height: 1.8;
 }
 
 .is-loading { opacity: 0.62; }
@@ -115,27 +129,29 @@
 }
 
 .composer-row { display: flex; align-items: flex-end; gap: 12rpx; }
-.turn-limit { flex: 0 0 auto; color: var(--ink-55); font-size: var(--fs-label); }
+/* 字面量 --ink-55（约 3.95:1）在 11px 小字上不够稳，统一换成 --ink-70 */
+.turn-limit { flex: 0 0 auto; color: var(--ink-70); font-size: var(--fs-label); }
 
-/* 胶囊输入框：参考稿是浅底色圆角胶囊而非下划线单线，这里换成
-   同类的浅墨色底 + 全圆角，视觉上更贴近「说点什么…」的疏朗感 */
+/* 胶囊输入框：对齐设计稿 border-radius:20px / padding:11px 16px /
+   12.5px 字号（已是圆角胶囊，这里只收紧内边距与字号） */
 .chat-input {
   flex: 1;
   width: auto;
   min-width: 0;
   min-height: var(--tap-min);
   max-height: 160rpx;
-  padding: 17rpx 28rpx;
+  padding: 22rpx 32rpx;
   border: 0;
-  border-radius: 999rpx;
+  border-radius: 40rpx;
   background: rgba(33, 29, 23, 0.05);
   color: #211d17;
-  font-size: var(--fs-body);
+  font-size: 25rpx;
   line-height: 1.5;
 }
 
-/* 圆形提交按钮：说 / 发送两个按钮宽高相等，直接改成正圆即可对齐
-   参考稿的圆形提交按钮版式，不涉及任何手势逻辑改动 */
+/* 圆形提交按钮：设计稿是 34px 正圆，这里保持 --tap-min（88rpx/44pt）
+   触控最小尺寸不缩小，只让说 / 发送两个按钮的形状与配色贴近设计稿——
+   语音是真实功能（按住说话→识别），设计稿没画，予以保留，只换皮 */
 .voice-button,
 .send-button {
   flex: 0 0 var(--tap-min);
@@ -153,11 +169,12 @@
 /* dream-chat 页唯一的朱砂点睛：录音激活态。此前是与朱砂无关的琥珀色，
    现改为朱砂，呼应 home 页语音按钮录音态的同一处理 */
 .voice-button.recording { border-color: var(--cinnabar-ink); background: var(--cinnabar-ink); color: var(--paper-raised); animation: voice-breathing 1.5s ease-in-out infinite; }
-.send-button { border: 1rpx solid #211d17; background: #211d17; color: #f2ecdf; }
+/* 发送按钮：设计稿是黑底圆钮内含「↑」，箭头稍微放大一档更易读 */
+.send-button { border: 1rpx solid #211d17; background: #211d17; color: #f2ecdf; font-size: 28rpx; }
 .voice-button::after, .send-button::after { border: 0; }
 .voice-button[disabled], .send-button[disabled] { opacity: 0.36; }
 .composer-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12rpx; }
-.voice-note { color: var(--ink-55); font-size: var(--fs-label); }
+.voice-note { color: var(--ink-70); font-size: var(--fs-label); }
 
 @keyframes voice-breathing {
   0% { box-shadow: 0 0 0 0 rgba(178, 58, 50, 0.24); }
