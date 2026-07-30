@@ -147,6 +147,7 @@ vite.config.ts.timestamp-*
 /.claude/
 /.playwright-cli/
 .thumbnail
+/runtime/
 
 # Local design experiments and exported design sources
 /docs/design/*
