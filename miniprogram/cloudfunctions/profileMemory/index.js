@@ -416,27 +416,27 @@ function deterministicDraft(sources) {
   // 打开画像看到的是自己的使用统计，不是对自己的描述。梦的条数是系统的视角，
   // 不是这个人的样子。
   //
-  // 兜底文案能做到的上限，是从重复的主题里说出一种「看待事情的方式」，并且
-  // 老实承认这是有限观察。真正的画像要靠 AI 生成——如果线上长期看到的是这段
-  // 兜底文字，说明 profileMemory 没有配到 provider 凭据，那是要先修的地方。
-  const dreamCount = sources.dreams.length;
+  // 兜底也必须是一段连续的话，不能是表单——分栏小标题正是把画像变成统计报告
+  // 的那个东西。兜底做不到 AI 那样有风险的判断，但至少可以说一种倾向，而不是
+  // 把统计念一遍。线上长期看到的若是这段文字，说明 profileMemory 没配到
+  // provider 凭据，那才是要先修的地方。
   const openingState = recentNote
-    ? '你最近提到“' + recentNote + '”。'
+    ? '你最近提到“' + recentNote + '”，它还在你心里没有过去。'
     : recurringThemes
-      ? '你反复回到同一批画面，说明它们对你还没有过去。'
-      : dreamCount >= 3
+      ? '你反复回到同一批画面，它们对你还没有过去。'
+      : sources.dreams.length >= 3
         ? '你的梦目前还各走各的，没有稳定重复的线索——没有模式，本身也是一种阶段状态。'
         : '你正在开始留下可供理解自己的线索。';
-  const summaryParts = ['当下的状态：' + name + '，' + openingState];
-  if (priorUserEdit && priorUserEdit.summary) summaryParts[0] = '当下的状态：' + text(priorUserEdit.summary, 55);
-  if (recurringThemes) summaryParts.push('反复出现的主题：' + recurringThemes + '。');
-  // emotion 现在是短标签，但用户编辑过的旧数据仍可能带着句号结尾，直接拼上
-  // 「；这只是…」会渲染成「…显影。；这只是…」。先剥掉结尾标点再拼。
-  summaryParts.push('情绪的底色：' + String(emotion).replace(/[。．.；;，,]+$/, '') + '；这只是当前资料中的有限观察。');
-  if (sources.priorPortrait) summaryParts.push('正在变化的：新的记录会继续校正这份阶段性理解。');
+  // emotion 是短标签，但用户编辑过的旧数据仍可能带着句号结尾，直接往下拼会
+  // 渲染成「…显影。；这只是…」。先剥掉结尾标点。
+  const emotionLabel = String(emotion).replace(/[。．.；;，,]+$/, '');
+  const emotionClause = patterns.recurringEmotions[0]
+    ? '这些梦里最常留下来的感受是' + emotionLabel + '。'
+    : '';
   const summary = priorUserEdit && priorUserEdit.summary
     ? String(priorUserEdit.summary).trim().slice(0, 500)
-    : summaryParts.join('\n').slice(0, 200);
+    : (name + '，' + openingState + emotionClause
+      + '这只是当前资料里的有限观察，你可以修改或忽略它。').slice(0, 300);
   return {
     summary: summary,
     traits: cleanStrings(traits, 5, 80),
@@ -459,20 +459,21 @@ function isMetaSummary(value) {
   return !source || /这是一份|基于近期|供你确认|供你修改|阶段性观察|仅提炼当前|目前资料较少|等待你补充/.test(source);
 }
 
-// 画像正文固定为四个板块，首次生成不展示“正在变化的”。
-function fixedSummary(value, fallback, includeChanging) {
-  const headings = includeChanging
-    ? ['当下的状态：', '反复出现的主题：', '情绪的底色：', '正在变化的：']
-    : ['当下的状态：', '反复出现的主题：', '情绪的底色：'];
-  const sectionLimit = includeChanging ? 42 : 55;
-  const source = String(value == null ? '' : value).replace(/\r/g, '').trim();
-  const lines = headings.map(function (heading, index) {
-    const start = source.indexOf(heading);
-    const next = index + 1 < headings.length ? source.indexOf(headings[index + 1], start + heading.length) : source.length;
-    if (start < 0 || next < start) return '';
-    return heading + text(source.slice(start + heading.length, next), sectionLimit);
-  });
-  return lines.every(Boolean) ? lines.join('\n') : fallback.summary;
+// 阶段画像要回答「这个人是怎样的」，不是「系统统计到了什么」。
+//
+// 四个固定小标题把它变成了一张表单，而人不是表单：用户打开画像，读到的是
+// 当下的状态/反复出现的主题/情绪的底色/正在变化的——一份分栏的统计报告。
+// 现在只要一段连续的话。
+const PORTRAIT_FORM_PATTERN = /当下的状态：|反复出现的主题：|情绪的底色：|正在变化的：/;
+// 「你已经记下 60 个梦」是使用统计，不是这个人的样子。梦的条数是系统的视角。
+const PORTRAIT_STATISTIC_PATTERN = /\d+\s*个梦|第\s*\d+\s*次|共\s*\d+/;
+
+function portraitSummary(value, fallback) {
+  const source = text(String(value == null ? '' : value).replace(/\s+/g, ' ').trim(), 400);
+  if (!source) return fallback.summary;
+  if (PORTRAIT_FORM_PATTERN.test(source)) return fallback.summary;
+  if (PORTRAIT_STATISTIC_PATTERN.test(source)) return fallback.summary;
+  return source;
 }
 
 function normalizeObservation(raw, fallback) {
@@ -481,7 +482,7 @@ function normalizeObservation(raw, fallback) {
   const themes = cleanStrings(raw.themes, 3, 40);
   const contexts = cleanStrings(raw.realLifeContext, 5, 140);
   return {
-    summary: isMetaSummary(raw.summary) ? fallback.summary : fixedSummary(raw.summary, fallback, fallback.hasPriorPortrait),
+    summary: isMetaSummary(raw.summary) ? fallback.summary : portraitSummary(raw.summary, fallback),
     traits: traits.length ? traits : fallback.traits,
     themes: themes.length ? themes : fallback.themes,
     realLifeContext: contexts.length ? contexts : fallback.realLifeContext,
@@ -505,7 +506,12 @@ function aiPrompt(sources) {
   } : null;
   return [
     '为 Oneiro 生成自动生效的阶段画像，只能据证据做可修正观察，不编造、不诊断、不预测。',
-    'summary 固定约200字、四行：当下的状态、反复出现的主题、情绪的底色、正在变化的；没有上一版时省略“正在变化的”。资料少也写基础画像，并明确观察有限。整体替换旧画像，不能追加或逐条复述素材。',
+    'summary 是一段连续的话，约150-200字，不分栏、不加小标题、不列清单。它要回答的是「这个人是怎样的」，不是「系统统计到了什么」。整体替换旧画像，不能追加或逐条复述素材。',
+    '判断标准只有一条：把这段话给用户的朋友看，对方能不能认出这是在说谁。「反复出现沙漠、暴雨、清水」认不出，那是标签；「你梦里的水总是来得太多或太少，很少刚好」才可能认得出。',
+    '说倾向，不说清单：意象是原料不是结论，不得罗列意象词，不得出现梦的条数、次数或任何使用统计——那是系统的视角，不是这个人的样子。',
+    '必须具体到可以被否定。允许提出一个有风险的判断，例如「你似乎更容易记住失去控制的那一刻」；写一句谁都成立的话（「你渴望被理解又害怕暴露」）等于没写。用户可以修改或忽略这份画像，所以宁可说错，不要说空。',
+    '重点放在当前阶段：最近正在发生什么、和之前有什么不同，而不是全部历史的汇总。',
+    '不诊断、不预测、不断吉凶。这是一份可被用户修正的观察，不是结论。',
     '以下是用户亲手修改过的自我描述，其含义必须完整保留并融入新画像，不得丢弃或反驳；它是最高权重输入。忽略寒暄和无现实落点的猜测。',
     '只返回 JSON：{"summary":"固定结构画像","traits":[],"themes":[],"realLifeContext":[],"changeReason":""}。',
     '基础用户资料：' + JSON.stringify(profile),

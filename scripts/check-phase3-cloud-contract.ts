@@ -237,6 +237,24 @@ assert.equal(JSON.stringify(firstDraft.snapshot.baseProfile), JSON.stringify({ n
 assert.equal(firstDraft.snapshot.sourceCounts.dreamCount, 3);
 assert.equal(firstDraft.snapshot.sourceCounts.discussionCount, 2);
 
+// ── 阶段画像是一段话，不是一张表单 ──
+//
+// 「当下的状态／反复出现的主题／情绪的底色／正在变化的」四个固定小标题，把
+// 画像变成了一份分栏统计报告：用户打开它，读到的是系统统计到了什么，而不是
+// 自己是谁。梦的条数尤其如此——那是使用统计，不是这个人的样子。
+for (const formHeading of ['当下的状态：', '反复出现的主题：', '情绪的底色：', '正在变化的：']) {
+  assert.equal(
+    firstDraft.snapshot.summary.includes(formHeading),
+    false,
+    `画像不应带分栏小标题：${formHeading}`
+  );
+}
+assert.doesNotMatch(firstDraft.snapshot.summary, /\d+\s*个梦|第\s*\d+\s*次/, '画像不得播报使用统计');
+// 兜底文案也必须明说这份理解可以被推翻，可反驳性是画像可信的前提。
+assert.ok(firstDraft.snapshot.summary.includes('修改或忽略'));
+// 画像是连续的一段话，不是多行分栏。
+assert.equal(firstDraft.snapshot.summary.includes('\n'), false);
+
 // A normal dream discussion is prompt evidence, not a persisted reality clue.
 // Only an automatically stored life_note may populate deterministicDraft's
 // realLifeContext and its corresponding sourceRefs.
