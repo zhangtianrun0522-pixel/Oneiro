@@ -187,6 +187,18 @@ function removeDreamSync(dream) {
   syncQueue.removeByKey('dream:' + String(dream.id));
 }
 
+// 云函数没返回 memoryEcho（旧版本云函数、或走了降级分支）时给出 0/0，
+// 这样诊断页的分母只统计真正上报过这个信号的解读。
+function normalizeMemoryEcho(value) {
+  var echo = value && typeof value === 'object' ? value : {};
+  var offered = Number(echo.offered);
+  var used = Number(echo.used);
+  return {
+    offered: isFinite(offered) && offered > 0 ? offered : 0,
+    used: isFinite(used) && used > 0 ? used : 0
+  };
+}
+
 function normalizeInterpretationDiagnostics(response) {
   var value = response || {};
   var nested = value.diagnostics && typeof value.diagnostics === 'object' ? value.diagnostics : {};
@@ -864,6 +876,7 @@ Page({
         return;
       }
 
+      var retryMemoryEcho = normalizeMemoryEcho(cloudResult && cloudResult.memoryEcho);
       dream.status = 'ready';
       dream.result = cloudResult.result;
       dream.dreamFacts = cloudResult.result.dream_facts || {
@@ -924,7 +937,9 @@ Page({
       });
       analytics.trackEvent('interpretation_retry_success', {
         dreamId: dream.id || '',
-        provider: cloudResult.provider || ''
+        provider: cloudResult.provider || '',
+        memoryEchoOffered: retryMemoryEcho.offered,
+        memoryEchoUsed: retryMemoryEcho.used
       });
     });
   },

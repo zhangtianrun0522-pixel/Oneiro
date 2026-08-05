@@ -239,6 +239,16 @@ function getDreamArchive(callback) {
   return callCloudFunction('saveDream', { action: 'list' }, callback);
 }
 
+// 内测观测：两个 action 都由云函数按 ADMIN_OPENIDS 鉴权，非管理员拿到
+// { ok: false, reason: 'not_admin' }，诊断页据此隐藏整块面板。
+function getFeedbackStats(callback) {
+  return callCloudFunction('saveDream', { action: 'feedbackStats' }, callback);
+}
+
+function getInternalStats(callback) {
+  return callCloudFunction('saveDream', { action: 'internalStats' }, callback);
+}
+
 function deleteDream(dreamId, callback) {
   return callCloudFunction('saveDream', {
     action: 'delete',
@@ -634,6 +644,8 @@ module.exports = {
   restoreProfilePortrait: restoreProfilePortrait,
   saveDream: saveDream,
   getDreamArchive: getDreamArchive,
+  getFeedbackStats: getFeedbackStats,
+  getInternalStats: getInternalStats,
   deleteDream: deleteDream,
   getRevisit: getRevisit,
   answerRevisit: answerRevisit,

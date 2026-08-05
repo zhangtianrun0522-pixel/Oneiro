@@ -27,6 +27,106 @@
     </view>
   </view>
 
+  <view class="panel identity-panel">
+    <view class="panel-row">
+      <text class="panel-label">当前 openid</text>
+      <text class="panel-value">{{identity.openid || '-'}}</text>
+    </view>
+    <text class="identity-note">把这个 openid 填进 saveDream 云函数的环境变量 ADMIN_OPENIDS，即可解锁下面的内测观测面板；需要看梦境原文摘要时再另外设置 ADMIN_FEEDBACK_EXCERPTS=true。</text>
+  </view>
+
+  <view wx:if="{{internalStats || feedbackStats}}" class="panel metrics-panel">
+    <view class="feedback-panel-heading">
+      <view>
+        <text class="panel-title">内测观测</text>
+        <text class="feedback-total">{{internalStats.generatedAt || updatedAt}}</text>
+      </view>
+      <button class="panel-refresh" bindtap="refreshStats" disabled="{{statsLoading}}">{{statsLoading ? '刷新中' : '刷新'}}</button>
+    </view>
+
+    <view wx:if="{{internalStats.memoryEcho}}" class="metric-block">
+      <view class="metric-head">
+        <text class="metric-name">记忆呼应命中率</text>
+        <text class="metric-figure">{{internalStats.memoryEcho.hitRateText}}</text>
+      </view>
+      <text class="metric-detail">{{internalStats.memoryEcho.detail}}</text>
+      <view class="metric-head metric-head-sub">
+        <text class="metric-sub-name">呼应使用率</text>
+        <text class="metric-sub-figure">{{internalStats.memoryEcho.echoUseRateText}}</text>
+      </view>
+      <text class="metric-detail">{{internalStats.memoryEcho.echoDetail}}</text>
+      <text class="metric-note">分母只算系统确实找到了历史重复的解读。今晚的梦与历史无重合时保持沉默是正确行为，不计入。</text>
+    </view>
+
+    <view wx:if="{{internalStats.retention}}" class="metric-block">
+      <view class="metric-head">
+        <text class="metric-name">留存漏斗</text>
+        <text class="metric-figure">{{internalStats.retention.atLeast1}} 人</text>
+      </view>
+      <view class="funnel-grid">
+        <view class="funnel-step">
+          <text class="funnel-count">{{internalStats.retention.atLeast1}}</text>
+          <text class="funnel-label">≥ 1 个梦</text>
+          <text class="funnel-rate">100%</text>
+        </view>
+        <view class="funnel-step">
+          <text class="funnel-count">{{internalStats.retention.atLeast3}}</text>
+          <text class="funnel-label">≥ 3 个梦</text>
+          <text class="funnel-rate">{{internalStats.retention.rate3Text}}</text>
+        </view>
+        <view class="funnel-step">
+          <text class="funnel-count">{{internalStats.retention.atLeast5}}</text>
+          <text class="funnel-label">≥ 5 个梦</text>
+          <text class="funnel-rate">{{internalStats.retention.rate5Text}}</text>
+        </view>
+      </view>
+      <text class="metric-detail">共 {{internalStats.retention.totalDreams}} 个梦 · 人均 {{internalStats.retention.dreamsPerUser}} 个</text>
+      <text class="metric-note">跨梦线索要到第 3 个梦才开始出现，第 5 个才谈得上习惯。这两级掉得厉害说明留不住人，而不是解读不好。</text>
+    </view>
+
+    <view wx:if="{{internalStats.interpretation}}" class="metric-block">
+      <view class="metric-head">
+        <text class="metric-name">解读失败率</text>
+        <text class="metric-figure {{internalStats.interpretation.failureRateText === '样本不足' ? '' : 'metric-alert'}}">{{internalStats.interpretation.failureRateText}}</text>
+      </view>
+      <text class="metric-detail">{{internalStats.interpretation.detail}}</text>
+    </view>
+
+    <view wx:if="{{internalStats.image}}" class="metric-block">
+      <view class="metric-head">
+        <text class="metric-name">生图失败率</text>
+        <text class="metric-figure {{internalStats.image.failureRateText === '样本不足' ? '' : 'metric-alert'}}">{{internalStats.image.failureRateText}}</text>
+      </view>
+      <text class="metric-detail">{{internalStats.image.detail}}</text>
+      <text class="metric-note">失败率按尝试次数计，重试成功仍然记一次失败——否则「第一次总是超时」会被洗白。</text>
+    </view>
+
+    <view wx:if="{{feedbackStats}}" class="metric-block">
+      <view class="metric-head">
+        <text class="metric-name">解读反馈</text>
+        <text class="metric-figure">共 {{feedbackStats.total}} 条</text>
+      </view>
+      <view class="feedback-count-grid">
+        <view class="feedback-count"><text>有感觉</text><text>{{feedbackStats.counts.inspiring}}</text></view>
+        <view class="feedback-count"><text>有点泛</text><text>{{feedbackStats.counts.too_generic}}</text></view>
+        <view class="feedback-count"><text>太玄了</text><text>{{feedbackStats.counts.too_mystical}}</text></view>
+        <view class="feedback-count"><text>不贴合</text><text>{{feedbackStats.counts.not_grounded}}</text></view>
+      </view>
+      <view wx:if="{{feedbackStats.recent.length}}" class="feedback-recent-list">
+        <view wx:for="{{feedbackStats.recent}}" wx:key="index" class="feedback-recent-item">
+          <view class="feedback-recent-meta">
+            <text class="feedback-type">{{item.feedbackLabel}}</text>
+            <text class="feedback-time">{{item.feedbackTime}}</text>
+          </view>
+          <text wx:if="{{item.dreamExcerpt}}" class="feedback-excerpt">{{item.dreamExcerpt}}</text>
+          <text class="feedback-version">{{item.promptVersion || 'promptVersion 未记录'}}</text>
+        </view>
+      </view>
+      <text wx:else class="feedback-empty">暂时还没有解读反馈</text>
+      <text wx:if="{{!feedbackStats.excerptsEnabled}}" class="metric-note">梦境原文摘要默认不返回。需要时设置 ADMIN_FEEDBACK_EXCERPTS=true。</text>
+    </view>
+  </view>
+
   <view class="panel">
     <view class="panel-row">
       <text class="panel-label">hasApiKey</text>

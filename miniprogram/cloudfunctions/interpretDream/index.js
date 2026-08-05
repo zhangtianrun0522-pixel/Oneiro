@@ -1034,6 +1034,34 @@ function buildMemoryEchoes(memory, dreamText) {
     });
 }
 
+// 呼应命中率是「记忆有没有真的被说出口」唯一可核对的信号：系统交给模型 N 处
+// 已核实的重复，解读里最终点名了几处。offered 为 0 的解读不计入命中率——那不
+// 是模型在沉默，是今晚这个梦确实和历史没有重合。
+function evaluateMemoryEcho(memory, dreamText, result) {
+  const echoes = buildMemoryEchoes(memory, dreamText);
+
+  if (!echoes.length) return { offered: 0, used: 0, symbols: [] };
+
+  // 只统计面向用户的叙述字段。visual_plan / image_prompt 里出现意象说明的是
+  // 生图在画它，不代表解读点出了这处重复。
+  const spoken = ['reading_hook', 'underneath', 'possible_connections', 'mirror', 'alternative_reading', 'integration_question']
+    .map(function (field) {
+      const value = result && result[field];
+      return Array.isArray(value) ? value.join('\n') : String(value || '');
+    })
+    .join('\n');
+
+  const used = echoes.filter(function (echo) {
+    return echo.symbol && spoken.indexOf(echo.symbol) >= 0;
+  });
+
+  return {
+    offered: echoes.length,
+    used: used.length,
+    symbols: used.map(function (echo) { return echo.symbol; })
+  };
+}
+
 async function loadDreamMemory(openid) {
   if (!db || !openid) return buildDreamMemory([], true);
 
@@ -2395,6 +2423,7 @@ exports.main = async function (event) {
       schemaVersion: SCHEMA_VERSION,
       metaphysicalAvailable: !!(baziChart && baziChart.available),
       memoryUnavailable: !!(memory && memory.memoryUnavailable),
+      memoryEcho: evaluateMemoryEcho(memory, dreamText, interpreted.result),
       result: interpreted.result
     };
   } catch (error) {

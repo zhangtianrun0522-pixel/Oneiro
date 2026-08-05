@@ -106,6 +106,18 @@ function normalizeDreamFacts(result) {
   };
 }
 
+// 云函数没返回 memoryEcho（旧版本云函数、或走了降级分支）时给出 0/0，
+// 这样诊断页的分母只统计真正上报过这个信号的解读。
+function normalizeMemoryEcho(value) {
+  var echo = value && typeof value === 'object' ? value : {};
+  var offered = Number(echo.offered);
+  var used = Number(echo.used);
+  return {
+    offered: isFinite(offered) && offered > 0 ? offered : 0,
+    used: isFinite(used) && used > 0 ? used : 0
+  };
+}
+
 function normalizeInterpretationDiagnostics(response) {
   var value = response || {};
   var nested = value.diagnostics && typeof value.diagnostics === 'object' ? value.diagnostics : {};
@@ -865,6 +877,7 @@ Page({
         var result = cloudResult.result;
         var source = 'cloud';
         var provider = cloudResult.provider || 'cloud';
+        var memoryEcho = normalizeMemoryEcho(cloudResult && cloudResult.memoryEcho);
         var dream;
 
         result.card_no = result.card_no || 'NO. ' + String(cardIndex).padStart(3, '0');
@@ -926,7 +939,10 @@ Page({
           symbolCount: result.symbols ? result.symbols.length : 0,
           cardTheme: result.card_theme || 'mist',
           source: source,
-          provider: provider
+          provider: provider,
+          // 系统给了几处已核实的历史呼应，解读里点名了几处。诊断页据此算命中率。
+          memoryEchoOffered: memoryEcho.offered,
+          memoryEchoUsed: memoryEcho.used
         });
         cloudBase.flushEvents(analytics.getEvents());
         });

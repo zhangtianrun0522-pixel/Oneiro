@@ -44,6 +44,11 @@ type InterpretDreamModule = {
     memory: unknown,
     lifeNote: unknown
   ) => string;
+  evaluateMemoryEcho?: (
+    memory: unknown,
+    dreamText: string,
+    result: Record<string, unknown>
+  ) => { offered: number; used: number; symbols: string[] };
 };
 
 function read(relativePath: string): string {
@@ -200,7 +205,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false, d
   };
 
   const source = exposeParser
-    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.sanitizeMetaphysicalText = sanitizeMetaphysicalText;\nmodule.exports.validateMetaphysicalContract = validateMetaphysicalContract;\nmodule.exports.buildInterpretationSystemPrompt = buildInterpretationSystemPrompt;\nmodule.exports.buildBaziChart = buildBaziChart;\nmodule.exports.loadCurrentPortrait = loadCurrentPortrait;\nmodule.exports.sanitizeProfileInput = sanitizeProfileInput;\nmodule.exports.buildDreamMemory = buildDreamMemory;\nmodule.exports.buildMemoryEchoes = buildMemoryEchoes;\nmodule.exports.buildUserContext = buildUserContext;'
+    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.sanitizeMetaphysicalText = sanitizeMetaphysicalText;\nmodule.exports.validateMetaphysicalContract = validateMetaphysicalContract;\nmodule.exports.buildInterpretationSystemPrompt = buildInterpretationSystemPrompt;\nmodule.exports.buildBaziChart = buildBaziChart;\nmodule.exports.loadCurrentPortrait = loadCurrentPortrait;\nmodule.exports.sanitizeProfileInput = sanitizeProfileInput;\nmodule.exports.buildDreamMemory = buildDreamMemory;\nmodule.exports.buildMemoryEchoes = buildMemoryEchoes;\nmodule.exports.buildUserContext = buildUserContext;\nmodule.exports.evaluateMemoryEcho = evaluateMemoryEcho;'
     : read(interpretDreamPath);
   vm.runInNewContext(source, sandbox, { filename: interpretDreamPath });
   return commonJsModule.exports;
@@ -468,6 +473,53 @@ const echoContext = buildUserContext({}, '我梦见一棵树从窗户里长进�
 assert.ok(echoContext.includes('已核实的历史呼应'));
 const silentContext = buildUserContext({}, '我梦见自己在一列没有终点的火车上。', memoryFixture, null);
 assert.ok(!silentContext.includes('已核实的历史呼应'));
+
+// ── 呼应命中率：内测唯一能证明「记忆真的被说出口」的指标 ──
+//
+// 这个数不能靠感觉。系统交给模型 N 处已核实的重复，解读里最终点名了几处，
+// 只有分子分母都成立，诊断页上的百分比才不是自我安慰。
+const evaluateMemoryEcho = exposedInterpretDream.evaluateMemoryEcho;
+assert.ok(evaluateMemoryEcho);
+
+const echoDreamText = '我梦见一棵树从窗户里长进来，我没有剪掉它，只是坐在树下。';
+
+// 呼应被写进了面向用户的叙述 → 命中。
+const spokenEcho = evaluateMemoryEcho(memoryFixture, echoDreamText, {
+  reading_hook: '这次你没有动手剪。',
+  underneath: '树又一次出现，而这次你选择坐下。',
+  possible_connections: ['三周前那次你还在剪枝。'],
+});
+// 今晚的梦同时命中「树」和「窗」两处历史重复，解读只点了「树」——命中率
+// 按解读算是命中，按呼应条数算是 1/2。诊断页两个数都显示，正是为了区分
+// 「一处都没说」和「说了但没说全」。
+assert.equal(spokenEcho.offered, 2);
+assert.equal(spokenEcho.used, 1);
+assert.equal(spokenEcho.symbols.join(','), '树');
+
+// 系统给了呼应，解读却只字未提 → 未命中。这正是要在内测期抓出来的失败。
+const silentEcho = evaluateMemoryEcho(memoryFixture, echoDreamText, {
+  reading_hook: '一个关于停留的梦。',
+  underneath: '你在梦里选择了不动手。',
+  possible_connections: [],
+});
+assert.equal(silentEcho.offered, 2);
+assert.equal(silentEcho.used, 0);
+
+// 意象只出现在生图字段里不算命中：那说明生图在画它，不是解读点出了这处重复。
+const visualOnlyEcho = evaluateMemoryEcho(memoryFixture, echoDreamText, {
+  reading_hook: '一个关于停留的梦。',
+  image_prompt: 'a tree growing through a window',
+  visual_plan: { symbols: ['树'] },
+});
+assert.equal(visualOnlyEcho.used, 0);
+
+// 今晚的梦与历史无重合 → offered 为 0，不进命中率的分母。模型的沉默在这里
+// 是正确行为，混进分母只会把指标稀释成噪声。
+const noEcho = evaluateMemoryEcho(memoryFixture, '我梦见自己在一列没有终点的火车上。', {
+  reading_hook: '火车没有终点。',
+});
+assert.equal(noEcho.offered, 0);
+assert.equal(noEcho.used, 0);
 
 const normalizeAiResult = exposedInterpretDream.normalizeAiResult;
 assert.ok(normalizeAiResult);

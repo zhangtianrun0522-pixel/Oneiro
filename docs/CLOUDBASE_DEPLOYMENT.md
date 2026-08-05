@@ -117,6 +117,33 @@ interpretation requests fail retryably rather than fabricating local results.
 After real AI setup it should report `provider: deepseek` or
 `provider: openai-compatible` and `providerConfigured: true`.
 
+## Internal-test observation panel
+
+The diagnostics page (`pages/diagnostics/index`) can show aggregate internal-test
+metrics: memory-echo hit rate, the 1/3/5-dream retention funnel, interpretation and
+image failure rates, and reading feedback. These read across **all** users, so both
+`saveDream` actions behind them (`feedbackStats`, `internalStats`) are closed by
+default and only answer openids listed explicitly on the `saveDream` cloud function:
+
+```text
+ADMIN_OPENIDS=<comma-separated openids; unset means nobody has access>
+ADMIN_FEEDBACK_EXCERPTS=<'true' to also return 40-char dream excerpts; default off>
+```
+
+Open the diagnostics page to read your own openid off the top panel, then add it to
+`ADMIN_OPENIDS`. Non-admins get `{ ok: false, reason: 'not_admin' }` and the page
+renders no panel at all.
+
+Dream text is the most private content in the product. `ADMIN_FEEDBACK_EXCERPTS` is
+a separate switch on purpose — feedback type, timestamp and `promptVersion` are
+enough to locate a bad reading, and that is what ships by default.
+
+The memory-echo hit rate is computed from `interpretation_success` /
+`interpretation_retry_success` events in the `events` collection, so it only covers
+readings recorded after this build. Its denominator counts only readings where the
+system actually found a verified repetition; a dream with no overlap against history
+is correctly silent and is excluded.
+
 ## Real AI Image Provider
 
 `interpretDream` now returns a structured `result.visual_plan`. `generateDreamImage` re-normalizes that plan against the owner-scoped stored dream, selects a relationship-based emotion palette and non-fixed composition, compiles the final `oneiro-seedream-dream-v2.0` prompt, uploads the generated bitmap under `generated-dream-images/`, and stores the full prompt, model, normalized plan, format/dimensions, and quality record in `generated_assets`.

@@ -705,10 +705,231 @@ async function invalidateProfileSnapshots(openid, sourceType, sourceId, reason) 
   }
 }
 
+// ── 内测观测面板 ────────────────────────────────────────────────────────
+//
+// 这些 action 读的是全体用户的数据，因此只对 ADMIN_OPENIDS 环境变量里显式
+// 列出的 openid 开放。没配置这个变量时谁都拿不到——默认关闭，而不是默认可读。
+
+const FEEDBACK_VALUES = ['inspiring', 'too_generic', 'too_mystical', 'not_grounded'];
+
+function configuredAdminOpenids() {
+  return String(process.env.ADMIN_OPENIDS || '').split(',').map(function (item) {
+    return item.trim();
+  }).filter(Boolean);
+}
+
+function isConfiguredAdmin(openid) {
+  const admins = configuredAdminOpenids();
+  const current = String(openid || '').trim();
+  return !!current && admins.indexOf(current) >= 0;
+}
+
+// 梦境原文是产品里最私密的一类内容。内测期看反馈类型、时间和 promptVersion
+// 就够定位问题了，原文摘要必须再单独开一道开关才会返回。
+function excerptsEnabled() {
+  return String(process.env.ADMIN_FEEDBACK_EXCERPTS || '') === 'true';
+}
+
+function isoDate(value) {
+  if (!value) return '';
+  try {
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? '' : date.toISOString();
+  } catch (error) {
+    return '';
+  }
+}
+
+function ratio(part, whole) {
+  return whole > 0 ? Math.round((part / whole) * 1000) / 10 : null;
+}
+
+async function feedbackStats() {
+  try {
+    const _ = db.command;
+    const rows = [];
+    const pageSize = 100;
+    let offset = 0;
+    let page;
+
+    do {
+      page = await db.collection('dream_entries')
+        .where({ feedback: _.in(FEEDBACK_VALUES) })
+        .orderBy('feedbackAt', 'desc')
+        .skip(offset)
+        .limit(pageSize)
+        .get();
+      const pageRows = page && page.data ? page.data : [];
+      rows.push.apply(rows, pageRows);
+      offset += pageRows.length;
+      if (pageRows.length < pageSize) break;
+    } while (offset < 5000);
+
+    const counts = { inspiring: 0, too_generic: 0, too_mystical: 0, not_grounded: 0 };
+    const showExcerpts = excerptsEnabled();
+    const recent = rows.sort(function (left, right) {
+      return new Date(right.feedbackAt || 0).getTime() - new Date(left.feedbackAt || 0).getTime();
+    }).map(function (dream) {
+      const feedback = String(dream.feedback || '');
+      counts[feedback] += 1;
+      return {
+        feedback: feedback,
+        feedbackAt: isoDate(dream.feedbackAt),
+        promptVersion: String(
+          (dream.interpretationMeta && dream.interpretationMeta.promptVersion) ||
+          (dream.result && dream.result.interpretationMeta && dream.result.interpretationMeta.promptVersion) ||
+          ''
+        ),
+        dreamExcerpt: showExcerpts ? String(dream.dreamText || '').slice(0, 40) : '',
+        createdAt: isoDate(dream.createdAt)
+      };
+    });
+
+    return {
+      ok: true,
+      total: counts.inspiring + counts.too_generic + counts.too_mystical + counts.not_grounded,
+      counts: counts,
+      excerptsEnabled: showExcerpts,
+      recent: recent.slice(0, 20)
+    };
+  } catch (error) {
+    return { ok: false, reason: 'feedback_stats_failed' };
+  }
+}
+
+// 记忆呼应命中率：系统交给模型的「已核实历史呼应」里，最终有多少被写进了
+// 解读。分母只算 offered > 0 的解读——今晚的梦与历史无重合时的沉默是正确
+// 行为，混进分母只会把这个指标稀释成噪声。
+async function memoryEchoStats() {
+  try {
+    const _ = db.command;
+    const $ = db.command.aggregate;
+    const result = await db.collection('events')
+      .aggregate()
+      .match({
+        eventName: _.in(['interpretation_success', 'interpretation_retry_success']),
+        'metadata.memoryEchoOffered': _.gt(0)
+      })
+      .group({
+        _id: null,
+        offeredReadings: $.sum(1),
+        hitReadings: $.sum($.cond({ if: $.gt(['$metadata.memoryEchoUsed', 0]), then: 1, else: 0 })),
+        offeredEchoes: $.sum('$metadata.memoryEchoOffered'),
+        usedEchoes: $.sum('$metadata.memoryEchoUsed')
+      })
+      .end();
+    const row = (result && result.list && result.list[0]) || {};
+    const offeredReadings = Number(row.offeredReadings || 0);
+
+    return {
+      ok: true,
+      offeredReadings: offeredReadings,
+      hitReadings: Number(row.hitReadings || 0),
+      offeredEchoes: Number(row.offeredEchoes || 0),
+      usedEchoes: Number(row.usedEchoes || 0),
+      hitRate: ratio(Number(row.hitReadings || 0), offeredReadings),
+      echoUseRate: ratio(Number(row.usedEchoes || 0), Number(row.offeredEchoes || 0))
+    };
+  } catch (error) {
+    return { ok: false, reason: 'memory_echo_stats_failed' };
+  }
+}
+
+// 留存漏斗：内测真正要回答的问题不是「有多少人来过」，而是「有多少人记到了
+// 第 3、第 5 个梦」——跨梦线索要到第 3 个梦才开始出现，第 5 个才谈得上习惯。
+async function retentionFunnel() {
+  try {
+    const $ = db.command.aggregate;
+    const result = await db.collection('dream_entries')
+      .aggregate()
+      .match({ status: 'ready' })
+      .group({ _id: '$openid', dreams: $.sum(1) })
+      .group({
+        _id: null,
+        atLeast1: $.sum(1),
+        atLeast3: $.sum($.cond({ if: $.gte(['$dreams', 3]), then: 1, else: 0 })),
+        atLeast5: $.sum($.cond({ if: $.gte(['$dreams', 5]), then: 1, else: 0 })),
+        totalDreams: $.sum('$dreams')
+      })
+      .end();
+    const row = (result && result.list && result.list[0]) || {};
+    const atLeast1 = Number(row.atLeast1 || 0);
+
+    return {
+      ok: true,
+      atLeast1: atLeast1,
+      atLeast3: Number(row.atLeast3 || 0),
+      atLeast5: Number(row.atLeast5 || 0),
+      totalDreams: Number(row.totalDreams || 0),
+      rate3: ratio(Number(row.atLeast3 || 0), atLeast1),
+      rate5: ratio(Number(row.atLeast5 || 0), atLeast1),
+      dreamsPerUser: atLeast1 > 0 ? Math.round((Number(row.totalDreams || 0) / atLeast1) * 10) / 10 : null
+    };
+  } catch (error) {
+    return { ok: false, reason: 'retention_funnel_failed' };
+  }
+}
+
+async function countEvents(names) {
+  const _ = db.command;
+  const response = await db.collection('events').where({ eventName: _.in(names) }).count();
+  return Number((response && response.total) || 0);
+}
+
+// 失败率按「尝试」而不是「用户」计：一次解读或一次生图请求就是一次尝试。
+// 重试成功仍然记一次失败，否则会把「第一次总是超时」这类问题洗白。
+async function pipelineFailureStats() {
+  try {
+    const interpretSuccess = await countEvents(['interpretation_success', 'interpretation_retry_success']);
+    const interpretFail = await countEvents(['interpretation_failed', 'interpretation_retry_failed']);
+    const imageSuccess = await countEvents(['generated_image_success']);
+    const imageFail = await countEvents(['generated_image_fail']);
+
+    return {
+      ok: true,
+      interpretation: {
+        success: interpretSuccess,
+        failed: interpretFail,
+        attempts: interpretSuccess + interpretFail,
+        failureRate: ratio(interpretFail, interpretSuccess + interpretFail)
+      },
+      image: {
+        success: imageSuccess,
+        failed: imageFail,
+        attempts: imageSuccess + imageFail,
+        failureRate: ratio(imageFail, imageSuccess + imageFail)
+      }
+    };
+  } catch (error) {
+    return { ok: false, reason: 'pipeline_failure_stats_failed' };
+  }
+}
+
+async function internalStats() {
+  const memoryEcho = await memoryEchoStats();
+  const retention = await retentionFunnel();
+  const pipeline = await pipelineFailureStats();
+
+  return {
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    memoryEcho: memoryEcho,
+    retention: retention,
+    pipeline: pipeline
+  };
+}
+
 exports.main = async function (event) {
   const wxContext = cloud.getWXContext();
   const action = String((event && event.action) || 'upsert');
   const requestedId = String((event && event.dreamId) || '');
+
+  if (action === 'feedbackStats' || action === 'internalStats') {
+    if (!isConfiguredAdmin(wxContext && wxContext.OPENID)) {
+      return { ok: false, reason: 'not_admin' };
+    }
+    return action === 'feedbackStats' ? feedbackStats() : internalStats();
+  }
 
   if (action === 'list') {
     try {

@@ -218,6 +218,9 @@ type WxMock = {
   failNextPortraitToggle: boolean;
   failNextPortraitSave: boolean;
   failNextPortraitGenerate: boolean;
+  adminStatsResult: boolean;
+  feedbackStatsResult: Record<string, any>;
+  internalStatsResult: Record<string, any>;
   profilePortraitSummary: string;
   canvasTexts: string[][];
   cloud?: Record<string, any>;
@@ -293,6 +296,28 @@ function createWxMock(): WxMock {
     failNextPortraitToggle: false,
     failNextPortraitSave: false,
     failNextPortraitGenerate: false,
+    // 默认不是管理员：内测观测面板必须对普通测试者完全不存在。
+    adminStatsResult: false,
+    feedbackStatsResult: {
+      ok: true,
+      total: 3,
+      excerptsEnabled: false,
+      counts: { inspiring: 2, too_generic: 1, too_mystical: 0, not_grounded: 0 },
+      recent: [
+        { feedback: 'inspiring', feedbackAt: '2026-08-04T10:00:00.000Z', promptVersion: 'v0.6', dreamExcerpt: '', createdAt: '2026-08-04T09:00:00.000Z' },
+      ],
+    },
+    internalStatsResult: {
+      ok: true,
+      generatedAt: '2026-08-05T02:00:00.000Z',
+      memoryEcho: { ok: true, offeredReadings: 8, hitReadings: 6, offeredEchoes: 14, usedEchoes: 7, hitRate: 75, echoUseRate: 50 },
+      retention: { ok: true, atLeast1: 20, atLeast3: 9, atLeast5: 4, totalDreams: 62, rate3: 45, rate5: 20, dreamsPerUser: 3.1 },
+      pipeline: {
+        ok: true,
+        interpretation: { success: 57, failed: 3, attempts: 60, failureRate: 5, failureRateText: '' },
+        image: { success: 0, failed: 0, attempts: 0, failureRate: null },
+      },
+    },
     profilePortraitSummary: '近期梦境反复出现学校、追逐与期限感。',
     canvasTexts: [],
     getStorageSync(key) {
@@ -414,6 +439,14 @@ function createWxMock(): WxMock {
       });
       if (options.name === 'login') {
         options.success({ result: { openid: 'mock-openid' } });
+        return;
+      }
+      if (options.name === 'saveDream' && options.data?.action === 'feedbackStats') {
+        options.success({ result: wx.adminStatsResult ? wx.feedbackStatsResult : { ok: false, reason: 'not_admin' } });
+        return;
+      }
+      if (options.name === 'saveDream' && options.data?.action === 'internalStats') {
+        options.success({ result: wx.adminStatsResult ? wx.internalStatsResult : { ok: false, reason: 'not_admin' } });
         return;
       }
       if (options.name === 'saveDream' && wx.failNextDreamSave) {
@@ -1072,6 +1105,21 @@ for (const [path, expected] of [
   ['miniprogram/pages/diagnostics/index.js', "startSmokeTest"],
   ['miniprogram/pages/diagnostics/index.js', "确认测试 AI"],
   ['miniprogram/pages/diagnostics/index.js', "cloudHealth"],
+  ['miniprogram/pages/diagnostics/index.js', "getFeedbackStats"],
+  ['miniprogram/pages/diagnostics/index.js', "getInternalStats"],
+  ['miniprogram/pages/diagnostics/index.wxml', "内测观测"],
+  ['miniprogram/pages/diagnostics/index.wxml', "记忆呼应命中率"],
+  ['miniprogram/pages/diagnostics/index.wxml', "留存漏斗"],
+  ['miniprogram/pages/diagnostics/index.wxml', "解读失败率"],
+  ['miniprogram/pages/diagnostics/index.wxml', "生图失败率"],
+  ['miniprogram/pages/diagnostics/index.wxml', "解读反馈"],
+  ['miniprogram/pages/diagnostics/index.wxml', "ADMIN_OPENIDS"],
+  ['miniprogram/cloudfunctions/saveDream/index.js', "feedbackStats"],
+  ['miniprogram/cloudfunctions/saveDream/index.js', "internalStats"],
+  ['miniprogram/cloudfunctions/saveDream/index.js', "ADMIN_OPENIDS"],
+  ['miniprogram/cloudfunctions/saveDream/index.js', "ADMIN_FEEDBACK_EXCERPTS"],
+  ['miniprogram/cloudfunctions/interpretDream/index.js', "evaluateMemoryEcho"],
+  ['miniprogram/pages/home/index.js', "memoryEchoOffered"],
   ['miniprogram/pages/diagnostics/index.js', "normalizeAiHealth"],
   ['miniprogram/pages/share/index.js', "share_card_open"],
   ['miniprogram/pages/result/index.js', "tabNav.switchTab('pages/home/index')"],
@@ -2106,6 +2154,40 @@ assert.equal(diagnosticsPage.data.aiHealth.providerConfigured, true);
 assert.equal(diagnosticsPage.data.cloudHealth.ok, true);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.healthCheck));
 assert.ok(wx.cloudCalls.some((call) => call.name === 'cloudHealth'));
+
+// ── 内测观测面板 ──────────────────────────────────────────────────────
+//
+// 面板读的是全体用户的数据，所以非管理员必须什么都拿不到，而不是拿到一个
+// 空面板。云函数返回 not_admin 时两块数据都要保持 null，模板整块不渲染。
+assert.equal(diagnosticsPage.data.feedbackStats, null);
+assert.equal(diagnosticsPage.data.internalStats, null);
+assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data.action === 'feedbackStats'));
+assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data.action === 'internalStats'));
+
+wx.adminStatsResult = true;
+diagnosticsPage.refreshStats();
+assert.equal(diagnosticsPage.data.statsLoading, false);
+const feedbackStats = (diagnosticsPage.data as Record<string, any>).feedbackStats;
+assert.equal(feedbackStats.total, 3);
+assert.equal(feedbackStats.counts.inspiring, 2);
+assert.equal(feedbackStats.recent[0].feedbackLabel, '有感觉');
+// 摘要开关关闭时不得凭空显示原文，模板据此隐藏整行。
+assert.equal(feedbackStats.recent[0].dreamExcerpt, '');
+
+const internalStats = (diagnosticsPage.data as Record<string, any>).internalStats;
+assert.equal(internalStats.memoryEcho.hitRateText, '75%');
+assert.equal(internalStats.memoryEcho.detail, '6 / 8 次带呼应的解读');
+assert.equal(internalStats.memoryEcho.echoUseRateText, '50%');
+assert.equal(internalStats.retention.rate3Text, '45%');
+assert.equal(internalStats.retention.rate5Text, '20%');
+assert.equal(internalStats.retention.dreamsPerUser, '3.1');
+assert.equal(internalStats.interpretation.failureRateText, '5%');
+assert.equal(internalStats.interpretation.detail, '3 / 60 次解读尝试失败');
+// 一次生图都还没发生过时，0/0 必须显示「样本不足」而不是 0%——后者会被读成
+// 「生图完全没问题」，而真相是这条链路根本还没被跑过。
+assert.equal(internalStats.image.failureRateText, '样本不足');
+assert.equal(internalStats.image.detail, '0 / 0 次生图尝试失败');
+
 diagnosticsPage.runSmokeTest();
 assert.equal(last(wx.modals).title, '确认测试 AI');
 assert.equal(diagnosticsPage.data.smokeLoading, false);

@@ -70,6 +70,21 @@ function emptyImageTest() {
   };
 }
 
+function emptyFeedbackStats() {
+  return {
+    ok: false,
+    total: 0,
+    excerptsEnabled: false,
+    counts: {
+      inspiring: 0,
+      too_generic: 0,
+      too_mystical: 0,
+      not_grounded: 0
+    },
+    recent: []
+  };
+}
+
 function normalizeAiHealth(health) {
   return Object.assign(emptyAiHealth(), health || {});
 }
@@ -88,6 +103,89 @@ function normalizeImageHealth(health) {
 
 function normalizeImageTest(result) {
   return Object.assign(emptyImageTest(), result || {});
+}
+
+function feedbackLabel(value) {
+  return {
+    inspiring: '有感觉',
+    too_generic: '有点泛',
+    too_mystical: '太玄了',
+    not_grounded: '不贴合'
+  }[value] || value || '-';
+}
+
+function pad2(value) {
+  return value < 10 ? '0' + value : String(value);
+}
+
+function feedbackTime(value) {
+  if (!value) return '-';
+  try {
+    var date = new Date(value);
+    if (isNaN(date.getTime())) return '-';
+    return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate()) +
+      ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes());
+  } catch (error) {
+    return '-';
+  }
+}
+
+function normalizeFeedbackStats(result) {
+  var stats = Object.assign(emptyFeedbackStats(), result || {});
+  stats.counts = Object.assign(emptyFeedbackStats().counts, (result && result.counts) || {});
+  stats.recent = (Array.isArray(result && result.recent) ? result.recent : []).map(function (item) {
+    return Object.assign({}, item, {
+      feedbackLabel: feedbackLabel(item && item.feedback),
+      feedbackTime: feedbackTime(item && item.feedbackAt)
+    });
+  });
+  return stats;
+}
+
+// 样本量太小的时候一个百分比会撒谎：3 次里失败 1 次显示 33.3%，读起来像
+// 系统在崩，其实只是还没有数据。所以每个比率都带上分母一起显示。
+function percentText(value, sampleSize) {
+  if (value === null || value === undefined || !sampleSize) return '样本不足';
+  return String(value) + '%';
+}
+
+function normalizeInternalStats(result) {
+  if (!result || !result.ok) return null;
+
+  var echo = (result.memoryEcho && result.memoryEcho.ok) ? result.memoryEcho : null;
+  var retention = (result.retention && result.retention.ok) ? result.retention : null;
+  var pipeline = (result.pipeline && result.pipeline.ok) ? result.pipeline : null;
+  var interpretation = pipeline ? pipeline.interpretation : null;
+  var image = pipeline ? pipeline.image : null;
+
+  return {
+    generatedAt: feedbackTime(result.generatedAt),
+    memoryEcho: echo ? {
+      hitRateText: percentText(echo.hitRate, echo.offeredReadings),
+      // 「12 / 18 次带呼应的解读点名了记忆」——分子分母都摆出来，比一个孤零零
+      // 的百分比更容易判断这轮内测的样本够不够。
+      detail: String(echo.hitReadings) + ' / ' + String(echo.offeredReadings) + ' 次带呼应的解读',
+      echoUseRateText: percentText(echo.echoUseRate, echo.offeredEchoes),
+      echoDetail: String(echo.usedEchoes) + ' / ' + String(echo.offeredEchoes) + ' 处呼应被写进解读'
+    } : null,
+    retention: retention ? {
+      atLeast1: retention.atLeast1,
+      atLeast3: retention.atLeast3,
+      atLeast5: retention.atLeast5,
+      rate3Text: percentText(retention.rate3, retention.atLeast1),
+      rate5Text: percentText(retention.rate5, retention.atLeast1),
+      dreamsPerUser: retention.dreamsPerUser === null ? '-' : String(retention.dreamsPerUser),
+      totalDreams: retention.totalDreams
+    } : null,
+    interpretation: interpretation ? {
+      failureRateText: percentText(interpretation.failureRate, interpretation.attempts),
+      detail: String(interpretation.failed) + ' / ' + String(interpretation.attempts) + ' 次解读尝试失败'
+    } : null,
+    image: image ? {
+      failureRateText: percentText(image.failureRate, image.attempts),
+      detail: String(image.failed) + ' / ' + String(image.attempts) + ' 次生图尝试失败'
+    } : null
+  };
 }
 
 function formatTime(date) {
@@ -113,6 +211,10 @@ Page({
     aiHealth: emptyAiHealth(),
     imageHealth: emptyImageHealth(),
     cloudHealth: emptyCloudHealth(),
+    identity: { openid: '', source: '' },
+    feedbackStats: null,
+    internalStats: null,
+    statsLoading: false,
     smokeLoading: false,
     smokeTest: emptySmokeTest(),
     imageLoading: false,
@@ -127,7 +229,7 @@ Page({
 
   refresh: function () {
     var that = this;
-    var pending = 3;
+    var pending = 6;
     var cloudStatus = cloudBase.initCloud();
 
     this.setData({
@@ -161,6 +263,45 @@ Page({
 
     cloudBase.cloudHealth(function (health) {
       that.setData({ cloudHealth: normalizeCloudHealth(health) });
+      finish();
+    });
+
+    cloudBase.getIdentity(function (identity) {
+      that.setData({ identity: identity || { openid: '', source: '' } });
+      finish();
+    });
+
+    cloudBase.getFeedbackStats(function (stats) {
+      that.setData({ feedbackStats: stats && stats.ok ? normalizeFeedbackStats(stats) : null });
+      finish();
+    });
+
+    cloudBase.getInternalStats(function (stats) {
+      that.setData({ internalStats: normalizeInternalStats(stats) });
+      finish();
+    });
+  },
+
+  // 内测期间这几个数会随着测试者用而变，单独给一个刷新按钮，免得为了看一眼
+  // 反馈就把 AI/生图健康检查整套重跑一遍。
+  refreshStats: function () {
+    var that = this;
+    if (this.data.statsLoading) return;
+    this.setData({ statsLoading: true });
+
+    var pending = 2;
+    function finish() {
+      pending -= 1;
+      if (pending <= 0) that.setData({ statsLoading: false });
+    }
+
+    cloudBase.getFeedbackStats(function (stats) {
+      that.setData({ feedbackStats: stats && stats.ok ? normalizeFeedbackStats(stats) : null });
+      finish();
+    });
+
+    cloudBase.getInternalStats(function (stats) {
+      that.setData({ internalStats: normalizeInternalStats(stats) });
       finish();
     });
   },
