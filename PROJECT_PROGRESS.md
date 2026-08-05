@@ -609,3 +609,21 @@ npx vercel --prod --yes
 - 牌库缩略图同样先回载本地路径，回载失败显示主题占位，不直接依赖过期的云端临时 URL。
 - 本地验证通过：`npm run check:miniprogram`、`npm run check:phase3`、`npm run check:mini-release`、`npm run typecheck`、`git diff --check`。
 - 最新微信开发者工具预览二维码：`/private/tmp/oneiro-preview-timeline-v1.png`，预览包 175.6 KB。
+
+## 2026-08-05 记忆按相关性检索与内测观测面板（v0.6-internal-test）
+
+- 修复「记忆读起来不像记得我」的根因：旧实现把历史上出现次数最多的三个意象无条件塞进 prompt，对每个梦都是同一份背景板；而 prompt 红线规定「没有具体呼应就不许假装记得」，模型只能正确地闭嘴。现在改为拿今晚这个梦去历史里找确凿重合（`buildMemoryEchoes`），带上出现次数与相对时间感，并要求解读至少点出其中一处。
+- 时间衰减贯穿 `dreamMemory`、`interpretDream`、`profileMemory`：近期的重复压过陈年的重复，半年前的高频意象不再永远占住阶段画像和跨梦线索。
+- `profileMemory` 不再对已经记了几十个梦的用户说「现有素材不多」——那是用户当场就能证伪的一句话。
+- 回访窗口从「只匹配昨天一整天」放宽为「已过一夜且不超过 7 天」。回访是产品里唯一主动采集现实线索的通道，窗口过窄会因为漏开一次就永久作废这个梦的回访，直接导致现实线索长期为 0。
+- `cloudBase` / `app.js` 补上未处理 Promise 拒绝的日志：基础库原本把云函数超时报成一条没有归属的 `Error: timeout`，四帧堆栈全在 WAServiceMainContext 内部，完全看不出是哪个云函数。
+- 新增内测观测面板（诊断页），四项指标：
+  - **记忆呼应命中率**：`evaluateMemoryEcho` 统计系统交给模型几处已核实呼应、解读里最终点名了几处。只统计面向用户的叙述字段——意象出现在 `image_prompt` 里说明生图在画它，不代表解读点出了这处重复。分母只算 offered > 0 的解读，今晚的梦与历史无重合时的沉默是正确行为。
+  - **留存漏斗**：≥1 / ≥3 / ≥5 个梦的人数与转化率。跨梦线索要到第 3 个梦才开始出现，第 5 个才谈得上习惯。
+  - **解读失败率 / 生图失败率**：按尝试次数计，重试成功仍然记一次失败，否则「第一次总是超时」会被洗白。
+  - **解读反馈**：四类反馈计数与最近 20 条明细（类型、时间、promptVersion）。
+- 所有比率都带分母显示，样本为空时显示「样本不足」而不是 0%：0/0 显示成 0% 会被读成「这条链路没问题」，而真相是它根本还没被跑过。
+- 面板从 `stash@{0}` 恢复 feedbackStats 能力（只挑 feedback 相关部分，未 pop，隔离区其余改动原样保留）。两处改动：反馈查询改为按 `feedback` 字段过滤而不是全表分页；梦境原文摘要默认不返回，需另设 `ADMIN_FEEDBACK_EXCERPTS=true`——这正是当初把它隔离的隐私顾虑。
+- 访问控制：`saveDream` 的 `feedbackStats` / `internalStats` 只对 `ADMIN_OPENIDS` 显式列出的 openid 开放，未配置时对所有人关闭；非管理员整块面板不渲染。留存与事件统计走数据库聚合，不做全表扫描。
+- 本地验证通过：`npm run check:mini-release`（ai-readiness / cloudbase / miniprogram / phase3 / image-contract / image-quality-job / typecheck 全绿）、`git diff --check`。
+- 待部署：`interpretDream`（memoryEcho 字段）、`saveDream`（观测面板 action 与 ADMIN_OPENIDS）。部署并设置环境变量前，诊断页面板不会出现，命中率也不会有数据。

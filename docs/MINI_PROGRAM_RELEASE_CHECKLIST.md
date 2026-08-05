@@ -8,6 +8,8 @@ Use this checklist when moving the Oneiro WeChat Mini Program from the current C
 - CloudBase environment: `cloud1-d9gb0sjvg6a8d9864`
 - Cloud function for AI: `interpretDream`
 - Cloud function for image generation: `generateDreamImage`
+- Cloud function for dream storage and the admin observation panel: `saveDream`
+- Current internal-test tag: `v0.6-internal-test`
 - Hidden diagnostics route: `/pages/diagnostics/index`
 - DevTools default compile entry: `pages/home/index` (diagnostics is opened manually)
 - Latest local release check: `npm run check:mini-release`
@@ -82,6 +84,18 @@ QUALITY_IMAGE_TIMEOUT_MS=12000
 
 The quality route is background-polled and must not replace the fast image until the final CloudBase asset has downloaded successfully.
 
+For the internal-test observation panel, configure `saveDream`:
+
+```text
+ADMIN_OPENIDS=<comma-separated openids; unset means the panel is closed to everyone>
+ADMIN_FEEDBACK_EXCERPTS=<'true' to also return 40-char dream excerpts; leave unset>
+```
+
+Read your own openid off the top of the diagnostics page, then add it. Leave
+`ADMIN_FEEDBACK_EXCERPTS` unset unless you specifically need to read dream text —
+feedback type, timestamp and `promptVersion` are enough to locate a bad reading,
+and dream text is the most private content in the product.
+
 ## Diagnostics Verification
 
 Navigate manually to:
@@ -110,6 +124,31 @@ Then tap `AI SMOKE TEST` once. It should ask for confirmation and return:
 }
 ```
 
+## Internal-Test Observation Panel
+
+Verify access control **before** handing builds to testers:
+
+1. On an account that is not in `ADMIN_OPENIDS`, the panel must not render at all —
+   not an empty panel, not zeroed counters. Nothing.
+2. After adding your openid and redeploying `saveDream`, the panel appears with the
+   memory-echo hit rate, the 1/3/5-dream retention funnel, interpretation and image
+   failure rates, and the feedback breakdown.
+3. With `ADMIN_FEEDBACK_EXCERPTS` unset, feedback rows show type, time and
+   `promptVersion` but no dream text.
+
+Expect these readings on a fresh internal test, and do not treat them as faults:
+
+- Memory-echo hit rate reads `样本不足` until testers record dreams on this build —
+  it is derived from event metadata that older builds never emitted.
+- The hit-rate denominator counts only readings where the system actually found a
+  verified repetition. A dream with no overlap against history is correctly silent
+  and is excluded, so the denominator grows more slowly than total dreams.
+- Image failure rate reads `样本不足` rather than `0%` when no image has been
+  attempted. A literal `0%` off an empty sample would read as "生图没问题" when the
+  truth is the path has never run.
+- Retention beyond `≥ 1 个梦` stays flat on day one. The `≥ 3` step is the first one
+  that means anything: cross-dream clues do not appear until the third dream.
+
 ## Real-Device MVP Verification
 
 Scan the preview QR on a real device and verify:
@@ -126,6 +165,12 @@ Scan the preview QR on a real device and verify:
 10. The collectible export is 3:4 and image-led; the compact full-reading export has no large blank tail.
 11. Share route is `/pages/share/index?id=...`, uses the separately rendered public cover, and opens in a clean session or another device without private reflection content.
 12. Raw-save, interpretation, deletion, sharing, voice, and memory events write to `events`.
+13. Record a dream that reuses a symbol from an earlier dream. The reading must name
+    that repetition with a sense of time ("三周前那次…"), not just repeat the symbol.
+    A reading that stays silent while the diagnostics panel counts an offered echo is
+    the exact failure the hit rate exists to catch.
+14. Revisit is offered for a dream recorded overnight and still within seven days —
+    not only for one recorded literally yesterday.
 
 ## Stop Conditions
 
