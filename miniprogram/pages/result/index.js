@@ -227,16 +227,36 @@ function hasMetaphysicalReading(result) {
     reading.temperament || reading.dream_echo || reading.tension || reading.rhythm || reading.basis);
 }
 
+// Object.assign 把「键存在但值为空」也算作一次有效覆盖。而
+// app.globalData.lastProfile 的默认值恰好是五个空字符串俱全的对象，于是 App
+// 每次冷启动后，它都会把 storage 里真实填好的出生资料整个抹平。
+//
+// 这就是「资料页明明填了、命理视角却说没填」的原因：资料页读的是 storage，
+// 显示正常；命理视角走这里合并，拿到的是一份全空资料，于是报「缺少出生日期、
+// 出生时间、出生城市」——用户三样都填过，却被要求去补。
+//
+// 合并必须按「非空者优先」，空值永远不能覆盖已有值。
+function mergeProfileSources() {
+  var merged = {};
+  Array.prototype.forEach.call(arguments, function (source) {
+    if (!source || typeof source !== 'object') return;
+    Object.keys(source).forEach(function (key) {
+      var value = source[key];
+      if (value === '' || value === null || value === undefined) return;
+      merged[key] = value;
+    });
+  });
+  return merged;
+}
+
 function metaphysicalProfileFromDream(dream) {
   var app = getApp();
   var stored = wx.getStorageSync('oneiro:lastProfile') || {};
-  var profile = Object.assign(
-    {},
+  return mergeProfileSources(
+    app && app.globalData ? app.globalData.lastProfile : null,
     stored,
-    app.globalData.lastProfile || {},
-    dream && dream.profile && typeof dream.profile === 'object' ? dream.profile : {}
+    dream && dream.profile && typeof dream.profile === 'object' ? dream.profile : null
   );
-  return profile && typeof profile === 'object' ? profile : {};
 }
 
 // These responses can mean that the cloud function returned before the

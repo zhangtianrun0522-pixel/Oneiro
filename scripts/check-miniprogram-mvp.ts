@@ -1705,6 +1705,38 @@ assert.equal(optionalResultPage.data.metaphysicalEntryVisible, false);
 assert.equal(optionalResultPage.data.dream.result.metaphysical_resonance.includes('学校走廊'), true);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data?.metaphysicalReading));
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data?.dream?.id === optionalMetaphysicalDream.id && call.data?.dream?.result?.metaphysical_basis));
+
+// ── 冷启动后，已保存的出生资料不得被空默认值抹平 ──
+//
+// app.globalData.lastProfile 的默认值是五个空字符串俱全的对象。用 Object.assign
+// 合并时，「键存在但值为空」也算一次有效覆盖，于是它会把 storage 里真实填好的
+// 出生资料整个清空。症状极具迷惑性：资料页读的是 storage，显示一切正常；命理
+// 视角却拿到一份空资料，要求用户去补他明明已经填过的三样东西。
+//
+// 这个功能已经因为相邻原因被修过多次，所以这里断言真正上行的那份 profile。
+wx.storage['oneiro:lastProfile'] = {
+  nickname: '云',
+  birthDate: '1998-01-01',
+  birthTime: '08:30',
+  birthPlace: '青岛',
+  gender: 'male',
+};
+// 冷启动状态：用户本次会话还没打开过资料页，globalData 仍是空默认值。
+app.globalData.lastProfile = {
+  nickname: '',
+  birthDate: '',
+  birthTime: '',
+  birthPlace: '',
+  gender: '',
+};
+const coldStartResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+coldStartResultPage.onLoad({ id: optionalMetaphysicalDream.id });
+coldStartResultPage.openMetaphysicalReading();
+const metaphysicalCalls = wx.cloudCalls.filter((call) => call.name === 'interpretDream' && call.data?.metaphysicalReading);
+const coldStartProfile = metaphysicalCalls[metaphysicalCalls.length - 1].data.profile as Record<string, any>;
+assert.equal(coldStartProfile.birthDate, '1998-01-01');
+assert.equal(coldStartProfile.birthTime, '08:30');
+assert.equal(coldStartProfile.birthPlace, '青岛');
 assert.equal(resultPage.data.cardFlipped, false);
 const reopenedResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 reopenedResultPage.onLoad({ id: archiveAfterDream[0].id });
