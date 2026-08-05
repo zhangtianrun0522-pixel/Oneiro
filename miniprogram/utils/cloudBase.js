@@ -2,6 +2,17 @@ var CLOUD_STATUS_KEY = 'oneiro:cloudStatus';
 var CLOUD_ENV_ID = 'cloud1-d9gb0sjvg6a8d9864';
 var LOCAL_ID_KEY = 'oneiro:localOpenId';
 var INTERPRET_CLIENT_TIMEOUT_MS = 70000;
+// 客户端超时必须高于云函数自己的预算，否则会在云端仍在正常工作时把它掐断。
+// generateDreamImage 的 FUNCTION_BUDGET_MS 是 55 秒，供应商提交单次就可能占
+// 54 秒，30 秒的默认值会把正常的生图判成超时。
+var IMAGE_CLIENT_TIMEOUT_MS = 70000;
+var DEFAULT_CLIENT_TIMEOUT_MS = 30000;
+
+function defaultTimeoutForFunction(name) {
+  if (name === 'interpretDream') return INTERPRET_CLIENT_TIMEOUT_MS;
+  if (name === 'generateDreamImage') return IMAGE_CLIENT_TIMEOUT_MS;
+  return DEFAULT_CLIENT_TIMEOUT_MS;
+}
 var cloudReady = false;
 var cloudChecked = false;
 
@@ -64,7 +75,7 @@ function initCloud(callback) {
 
 function callCloudFunction(name, data, callback, options) {
   var settings = options || {};
-  var timeoutMs = Number(settings.timeoutMs || (name === 'interpretDream' ? INTERPRET_CLIENT_TIMEOUT_MS : 30000));
+  var timeoutMs = Number(settings.timeoutMs || defaultTimeoutForFunction(name));
   var startedAt = Date.now();
   var settled = false;
   var timer = null;
