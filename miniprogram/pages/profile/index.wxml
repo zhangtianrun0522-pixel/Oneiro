@@ -172,6 +172,9 @@
     <picker mode="time" value="{{profile.birthTime}}" bindchange="onBirthTimeChange">
       <view class="field picker-field {{profile.birthTime ? '' : 'muted'}}">{{profile.birthTime || '选择时间'}}</view>
     </picker>
+    <!-- 整份资料都是可选的，但「命理视角」非这三样不可。以前只标「可选」，
+         用户填了日期和城市就以为够了，功能却一直不出来，也说不出为什么。 -->
+    <text wx:if="{{!profile.birthDate || !profile.birthTime || !profile.birthPlace}}" class="field-hint">出生日期、时间、城市三样齐全，结果页的「命理视角」才能生成；出生时间决定时柱，缺它排不出完整四柱。不填不影响其他解读。</text>
 
     <text class="field-label">性别 / 可选</text>
     <picker mode="selector" range="{{genderOptions}}" value="{{genderIndex}}" bindchange="onGenderChange">

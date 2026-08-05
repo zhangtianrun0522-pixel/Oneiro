@@ -513,6 +513,16 @@
   justify-content: space-between;
 }
 
+.field-hint {
+  display: block;
+  margin-top: var(--space-tight);
+  padding-left: 20rpx;
+  border-left: 2rpx solid var(--gold-line);
+  color: var(--ink-45, rgba(33, 29, 23, 0.45));
+  font-size: 21rpx;
+  line-height: 1.7;
+}
+
 .clear-field {
   margin: 0 !important;
   width: auto !important;

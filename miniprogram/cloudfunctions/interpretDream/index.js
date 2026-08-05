@@ -123,6 +123,10 @@ const SYSTEM_PROMPT = [
   // 梦见石榴 → 今天去尝一颗石榴。这是把象征当购物清单，也是模块化 prompt
   // 最容易退化成的形态：拿梦里的名词，映射成现实里的一个动作。
   '模块核心意图：one_small_act 必须连向梦所指向的现实处境，不得把梦里的物件搬进现实当道具（梦见石榴就去吃石榴、梦见钥匙就去配一把钥匙，都属于错误）。没有可连的现实处境时，给一个关于留意或记录的行动，或者留空。',
+  // 禁了「梦见石榴→去吃石榴」之后，模型换了条路：把传统释义里的「丰收」翻译成
+  // 「留意这周突然出现的惊喜」。物件是不搬了，但它开始暗示未来会发生什么——
+  // 这是从后门溜回来的预测，比原来的错误更难发现。
+  '模块核心意图：one_small_act 不得暗示未来会发生什么，也不得让用户去等待、期待或留意某类尚未发生的事件（「留意这周出现的惊喜」「注意即将到来的机会」都属于预测）。只能指向已经存在的现实处境，或对已发生之事的记录与回看。',
   '模块核心意图：visual_plan 只把原梦中最重要的事件、场景和少量元素交给生图，短梦就画短梦，不补齐缺失世界。',
   '全局红线一：只引用梦里真实出现的内容，不把象征解释写成事实，也不得改写用户的原梦。',
   '全局红线二：没有现实证据就提问而不是断言，现实关联可以为零；不确定就明说不确定。',
@@ -758,15 +762,22 @@ function buildBaziChart(profile) {
   const location = locationResolver.resolveBirthPlace(safeProfile.birthPlace);
 
   if (!dateMatch || !timeMatch || !location) {
+    // 提示必须点名到底缺哪一样。笼统地说「补充出生日期、时间和城市」，会让
+    // 已经填了日期和城市、只差出生时间的用户反复确认自己已经填过——他确实
+    // 填过了，只是资料页把「出生时间」标成了可选，而这个功能非它不可。
+    const missing = [];
+    if (!dateMatch) missing.push('出生日期');
+    if (!timeMatch) missing.push('出生时间');
+    if (!location) missing.push('出生城市');
+
     return {
       available: false,
       precision: !dateMatch || !timeMatch ? 'insufficient_input' : 'location_unresolved',
-      summary: !dateMatch || !timeMatch
-        ? '出生日期或时间不完整，本次不生成出生节律参考。'
-        : '出生城市无法识别，本次不生成出生节律参考。',
-      basis: !dateMatch || !timeMatch
-        ? '可填写公历出生年月日、时间和出生城市，用于生成出生节律参考。'
-        : '可填写可识别的出生城市，例如“青岛”或“山东青岛”；不使用模型猜测坐标。'
+      missingFields: missing,
+      summary: '缺少' + missing.join('、') + '，本次不生成出生节律参考。',
+      basis: !location && dateMatch && timeMatch
+        ? '出生城市“' + String(safeProfile.birthPlace || '').slice(0, 20) + '”无法识别。可填写市级或省级地名，例如“青岛”或“山东”；不使用模型猜测坐标。'
+        : '出生节律需要' + missing.join('和') + '。' + (missing.indexOf('出生时间') >= 0 ? '出生时间决定时柱，缺它就无法排出完整四柱。' : '')
     };
   }
 

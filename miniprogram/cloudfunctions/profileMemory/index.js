@@ -182,10 +182,12 @@ function longTermPatterns(sources) {
       themeCounts[symbol] = (themeCounts[symbol] || 0) + 1;
       themeScores[symbol] = (themeScores[symbol] || 0) + weight;
     });
-    if (dream.emotion) {
-      emotionCounts[dream.emotion] = (emotionCounts[dream.emotion] || 0) + 1;
-      emotionScores[dream.emotion] = (emotionScores[dream.emotion] || 0) + weight;
-    }
+    // 只统计短情绪标签。整句天气文案永远不会重复，混进来会让「反复出现的情绪」
+    // 退化成「最近一个梦的天气句」。
+    (dream.emotionLabels || []).forEach(function (label) {
+      emotionCounts[label] = (emotionCounts[label] || 0) + 1;
+      emotionScores[label] = (emotionScores[label] || 0) + weight;
+    });
   });
   function top(counts, limit, scores) {
     return Object.keys(counts).sort(function (left, right) {
@@ -305,6 +307,15 @@ async function loadSources(openid) {
       localId: text(dream.localId, 80),
       text: text(dream.dreamText, 360),
       symbols: cleanStrings(dream.symbols || result.symbols, 5, 30),
+      // emotional_weather 是「一句话描述梦的情绪天气」——每个梦都是一句独一无二
+      // 的散文。拿它做计数，任何一条的出现次数都只会是 1，于是「反复出现的情绪」
+      // 实际上等于最近那个梦的天气句，却被当成这个人的情绪底色展示出来。
+      // dream_facts.emotions 才是短标签（紧张、期待），能真正重复。
+      emotionLabels: cleanStrings(
+        (result.dream_facts && result.dream_facts.emotions) || dream.dreamFacts && dream.dreamFacts.emotions,
+        3,
+        12
+      ),
       emotion: text(dream.emotionalWeather || result.emotional_weather, 100),
       discussion: discussionTexts(dream),
       createdAt: dream.createdAt || null,
@@ -419,7 +430,9 @@ function deterministicDraft(sources) {
   const summaryParts = ['当下的状态：' + name + '，' + openingState];
   if (priorUserEdit && priorUserEdit.summary) summaryParts[0] = '当下的状态：' + text(priorUserEdit.summary, 55);
   if (recurringThemes) summaryParts.push('反复出现的主题：' + recurringThemes + '。');
-  summaryParts.push('情绪的底色：' + emotion + '；这只是当前资料中的有限观察。');
+  // emotion 现在是短标签，但用户编辑过的旧数据仍可能带着句号结尾，直接拼上
+  // 「；这只是…」会渲染成「…显影。；这只是…」。先剥掉结尾标点再拼。
+  summaryParts.push('情绪的底色：' + String(emotion).replace(/[。．.；;，,]+$/, '') + '；这只是当前资料中的有限观察。');
   if (sources.priorPortrait) summaryParts.push('正在变化的：新的记录会继续校正这份阶段性理解。');
   const summary = priorUserEdit && priorUserEdit.summary
     ? String(priorUserEdit.summary).trim().slice(0, 500)

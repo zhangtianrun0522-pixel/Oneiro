@@ -764,6 +764,21 @@ assert.equal(baziChart.precision, 'true_solar_time');
 assert.equal(baziChart.location.name, '青岛');
 assert.equal(baziChart.calculationVersion, 'bazi-v0.6-engine');
 
+// 缺哪一样就点名哪一样。笼统提示会让只差出生时间的用户反复确认自己已经填过
+// 日期和城市——资料页把出生时间标成「可选」，而这个功能非它不可。
+const missingTimeChart = buildBaziChart({ birthDate: '1998-01-01', birthTime: '', birthPlace: '青岛' });
+assert.equal(missingTimeChart.available, false);
+assert.equal(missingTimeChart.missingFields.join(','), '出生时间');
+assert.ok(missingTimeChart.summary.includes('出生时间'));
+assert.ok(!missingTimeChart.summary.includes('出生日期'), '不得要求用户补充已经填好的字段');
+assert.ok(!missingTimeChart.summary.includes('出生城市'), '不得要求用户补充已经填好的字段');
+
+const unresolvedPlaceChart = buildBaziChart({ birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '某个不存在的地方' });
+assert.equal(unresolvedPlaceChart.available, false);
+assert.equal(unresolvedPlaceChart.precision, 'location_unresolved');
+assert.ok(unresolvedPlaceChart.basis.includes('无法识别'));
+
+
 const chartModelPayload = JSON.parse(JSON.stringify(completeModelPayload));
 chartModelPayload.metaphysical_resonance = '梦中西红柿里爆出水蜜桃；日主甲木的表达在这里仅作为观察这次变化的技术参照。';
 chartModelPayload.metaphysical_basis = '四柱计算显示日主为甲木，梦中西红柿里爆出水蜜桃这一事实是本次解读的落点。';
