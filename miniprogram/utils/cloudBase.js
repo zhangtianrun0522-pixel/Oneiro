@@ -125,7 +125,11 @@ function callCloudFunction(name, data, callback, options) {
   }, timeoutMs);
 
   try {
-    wx.cloud.callFunction({
+    // callFunction 同时返回 Promise。传了 success/fail 时这个 Promise 仍然会
+    // 被 reject，基础库把它报成一条没有任何归属信息的 "Error: timeout"，
+    // 调试时完全看不出是哪个云函数。settle 是幂等的，这里只负责把函数名和
+    // 耗时打进控制台，真正的错误处理仍然走下面的 fail。
+    var pending = wx.cloud.callFunction({
       name: name,
       data: data || {},
       success: function (res) {
@@ -151,6 +155,12 @@ function callCloudFunction(name, data, callback, options) {
         });
       }
     });
+    if (pending && typeof pending.catch === 'function') {
+      pending.catch(function (error) {
+        console.warn('[cloud] ' + name + ' 调用失败 · 已用时 ' + (Date.now() - startedAt) + 'ms · 客户端上限 '
+          + timeoutMs + 'ms', error && error.errMsg ? error.errMsg : error);
+      });
+    }
   } catch (error) {
     settle({
       ok: false,

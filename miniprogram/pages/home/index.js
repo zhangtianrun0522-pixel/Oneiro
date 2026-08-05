@@ -17,9 +17,16 @@ var ANALYSIS_STAGES = [
 // 「取消」。ATTEMPT_MIN 是「有效拖拽意图」的下界——低于它视为误触/静止，
 // 不给任何反馈；介于 ATTEMPT_MIN 和 SUBMIT 之间视为「拖了但没到位」，
 // 松手时要给用户一个明确的信号，而不是像 zone==='none' 一样悄无声息。
-var DRAG_SUBMIT_THRESHOLD = 48;
-var DRAG_CANCEL_THRESHOLD = 48;
-var DRAG_ATTEMPT_MIN = 16;
+//
+// 阈值必须等于圆环的跟手上限。原来阈值 48px 而跟手只到 28px：手指走完
+// 后 42% 的行程时圆环完全不动，手感上就是「拖不动了、没反应」，用户会以为
+// 手势失效而松手——这是这个交互最主要的误会来源。
+var DRAG_SUBMIT_THRESHOLD = 40;
+var DRAG_CANCEL_THRESHOLD = 40;
+var DRAG_ATTEMPT_MIN = 14;
+// 手指在长按计时器触发前移动超过这个距离，说明这一下是「划」不是「按住」，
+// 不能起录音。
+var DRAG_SWIPE_INTENT_SLOP = 12;
 
 // Keep this decision independent from Page#setData: touch events can arrive
 // faster than rendering updates, while submission must follow the real finger
@@ -189,6 +196,7 @@ Page({
     dragDy: 0,
     dragZone: 'none',
     dragBounce: false,
+    voicePressed: false,
     heroCardNo: '',
     heroDate: '',
     analysisActive: false,
@@ -401,7 +409,7 @@ Page({
   },
 
   resetDragState: function () {
-    this.setData({ dragDx: 0, dragDy: 0, dragZone: 'none', dragBounce: false });
+    this.setData({ dragDx: 0, dragDy: 0, dragZone: 'none', dragBounce: false, voicePressed: false });
   },
 
   enterEditingMode: function () {
@@ -434,11 +442,15 @@ Page({
     this.voiceStartY = touch ? touch.clientY : 0;
     this.lastDragZone = 'none';
     this.voiceDragZone = 'none';
+    this.voiceSwipeIntent = false;
     if (this.dragBounceTimer) {
       clearTimeout(this.dragBounceTimer);
       this.dragBounceTimer = null;
     }
     this.resetDragState();
+    // 按下的那一刻就要有反馈。长按判定需要等 240ms，这段时间里如果圆环一动
+    // 不动，控件读起来是「死的」。
+    this.setData({ voicePressed: true });
 
     // A second touch while recording still acts as the explicit stop control.
     if (this.data.recording) return;
@@ -448,6 +460,10 @@ Page({
     this.voiceStartTimer = setTimeout(function () {
       self.voiceStartTimer = null;
       if (!self.voiceTouching || self.data.recording || self.data.recognizing) return;
+      // 已经划出去了就不是「按住说」。没有这道判断，有草稿的用户下滑提交时
+      // 会在半路误起一次录音，松手后还要等一段几乎无声的音频识别完，把识别
+      // 结果拼到草稿后面再提交。
+      if (self.voiceSwipeIntent) return;
       self.voiceLongPressStarted = true;
       self.beginRecording('long_press');
     }, 240);
@@ -460,6 +476,14 @@ Page({
     var dx = touch.clientX - this.voiceStartX;
     var dy = touch.clientY - this.voiceStartY;
     var zone = dragZoneForDelta(dx, dy);
+
+    // 越过 slop 就锁定为「划」，并撤掉还没触发的长按计时器。
+    if (Math.abs(dx) > DRAG_SWIPE_INTENT_SLOP || Math.abs(dy) > DRAG_SWIPE_INTENT_SLOP) {
+      if (this.voiceStartTimer && !this.data.recording) {
+        this.voiceSwipeIntent = true;
+        this.clearVoiceStartTimer();
+      }
+    }
 
     // Haptics fire once per edge crossing, never on every touchmove tick —
     // that would turn into a continuous buzz. lastDragZone is the previous
@@ -475,10 +499,10 @@ Page({
     this.voiceDragZone = zone;
 
     this.setData({
-      // 向下跟手距离压到 28px：圆环下方的确认条只隔 36px，原来放到 56px
-      // 会让圆环压到确认条上，两者又都是深墨填充，视觉上糊成一个团块。
-      dragDx: Math.max(-36, Math.min(36, dx)),
-      dragDy: Math.max(-36, Math.min(28, dy)),
+      // 跟手上限与判定阈值严格相等：手指到达阈值的那一刻，圆环恰好走到落点
+      // 条边缘。中间不存在「手指还在动、圆环已经不动」的死区。
+      dragDx: Math.max(-DRAG_SUBMIT_THRESHOLD, Math.min(DRAG_SUBMIT_THRESHOLD, dx)),
+      dragDy: Math.max(-DRAG_CANCEL_THRESHOLD, Math.min(DRAG_SUBMIT_THRESHOLD, dy)),
       dragZone: zone
     });
   },
@@ -510,6 +534,7 @@ Page({
     // Long-press fired but recorder hasn't actually started yet — the
     // authorize() dialog can still be resolving asynchronously.
     var pendingRecording = this.voiceLongPressStarted && !wasRecording;
+    var wasSwipe = !!this.voiceSwipeIntent;
 
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
@@ -517,6 +542,7 @@ Page({
     this.voiceDragZone = 'none';
     this.resetDragState();
     this.voiceLongPressStarted = false;
+    this.voiceSwipeIntent = false;
 
     if (zone === 'cancel') {
       if (wasRecording) {
@@ -544,23 +570,29 @@ Page({
         // Already had a draft and swiped down before the long-press
         // threshold even fired: submit the existing draft directly.
         this.generateDreamCard();
+      } else {
+        // 空手下滑过去是完全静默的：手势明明做对了却什么也没发生，用户只能
+        // 理解成「这个功能坏了」。
+        wx.showToast({ title: '还没有内容，按住圆环说一句', icon: 'none', duration: 1600 });
       }
       return;
     }
 
-    if (zone === 'attempt') {
-      this.showDragAttemptFeedback();
-    }
-
-    // zone === 'none', or a short-of-threshold 'attempt': an ordinary
-    // release, no submission — the recording/recognition flow below is
-    // unchanged either way.
     if (wasRecording) {
+      if (zone === 'attempt') this.showDragAttemptFeedback();
       this.stopRecorder();
       return;
     }
     if (pendingRecording) {
+      if (zone === 'attempt') this.showDragAttemptFeedback();
       this.voiceStopAfterAuthorization = true;
+      return;
+    }
+    if (zone === 'attempt' || wasSwipe) {
+      // 划了但没到位。原来这里在给出「再往下滑一点」的提示之后还会继续往下
+      // 走进 enterEditingMode()，于是一次没划到位的下滑会同时弹出提示和键盘，
+      // 两个互相矛盾的反馈叠在一起。
+      if (zone === 'attempt') this.showDragAttemptFeedback();
       return;
     }
     // Quick tap on the circle (never entered recording): open text editing.
@@ -577,6 +609,7 @@ Page({
     this.voiceDragZone = 'none';
     this.resetDragState();
     this.voiceLongPressStarted = false;
+    this.voiceSwipeIntent = false;
 
     // A system interruption (incoming call, notification shade, etc.) is
     // treated the same as an explicit cancel — never leave a recording
@@ -880,6 +913,10 @@ Page({
           if (wx.removeStorageSync) {
             wx.removeStorageSync('oneiro:pendingDreamText');
           }
+          // 草稿已经变成一个真正的梦了。不清空的话，用户从结果页返回首页会
+          // 看到上一个梦的全文还留在输入区，既像是没提交成功，也很容易被
+          // 重复提交一次。
+          that.setData({ dreamText: '', editingDream: false });
           that.stopAnalysisProgress();
           wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dream.id) });
           that.submitting = false;

@@ -140,11 +140,11 @@
 }
 .drag-label--cancel { color: var(--cinnabar-ink); }
 
-/* 下滑确认区：录音中、拖拽临近或越过阈值、以及回弹反馈时才出现，是
-   「下滑提交」这个手势唯一有实体感的落点，比原来一行跟手小字更明确，
-   同时保持暖纸/深墨/朱砂的克制调性——虚线描边 = 待命，旧金描边 = 已进入
-   感应范围，墨色反色 = 已越过阈值松手即提交，和圆环 is-drag-submit 的
-   视觉语言呼应，不做花哨的营销动效。 */
+/* 下滑确认区是「下滑提交」这个手势唯一有实体感的落点，虚线描边 = 待命，
+   旧金描边 = 已进入感应范围，墨色反色 = 已越过阈值松手即提交，和圆环
+   is-drag-submit 的视觉语言呼应，不做花哨的营销动效。
+   始终占位、只切换 opacity：条件渲染会在手势进行到一半时插入整块高度，
+   把下方文字顶走，页面自己跳一下。 */
 .confirm-target {
   box-sizing: border-box;
   display: flex;
@@ -152,14 +152,21 @@
   justify-content: center;
   width: 216rpx;
   height: 72rpx;
-  /* 圆环向下跟手上限 28px。104rpx(52px) 静止净空 → 跟到底时仍留约 24px，
-     两者不会读成相接的一个整体（72rpx 时到底只剩 8px，视觉上是相切的）。 */
-  margin: 104rpx auto 0;
+  /* 圆环向下跟手上限 40px（= DRAG_SUBMIT_THRESHOLD）。128rpx(64px) 静止净空
+     → 跟到底时仍留 24px，两者不会读成相接的一个整体。 */
+  margin: 128rpx auto 0;
   border: 2rpx dashed rgba(33, 29, 23, 0.28);
   border-radius: 36rpx;
+  opacity: 0;
   pointer-events: none;
-  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+  transition: opacity 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
 }
+
+/* 有草稿或正在录音：低调显形，让「往哪滑」在动手之前就是已知的。 */
+.confirm-target.is-visible { opacity: 0.62; }
+.confirm-target.is-near,
+.confirm-target.is-armed,
+.confirm-target.is-bounce { opacity: 1; }
 
 .confirm-target-label {
   color: rgba(33, 29, 23, 0.5);
@@ -232,6 +239,14 @@
   border-radius: 50%;
   background: rgba(33, 29, 23, 0.4);
   transition: background 0.25s;
+}
+
+/* 按下即响应。长按判定要等 240ms，这段时间里控件必须先「认下」这一触，
+   否则前 1/4 秒圆环纹丝不动，读起来像没点到。 */
+.voice-button.is-pressed {
+  animation: none;
+  border-color: rgba(33, 29, 23, 0.45);
+  background: rgba(33, 29, 23, 0.04);
 }
 
 /* 有草稿、尚未录音：描边与圆心点转旧金，呼应「这段话已经存在」 */

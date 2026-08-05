@@ -159,23 +159,44 @@ function discussionTexts(dream) {
   return userMessages;
 }
 
+// 阶段画像描述的是「当下」，所以近期的重复必须压过陈年的重复；否则半年前
+// 的高频意象会一直占住画像，用户读到的是一个早已不是自己的描述。
+function recencyWeight(createdAt) {
+  const timestamp = createdAt ? new Date(createdAt).getTime() : NaN;
+  if (!Number.isFinite(timestamp)) return 0.6;
+  const daysAgo = Math.floor((Date.now() - timestamp) / 86400000);
+  if (daysAgo <= 14) return 1;
+  if (daysAgo <= 45) return 0.7;
+  if (daysAgo <= 120) return 0.4;
+  return 0.2;
+}
+
 function longTermPatterns(sources) {
   const themeCounts = {};
+  const themeScores = {};
   const emotionCounts = {};
+  const emotionScores = {};
   sources.dreams.forEach(function (dream) {
-    dream.symbols.forEach(function (symbol) { themeCounts[symbol] = (themeCounts[symbol] || 0) + 1; });
-    if (dream.emotion) emotionCounts[dream.emotion] = (emotionCounts[dream.emotion] || 0) + 1;
+    const weight = recencyWeight(dream.createdAt);
+    dream.symbols.forEach(function (symbol) {
+      themeCounts[symbol] = (themeCounts[symbol] || 0) + 1;
+      themeScores[symbol] = (themeScores[symbol] || 0) + weight;
+    });
+    if (dream.emotion) {
+      emotionCounts[dream.emotion] = (emotionCounts[dream.emotion] || 0) + 1;
+      emotionScores[dream.emotion] = (emotionScores[dream.emotion] || 0) + weight;
+    }
   });
-  function top(counts, limit) {
+  function top(counts, limit, scores) {
     return Object.keys(counts).sort(function (left, right) {
-      return counts[right] - counts[left] || left.localeCompare(right);
+      return (scores[right] - scores[left]) || (counts[right] - counts[left]) || left.localeCompare(right);
     }).slice(0, limit).map(function (label) { return { label: label, count: counts[label] }; });
   }
   return {
     dreamCount: sources.dreams.length,
     lifeNoteCount: sources.notes.length,
-    recurringThemes: top(themeCounts, 5),
-    recurringEmotions: top(emotionCounts, 3)
+    recurringThemes: top(themeCounts, 5, themeScores),
+    recurringEmotions: top(emotionCounts, 3, emotionScores)
   };
 }
 
@@ -377,7 +398,15 @@ function deterministicDraft(sources) {
   const recentNote = sources.notes[0] ? text(sources.notes[0].text, 80) : '';
   const emotion = patterns.recurringEmotions[0] ? patterns.recurringEmotions[0].label : '目前还无法判断';
   const priorUserEdit = snapshotUserEdit(sources.priorPortrait);
-  const summaryParts = ['当下的状态：' + name + '，' + (recentNote ? '你最近提到“' + recentNote + '”。' : '现有素材不多，你正在留下可供理解自己的线索。')];
+  // 「素材不多」只能由真实梦境数量决定。原来只看有没有生活记录，于是记了
+  // 三十个梦的用户依然被告知素材不多——那是一句用户当场就能证伪的话。
+  const dreamCount = sources.dreams.length;
+  const openingState = recentNote
+    ? '你最近提到“' + recentNote + '”。'
+    : dreamCount >= 3
+      ? '你已经记下 ' + dreamCount + ' 个梦，' + (recurringThemes ? '它们之间开始出现可以辨认的重复。' : '但还没有出现稳定重复的线索。')
+      : '现有素材不多，你正在留下可供理解自己的线索。';
+  const summaryParts = ['当下的状态：' + name + '，' + openingState];
   if (priorUserEdit && priorUserEdit.summary) summaryParts[0] = '当下的状态：' + text(priorUserEdit.summary, 55);
   if (recurringThemes) summaryParts.push('反复出现的主题：' + recurringThemes + '。');
   summaryParts.push('情绪的底色：' + emotion + '；这只是当前资料中的有限观察。');

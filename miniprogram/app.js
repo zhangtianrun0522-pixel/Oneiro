@@ -29,6 +29,19 @@ App({
   onLaunch: function () {
     var that = this;
 
+    // 基础库把任何未处理的 Promise 拒绝都报成一条没有归属的错误（线上见过
+    // 光秃秃的 "Error: timeout"，四帧堆栈全在 WAServiceMainContext 内部，
+    // 完全看不出是谁抛的）。这里把 reason 原样打出来，好判断它究竟来自本
+    // 小程序的代码，还是开发者工具/基础库自身的内部请求。
+    if (typeof wx !== 'undefined' && typeof wx.onUnhandledRejection === 'function') {
+      wx.onUnhandledRejection(function (res) {
+        var reason = res && res.reason;
+        console.warn('[unhandled-rejection]',
+          reason && reason.errMsg ? reason.errMsg : (reason && reason.message ? reason.message : reason),
+          reason && reason.stack ? reason.stack : '');
+      });
+    }
+
     analytics.trackEvent('app_start', { source: 'miniprogram' });
     cloudBase.initCloud(function (status) {
       that.globalData.cloudStatus = status;

@@ -339,10 +339,9 @@
   border: 0;
 }
 
-/* 修改这段理解 / 暂停用于解读 / 手动刷新：设计稿是同一行三个文字链，
-   合并三个原本分散的按钮到一个 flex 行，可见性条件与改稿前完全一致：
-   前两个仅 memoryState.current && !portraitEditing 时出现，
-   第三个（生成/刷新）不受 portraitEditing 影响，始终可点 */
+/* 默认视图固定两个文字链：「修改这段理解」+「重新梳理」，画像被暂停时
+   第二个换成「恢复用于解读」。第三个动作（暂停）移到编辑态，见
+   .portrait-pause-link——默认视图不该同时摆三个低频选择。 */
 .portrait-links-row {
   display: flex;
   flex-wrap: wrap;
@@ -361,6 +360,16 @@
 
 .portrait-link-btn::after {
   border: 0;
+}
+
+/* 只在编辑态出现。用最轻的文字链权重，不与「保存修改 / 取消」争夺注意力。 */
+.portrait-pause-link {
+  display: block;
+  min-height: var(--tap-min);
+  margin-top: 4rpx;
+  color: var(--ink-70);
+  font-size: 23rpx;
+  line-height: var(--tap-min);
 }
 
 /* ── 历史版本：唯一保留的浅色底块，从从属子列表变成设计稿的

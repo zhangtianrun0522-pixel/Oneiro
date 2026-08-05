@@ -18,7 +18,7 @@ const MAX_TIMEOUT_MS = 50000;
 // 思考型模型（如 deepseek-v4-flash）的推理与正文共用同一份输出预算。不显式
 // 声明上限时，供应商默认值会被推理吃掉，正文返回空字符串。
 const MAX_OUTPUT_TOKENS = Number(process.env.INTERPRET_MAX_TOKENS || 8192);
-const PROMPT_VERSION = 'oneiro-freeform-reading-v0.5-optional-metaphysical';
+const PROMPT_VERSION = 'oneiro-freeform-reading-v0.6-relevance-memory';
 const SCHEMA_VERSION = 'dream-entry-v0.2';
 
 // 供应商返回 200 但正文为空时，必须区分「推理占满预算被截断」和「真的没内容」，
@@ -110,6 +110,7 @@ const SYSTEM_PROMPT = [
   '核心意图：先把原梦中真正发生的事说清楚，再让每个模块提供一条有辨识度、可被用户修正的观察。',
   '模块核心意图：dream_translation 只复述场景与感受；reading_hook 找到一个具体转折；文化象征只提供共同文化语境；underneath 观察梦中细节之间的个人张力；possible_connections 只在有具体呼应时提出现实假设；alternative_reading 保留另一种不把梦固定成性格的看法；integration_question 留一个容易回答的问题；one_small_act 给一个轻量行动。',
   '模块核心意图：历史记忆只有在历史观察、生活片段或画像与本梦有具体呼应时才使用，并显式说出来源与时间感；没有具体呼应时禁止假装记得。',
+  '模块核心意图：上下文若给出「已核实的历史呼应」，那是系统比对过的确凿重复，必须至少点出其中一处，写清是哪个意象、上一次大约什么时候出现、那次和这次有什么不同；只复述给定的次数与时间，不得据此推断现实生活中发生了什么。',
   '模块核心意图：visual_plan 只把原梦中最重要的事件、场景和少量元素交给生图，短梦就画短梦，不补齐缺失世界。',
   '全局红线一：只引用梦里真实出现的内容，不把象征解释写成事实，也不得改写用户的原梦。',
   '全局红线二：没有现实证据就提问而不是断言，现实关联可以为零；不确定就明说不确定。',
@@ -887,11 +888,41 @@ function buildBaziChart(profile) {
   }
 }
 
+// 近期的重复比陈年的重复更能说明「此刻」。没有这个衰减，一个半年前密集
+// 出现过的意象会永远压住这个月真正在重复的意象。
+function memoryRecencyWeight(daysAgo) {
+  if (!Number.isFinite(daysAgo) || daysAgo < 0) return 0.6;
+  if (daysAgo <= 14) return 1;
+  if (daysAgo <= 45) return 0.7;
+  if (daysAgo <= 120) return 0.4;
+  return 0.2;
+}
+
+function daysBetween(fromTimestamp, toTimestamp) {
+  if (!fromTimestamp) return NaN;
+  return Math.floor((toTimestamp - fromTimestamp) / 86400000);
+}
+
+function relativeDayPhrase(daysAgo) {
+  if (!Number.isFinite(daysAgo) || daysAgo < 0) return '之前';
+  if (daysAgo === 0) return '今天';
+  if (daysAgo === 1) return '昨天';
+  if (daysAgo <= 6) return daysAgo + '天前';
+  if (daysAgo <= 10) return '大约一周前';
+  if (daysAgo <= 27) return '大约' + Math.round(daysAgo / 7) + '周前';
+  if (daysAgo <= 45) return '大约一个月前';
+  if (daysAgo <= 300) return '大约' + Math.round(daysAgo / 30) + '个月前';
+  return '半年多以前';
+}
+
 function buildDreamMemory(records, memoryUnavailable) {
   const entries = Array.isArray(records) ? records.slice() : [];
   const symbolCounts = {};
+  const symbolScores = {};
+  const symbolOccurrences = {};
   const themeCounts = {};
   const recent = [];
+  const now = Date.now();
 
   entries.sort(function (a, b) {
     return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
@@ -901,6 +932,9 @@ function buildDreamMemory(records, memoryUnavailable) {
     const result = entry && entry.result ? entry.result : {};
     const symbols = Array.isArray(entry.symbols) && entry.symbols.length ? entry.symbols : result.symbols || [];
     const theme = String(entry.cardTheme || result.card_theme || '');
+    const createdAt = entry && entry.createdAt ? new Date(entry.createdAt).getTime() : 0;
+    const daysAgo = daysBetween(createdAt, now);
+    const weight = memoryRecencyWeight(daysAgo);
 
     var uniqueSymbols = new Set();
     symbols.slice(0, 8).forEach(function (symbol) {
@@ -909,6 +943,19 @@ function buildDreamMemory(records, memoryUnavailable) {
     });
     uniqueSymbols.forEach(function (symbol) {
       symbolCounts[symbol] = (symbolCounts[symbol] || 0) + 1;
+      symbolScores[symbol] = (symbolScores[symbol] || 0) + weight;
+      // 保留每个意象最近三次的落点，这样解读才说得出「三周前那次你在剪枝」，
+      // 而不是只知道它出现过 N 次。
+      if (!symbolOccurrences[symbol]) symbolOccurrences[symbol] = [];
+      if (symbolOccurrences[symbol].length < 3) {
+        symbolOccurrences[symbol].push({
+          date: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
+          daysAgo: Number.isFinite(daysAgo) ? daysAgo : null,
+          when: relativeDayPhrase(daysAgo),
+          title: String(result.title || ''),
+          detail: String(result.dream_translation || '').slice(0, 80)
+        });
+      }
     });
     if (theme) themeCounts[theme] = (themeCounts[theme] || 0) + 1;
   });
@@ -926,7 +973,9 @@ function buildDreamMemory(records, memoryUnavailable) {
 
   const recurringSymbols = Object.keys(symbolCounts)
     .filter(function (key) { return symbolCounts[key] >= 2; })
-    .sort(function (a, b) { return symbolCounts[b] - symbolCounts[a]; })
+    .sort(function (a, b) {
+      return (symbolScores[b] - symbolScores[a]) || (symbolCounts[b] - symbolCounts[a]);
+    })
     .slice(0, 8)
     .map(function (symbol) { return { symbol: symbol, count: symbolCounts[symbol] }; });
   const recurringThemes = Object.keys(themeCounts)
@@ -937,12 +986,52 @@ function buildDreamMemory(records, memoryUnavailable) {
   return {
     dreamCount: entries.length,
     symbolCounts: symbolCounts,
+    symbolOccurrences: symbolOccurrences,
     recurringSymbols: recurringSymbols,
     recurringThemes: recurringThemes,
     recent: recent,
     hasPattern: entries.length >= 3 && recurringSymbols.length > 0,
     memoryUnavailable: !!memoryUnavailable
   };
+}
+
+// 记忆之所以读起来像「她记得我」，靠的不是把最高频的三个意象塞进 prompt，
+// 而是拿今晚这个梦去历史里找确凿的重合。前者对每个梦都是同一份背景板，
+// 模型按红线（没有具体呼应就不许假装记得）只能选择闭嘴；后者才是可以被
+// 说出口、可以被用户当场核对的呼应。
+function buildMemoryEchoes(memory, dreamText) {
+  const source = String(dreamText || '');
+  const occurrences = (memory && memory.symbolOccurrences) || {};
+  const counts = (memory && memory.symbolCounts) || {};
+
+  if (!source) return [];
+
+  return Object.keys(counts)
+    .filter(function (symbol) {
+      return symbol.length >= 1 && source.indexOf(symbol) >= 0;
+    })
+    .map(function (symbol) {
+      const seen = occurrences[symbol] || [];
+      const latestDaysAgo = seen.length && Number.isFinite(seen[0].daysAgo) ? seen[0].daysAgo : 999;
+      return {
+        symbol: symbol,
+        count: counts[symbol],
+        lastSeen: seen[0] ? seen[0].when : '',
+        occurrences: seen.slice(0, 2),
+        // 重复次数越多、上次出现越近，越值得在解读里点名。
+        score: counts[symbol] * memoryRecencyWeight(latestDaysAgo)
+      };
+    })
+    .sort(function (a, b) { return b.score - a.score; })
+    .slice(0, 3)
+    .map(function (item) {
+      return {
+        symbol: item.symbol,
+        pastDreamCount: item.count,
+        lastSeen: item.lastSeen,
+        occurrences: item.occurrences
+      };
+    });
 }
 
 async function loadDreamMemory(openid) {
@@ -1421,10 +1510,18 @@ function buildUserContext(profile, dreamText, memory, lifeNote) {
   };
   var portrait = profile && (profile.currentPortrait || profile.confirmedPortrait);
   var portraitSummary;
+  var echoes = buildMemoryEchoes(dreamMemory, dreamText);
 
   if (profile.nickname) parts.push('用户称呼：' + profile.nickname);
   parts.push('今日日期：' + new Date().toISOString().slice(0, 10));
-  parts.push('最多 3 条历史观察（只有具体重复时才可谨慎参考）：' + JSON.stringify(boundedMemory));
+  if (echoes.length) {
+    // 这一段是已经核对过的事实：这些意象既在今晚的梦里，也在过去的梦里。
+    parts.push('已核实的历史呼应（这些意象在今晚的梦和过去的梦里同时出现，是可以直接说出口的重复，'
+      + '至少在 possible_connections 或 underneath 中点出其中最有分量的一处，并带上时间感；'
+      + '不得改写次数与时间，也不得据此断言现实生活中发生了什么）：'
+      + JSON.stringify(echoes));
+  }
+  parts.push('最多 3 条历史观察（背景参考，没有具体呼应时不得提及）：' + JSON.stringify(boundedMemory));
   if (lifeNote) {
     parts.push('用户曾经明确确认过的真实情况（只能在明显相关时自然提及，不得判断对错，不得预测）：' + lifeNote.text);
   }

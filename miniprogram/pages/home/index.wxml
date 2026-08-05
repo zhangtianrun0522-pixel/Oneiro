@@ -46,7 +46,7 @@
         style="transform: translate(calc(-50% + {{dragDx}}px), {{dragDy}}px);"
       >松开取消</text>
       <button
-        class="voice-button {{editingDream ? 'is-compact' : ''}} {{recording ? 'is-recording' : ''}} {{!recording && dreamText ? 'has-draft' : ''}} {{dragZone === 'submit' ? 'is-drag-submit' : ''}} {{dragZone === 'cancel' ? 'is-drag-cancel' : ''}}"
+        class="voice-button {{editingDream ? 'is-compact' : ''}} {{recording ? 'is-recording' : ''}} {{!recording && dreamText ? 'has-draft' : ''}} {{voicePressed ? 'is-pressed' : ''}} {{dragZone === 'submit' ? 'is-drag-submit' : ''}} {{dragZone === 'cancel' ? 'is-drag-cancel' : ''}}"
         style="transform: translate({{dragDx}}px, {{dragDy}}px);"
         bindtouchstart="onVoiceTouchStart"
         catchtouchmove="onVoiceTouchMove"
@@ -57,12 +57,13 @@
         <view class="voice-dot"></view>
       </button>
 
-      <!-- 下滑确认区：录音中 / 拖拽临近阈值 / 越过阈值 / 刚回弹时才出现，
-           比原来一行跟手小字更有「这是提交落点」的实体感，同时保持
-           暖纸/深墨/朱砂的克制调性，不做花哨动效。 -->
+      <!-- 下滑确认区是「下滑提交」唯一有实体感的落点。它必须始终占位：原来用
+           wx:if 条件渲染，一旦拖过 16px 就凭空插入一个 176rpx 高的块，把下面
+           的提示文字整体顶下去——手势进行到一半页面自己跳一下，这是「不流畅」
+           最直接的来源。现在改为常驻占位、只切换可见度：有草稿或录音中时低
+           调显形（告诉用户往哪滑），否则透明但仍占住高度。 -->
       <view
-        class="confirm-target {{dragZone === 'submit' ? 'is-armed' : ''}} {{dragZone === 'attempt' ? 'is-near' : ''}} {{dragBounce ? 'is-bounce' : ''}}"
-        wx:if="{{recording || dragZone === 'submit' || dragZone === 'attempt' || dragBounce}}"
+        class="confirm-target {{(recording || dreamText) ? 'is-visible' : ''}} {{dragZone === 'submit' ? 'is-armed' : ''}} {{dragZone === 'attempt' ? 'is-near' : ''}} {{dragBounce ? 'is-bounce' : ''}}"
       >
         <text class="confirm-target-label">{{dragZone === 'submit' ? '松开 · 进入解读' : '下滑进入解读'}}</text>
       </view>

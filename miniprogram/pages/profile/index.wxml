@@ -42,7 +42,7 @@
 
     <block wx:else>
       <text class="profile-revisit-title">暂时没有待回访的梦</text>
-      <text class="profile-revisit-question">记下一个梦后，第二天这里会出现一次回访提问，帮你确认梦里的感受有没有照进现实。</text>
+      <text class="profile-revisit-question">记下一个梦后，第二天起这里会出现一次回访提问，保留一周，帮你确认梦里的感受有没有照进现实。</text>
     </block>
   </view>
 
@@ -67,6 +67,13 @@
         <button class="portrait-primary" disabled="{{portraitSaving || portraitLoading}}" loading="{{portraitSaving}}" bindtap="savePortraitEdit">保存修改</button>
         <button class="portrait-secondary" bindtap="cancelPortraitEdit">取消</button>
       </view>
+      <!-- 「暂停用于解读」是低频但必要的控制项。放在编辑态里，默认视图就只
+           剩两个动作；用户已经在主动管理这段文字时，才需要看到它。 -->
+      <text
+        wx:if="{{portraitEditing && memoryState.current.useInFutureReadings !== false}}"
+        class="portrait-pause-link"
+        bindtap="togglePortraitUse"
+      >暂停用于解读</text>
     </view>
 
     <!-- 首次进入、云端还没返回：明确的加载态，不是空态 -->
@@ -104,10 +111,12 @@
       <text class="portrait-empty-copy">我会从你留下的真实线索开始。</text>
     </view>
 
+    <!-- 默认视图固定只有两个动作。画像被暂停是异常状态，此时第二个动作换成
+         「恢复用于解读」，保证一步就能退出，而不是把三个动作长期摆在这里。 -->
     <view wx:if="{{!portraitEditing && memoryState.current}}" class="portrait-links-row">
-      <button wx:if="{{memoryState.current}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="startPortraitEdit">修改这段理解</button>
-      <button wx:if="{{memoryState.current}}" class="portrait-link-btn" disabled="{{portraitLoading}}" loading="{{portraitLoading}}" bindtap="refreshPortrait">重新梳理</button>
-      <button wx:if="{{memoryState.current}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="togglePortraitUse">{{memoryState.current.useInFutureReadings === false ? '恢复用于解读' : '暂停用于解读'}}</button>
+      <button class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="startPortraitEdit">修改这段理解</button>
+      <button wx:if="{{memoryState.current.useInFutureReadings === false}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="togglePortraitUse">恢复用于解读</button>
+      <button wx:else class="portrait-link-btn" disabled="{{portraitLoading}}" loading="{{portraitLoading}}" bindtap="refreshPortrait">重新梳理</button>
     </view>
 
     <view wx:if="{{memoryState.current && portraitGenerateFailed}}" class="portrait-links-row">

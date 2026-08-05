@@ -446,7 +446,7 @@ function createWxMock(): WxMock {
               ok: true,
               provider: 'mock-metaphysical',
               model: 'mock-metaphysical-model',
-              promptVersion: 'oneiro-freeform-reading-v0.5-optional-metaphysical',
+              promptVersion: 'oneiro-freeform-reading-v0.6-relevance-memory',
               elapsedMs: 1234,
               metaphysical_resonance: '梦里的学校走廊与日主甲木的行动底色形成有限呼应。',
               metaphysical_basis: '四柱中的日主甲木是本次确定性计算的技术锚点。',
@@ -546,7 +546,7 @@ function createWxMock(): WxMock {
             ok: true,
             provider: 'mock-cloud',
             model: 'mock-grounded-model',
-            promptVersion: 'oneiro-freeform-reading-v0.5-optional-metaphysical',
+            promptVersion: 'oneiro-freeform-reading-v0.6-relevance-memory',
             schemaVersion: 'dream-entry-v0.2',
             result: {
               title: '云影',
@@ -832,6 +832,9 @@ function loadPage(
       callback();
       return 1;
     },
+    // 手势代码会主动撤销还没触发的长按计时器（下滑提交时不该误起录音）。
+    // 沙箱里 setTimeout 是同步的，所以这里只需要一个不抛错的存根。
+    clearTimeout() {},
     wx,
   };
 
@@ -1303,8 +1306,11 @@ function startVoiceGesture(page: MiniProgramPage): void {
   page.voiceDragZone = 'none';
   page.lastDragZone = 'none';
   page.dragBounceTimer = null;
+  page.voiceSwipeIntent = false;
+  page.voiceStartTimer = null;
   page.data.recording = false;
   page.data.recognizing = false;
+  page.data.editingDream = false;
   page.data.dreamText = '已经写下的梦';
 }
 
@@ -1316,30 +1322,64 @@ function touchEndAt(y: number): Record<string, unknown> {
   return { changedTouches: [{ clientX: 100, clientY: y }] };
 }
 
-// A slow drag that passes 47px then 49px submits at its final point.
+// A slow drag that passes 39px then 41px submits at its final point.
 startVoiceGesture(homePage);
-homePage.onVoiceTouchMove(touchAt(147));
+homePage.onVoiceTouchMove(touchAt(139));
 assert.equal(homePage.voiceDragZone, 'attempt');
-homePage.onVoiceTouchMove(touchAt(149));
+homePage.onVoiceTouchMove(touchAt(141));
 assert.equal(homePage.voiceDragZone, 'submit');
-homePage.onVoiceTouchEnd(touchEndAt(149));
+homePage.onVoiceTouchEnd(touchEndAt(141));
 assert.equal(gestureSubmitCount, 1);
 
-// The 48px boundary is inclusive; 47px remains an incomplete attempt.
+// The 40px boundary is inclusive; 39px remains an incomplete attempt.
 startVoiceGesture(homePage);
-homePage.onVoiceTouchEnd(touchEndAt(148));
+homePage.onVoiceTouchEnd(touchEndAt(140));
 assert.equal(gestureSubmitCount, 2);
 startVoiceGesture(homePage);
-homePage.onVoiceTouchEnd(touchEndAt(147));
+homePage.onVoiceTouchEnd(touchEndAt(139));
 assert.equal(gestureSubmitCount, 2);
 
-// Crossing the boundary is not sticky: releasing after returning to 47px
+// Crossing the boundary is not sticky: releasing after returning to 39px
 // must not submit even though the last touchmove entered the submit zone.
 startVoiceGesture(homePage);
 homePage.onVoiceTouchMove(touchAt(160));
 assert.equal(homePage.voiceDragZone, 'submit');
-homePage.onVoiceTouchEnd(touchEndAt(147));
+homePage.onVoiceTouchEnd(touchEndAt(139));
 assert.equal(gestureSubmitCount, 2);
+
+// 跟手位移必须一路跟到判定阈值，中间不能出现「手指还在动、圆环已经不动」
+// 的死区——那正是用户读成「手势没反应」的地方。
+startVoiceGesture(homePage);
+homePage.onVoiceTouchMove(touchAt(140));
+assert.equal(homePage.data.dragDy, 40);
+homePage.onVoiceTouchEnd(touchEndAt(140));
+assert.equal(gestureSubmitCount, 3);
+
+// 划了但没到位：给出「差一点」的提示，且绝不能同时把文字编辑态打开。
+// 两个互相矛盾的反馈叠在一起是原来最容易让人误会的一处。
+startVoiceGesture(homePage);
+homePage.onVoiceTouchMove(touchAt(125));
+assert.equal(homePage.voiceDragZone, 'attempt');
+homePage.onVoiceTouchEnd(touchEndAt(125));
+assert.equal(gestureSubmitCount, 3);
+assert.equal(homePage.data.editingDream, false);
+
+// 越过 slop 就锁定为「划」，撤掉还没触发的长按计时器：有草稿的用户下滑提交
+// 时不该在半路误起一次录音。
+startVoiceGesture(homePage);
+homePage.voiceStartTimer = 1;
+homePage.onVoiceTouchMove(touchAt(120));
+assert.equal(homePage.voiceSwipeIntent, true);
+assert.equal(homePage.voiceStartTimer, null);
+homePage.onVoiceTouchEnd(touchEndAt(141));
+assert.equal(gestureSubmitCount, 4);
+assert.equal(homePage.data.editingDream, false);
+
+// 纯轻触（完全没有移动）仍然打开文字输入。
+startVoiceGesture(homePage);
+homePage.onVoiceTouchEnd(touchEndAt(100));
+assert.equal(gestureSubmitCount, 4);
+assert.equal(homePage.data.editingDream, true);
 
 // Simulate delayed setData. The synchronously stored zone and changedTouches
 // still submit, proving rendering state is not used as business state.
@@ -1349,7 +1389,7 @@ startVoiceGesture(homePage);
 homePage.onVoiceTouchMove(touchAt(149));
 assert.equal(homePage.voiceDragZone, 'submit');
 homePage.onVoiceTouchEnd(touchEndAt(149));
-assert.equal(gestureSubmitCount, 3);
+assert.equal(gestureSubmitCount, 5);
 homePage.setData = immediateSetData;
 homePage.generateDreamCard = originalGenerateDreamCard;
 homePage.data.dreamText = '';
@@ -1518,7 +1558,7 @@ assert.equal(archiveAfterDream[0].interpretationProvider, 'mock-cloud');
 assert.equal(archiveAfterDream[0].status, 'ready');
 assert.equal(archiveAfterDream[0].dreamFacts.places[0], '学校');
 assert.equal(archiveAfterDream[0].interpretationMeta.schemaVersion, 'dream-entry-v0.2');
-assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.5-optional-metaphysical');
+assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.6-relevance-memory');
 assert.equal(archiveAfterDream[0].result.title, '云影');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream'));
 assert.equal(

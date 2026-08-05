@@ -36,22 +36,40 @@ function readyRecords(archive) {
   });
 }
 
+// 近期的重复比陈年的重复更能说明「此刻」。纯计次会让半年前密集出现过的
+// 意象永远压住这个月真正在重复的意象——这正是「最近的梦反复围绕沙漠」在
+// 用户最近只梦到树的时候依然出现的原因。
+function recencyWeight(createdAt) {
+  var timestamp = createdAt ? new Date(createdAt).getTime() : NaN;
+  var daysAgo;
+  if (isNaN(timestamp)) return 0.6;
+  daysAgo = Math.floor((Date.now() - timestamp) / 86400000);
+  if (daysAgo < 0) return 1;
+  if (daysAgo <= 14) return 1;
+  if (daysAgo <= 45) return 0.7;
+  if (daysAgo <= 120) return 0.4;
+  return 0.2;
+}
+
 function countByRecord(records, getter) {
   var counts = {};
+  var scores = {};
   var firstSeen = {};
 
   records.forEach(function (record, recordIndex) {
+    var weight = recencyWeight(record && record.createdAt);
     uniqueList(getter(record), 12).forEach(function (value) {
       var key = '$' + value;
       counts[key] = (counts[key] || 0) + 1;
+      scores[key] = (scores[key] || 0) + weight;
       if (firstSeen[key] === undefined) firstSeen[key] = recordIndex;
     });
   });
 
   return Object.keys(counts).map(function (key) {
-    return { value: key.slice(1), count: counts[key], firstSeen: firstSeen[key] };
+    return { value: key.slice(1), count: counts[key], score: scores[key], firstSeen: firstSeen[key] };
   }).sort(function (left, right) {
-    return right.count - left.count || left.firstSeen - right.firstSeen;
+    return right.score - left.score || right.count - left.count || left.firstSeen - right.firstSeen;
   });
 }
 
@@ -131,7 +149,7 @@ function buildInsights(archive) {
     stageSummary: records.length < 3
       ? '再记录 ' + String(3 - records.length) + ' 个梦，Oneiro 会开始整理跨梦线索。'
       : lead
-        ? '最近的梦反复围绕“' + lead.label + '”展开。它是阶段线索，不是永久标签；你可以继续观察它下一次如何变化。'
+        ? '最近的梦反复围绕“' + lead.label + '”展开，它已经出现过 ' + lead.count + ' 次。这是阶段线索，不是永久标签；你可以继续观察它下一次如何变化。'
         : '已经积累了 ' + records.length + ' 个梦，但还没有稳定重复的线索。没有模式，本身也是一种阶段状态。',
     monthlyCard: buildMonthlyCard(records, symbols, emotions)
   };

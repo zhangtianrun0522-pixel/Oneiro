@@ -36,6 +36,14 @@ type InterpretDreamModule = {
   buildBaziChart?: (profile: Record<string, unknown>) => Record<string, any>;
   loadCurrentPortrait?: (openid: string) => Promise<Record<string, any> | null>;
   sanitizeProfileInput?: (value: unknown) => Record<string, unknown>;
+  buildDreamMemory?: (records: unknown[], memoryUnavailable?: boolean) => Record<string, any>;
+  buildMemoryEchoes?: (memory: unknown, dreamText: string) => Record<string, any>[];
+  buildUserContext?: (
+    profile: Record<string, unknown>,
+    dreamText: string,
+    memory: unknown,
+    lifeNote: unknown
+  ) => string;
 };
 
 function read(relativePath: string): string {
@@ -192,7 +200,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false, d
   };
 
   const source = exposeParser
-    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.sanitizeMetaphysicalText = sanitizeMetaphysicalText;\nmodule.exports.validateMetaphysicalContract = validateMetaphysicalContract;\nmodule.exports.buildInterpretationSystemPrompt = buildInterpretationSystemPrompt;\nmodule.exports.buildBaziChart = buildBaziChart;\nmodule.exports.loadCurrentPortrait = loadCurrentPortrait;\nmodule.exports.sanitizeProfileInput = sanitizeProfileInput;'
+    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.sanitizeMetaphysicalText = sanitizeMetaphysicalText;\nmodule.exports.validateMetaphysicalContract = validateMetaphysicalContract;\nmodule.exports.buildInterpretationSystemPrompt = buildInterpretationSystemPrompt;\nmodule.exports.buildBaziChart = buildBaziChart;\nmodule.exports.loadCurrentPortrait = loadCurrentPortrait;\nmodule.exports.sanitizeProfileInput = sanitizeProfileInput;\nmodule.exports.buildDreamMemory = buildDreamMemory;\nmodule.exports.buildMemoryEchoes = buildMemoryEchoes;\nmodule.exports.buildUserContext = buildUserContext;'
     : read(interpretDreamPath);
   vm.runInNewContext(source, sandbox, { filename: interpretDreamPath });
   return commonJsModule.exports;
@@ -238,7 +246,7 @@ for (const expected of [
   'metaphysicalAvailable',
   'reading_hook',
   'alternative_reading',
-  'oneiro-freeform-reading-v0.5-optional-metaphysical',
+  'oneiro-freeform-reading-v0.6-relevance-memory',
 ]) {
   assertIncludes(interpretDreamPath, expected);
 }
@@ -410,6 +418,56 @@ assert.equal(
   normalizeSymbols(['清水']).length,
   1
 );
+
+// ── 记忆检索：必须按「与今晚这个梦的相关性」而不是「历史总频次」注入 ──
+//
+// 旧实现把出现次数最多的三个意象无条件塞进 prompt。于是无论今晚梦到什么，
+// 模型看到的永远是同一份背景板；而 prompt 的红线又规定「没有具体呼应时禁止
+// 假装记得」，模型只能正确地闭嘴。结果就是用户读到一份完全没有记忆的解读，
+// 尽管系统其实知道这个意象在重复。
+const buildDreamMemory = exposedInterpretDream.buildDreamMemory;
+const buildMemoryEchoes = exposedInterpretDream.buildMemoryEchoes;
+const buildUserContext = exposedInterpretDream.buildUserContext;
+assert.ok(buildDreamMemory);
+assert.ok(buildMemoryEchoes);
+assert.ok(buildUserContext);
+
+function memoryRecord(daysAgo: number, symbols: string[], title: string) {
+  return {
+    createdAt: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+    symbols,
+    result: { title, symbols, dream_translation: `${title}的复述` },
+  };
+}
+
+// 「沙漠」出现四次但都在半年前；「树」只出现两次却都在最近一个月内。
+const memoryFixture = buildDreamMemory([
+  memoryRecord(3, ['树', '窗'], '穿窗之树'),
+  memoryRecord(21, ['树', '剪刀'], '剪枝'),
+  memoryRecord(200, ['沙漠', '暴雨'], '旧沙漠一'),
+  memoryRecord(210, ['沙漠', '暴雨'], '旧沙漠二'),
+  memoryRecord(220, ['沙漠', '清水'], '旧沙漠三'),
+  memoryRecord(230, ['沙漠', '清水'], '旧沙漠四'),
+]);
+
+// 时间衰减：近期在重复的意象必须排在陈年高频意象之前。
+assert.equal(memoryFixture.recurringSymbols[0].symbol, '树');
+
+// 今晚梦到树 → 必须给出带时间感、可被用户当场核对的具体呼应。
+const treeEchoes = buildMemoryEchoes(memoryFixture, '我梦见一棵树从窗户里长进来，我没有剪掉它，只是坐在树下。');
+assert.ok(treeEchoes.length >= 1);
+assert.equal(treeEchoes[0].symbol, '树');
+assert.equal(treeEchoes[0].pastDreamCount, 2);
+assert.ok(String(treeEchoes[0].lastSeen).length > 0);
+assert.ok(treeEchoes[0].occurrences.some((item: Record<string, any>) => item.title === '剪枝'));
+
+// 今晚的梦与历史毫无重合 → 一条呼应都不能给，模型才不会被诱导编造记忆。
+assert.equal(buildMemoryEchoes(memoryFixture, '我梦见自己在一列没有终点的火车上。').length, 0);
+
+const echoContext = buildUserContext({}, '我梦见一棵树从窗户里长进来。', memoryFixture, null);
+assert.ok(echoContext.includes('已核实的历史呼应'));
+const silentContext = buildUserContext({}, '我梦见自己在一列没有终点的火车上。', memoryFixture, null);
+assert.ok(!silentContext.includes('已核实的历史呼应'));
 
 const normalizeAiResult = exposedInterpretDream.normalizeAiResult;
 assert.ok(normalizeAiResult);

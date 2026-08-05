@@ -764,8 +764,13 @@ exports.main = async function (event) {
       var nowTimestamp = Date.now();
       var timezoneOffset = 8 * 3600 * 1000;
       var dayMilliseconds = 24 * 3600 * 1000;
+      // 回访窗口原本只匹配「昨天」这一整天：隔一天不打开小程序，这个梦的回访
+      // 就永久错过了。回访是产品里唯一主动采集现实线索的通道，窗口过窄直接
+      // 导致「系统提取的现实线索」长期为 0。改成「已过一夜、且不超过 7 天」，
+      // 仍然保留「第二天再回头看」的本意，但不再因为漏开一次就作废。
+      var revisitMinAgeMs = 12 * 3600 * 1000;
+      var revisitMaxAgeMs = 7 * dayMilliseconds;
       var beijingToday = new Date(nowTimestamp + timezoneOffset).toISOString().slice(0, 10);
-      var beijingYesterday = new Date(nowTimestamp - dayMilliseconds + timezoneOffset).toISOString().slice(0, 10);
       var revisitDream = null;
       var revisitIndex;
 
@@ -778,13 +783,17 @@ exports.main = async function (event) {
         var createdBeijingDate = createdTimestamp
           ? new Date(createdTimestamp + timezoneOffset).toISOString().slice(0, 10)
           : '';
+        var revisitAgeMs = createdTimestamp ? nowTimestamp - createdTimestamp : -1;
 
         if (
           revisitRecord.status === 'ready' &&
           revisitResult.integration_question &&
           revisitRecord.revisitSkipped !== true &&
           !revisitRecord.revisitedAt &&
-          createdBeijingDate === beijingYesterday
+          createdBeijingDate &&
+          createdBeijingDate !== beijingToday &&
+          revisitAgeMs >= revisitMinAgeMs &&
+          revisitAgeMs <= revisitMaxAgeMs
         ) {
           revisitDream = {
             localId: revisitRecord.localId,
