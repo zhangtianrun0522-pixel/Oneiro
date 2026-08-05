@@ -33,6 +33,7 @@
   </scroll-view>
 
   <view class="chat-composer">
+    <text wx:if="{{cloudSyncPending}}" class="cloud-sync-hint">聊天记录待同步</text>
     <!-- 轻量提示：只在还没开口时出现，点一下填进输入框 -->
     <scroll-view wx:if="{{!inputValue && turnCount < maxTurns}}" class="guide-list" scroll-x show-scrollbar="{{false}}">
       <text class="guide-chip" data-prompt="梦里最清楚的画面是：" bindtap="useGuide">梦里最清楚的画面</text>

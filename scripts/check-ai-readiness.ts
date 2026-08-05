@@ -31,7 +31,11 @@ type InterpretDreamModule = {
     baziChart: unknown
   ) => void;
   sanitizeMetaphysicalText?: (value: unknown, fallback?: string, maxLength?: number) => string;
+  validateMetaphysicalContract?: (payload: Record<string, unknown>, dreamText: string, metaphysicalRequired: boolean, errorPrefix: string) => void;
+  buildInterpretationSystemPrompt?: (baziChart?: unknown) => string;
   buildBaziChart?: (profile: Record<string, unknown>) => Record<string, any>;
+  loadCurrentPortrait?: (openid: string) => Promise<Record<string, any> | null>;
+  sanitizeProfileInput?: (value: unknown) => Record<string, unknown>;
 };
 
 function read(relativePath: string): string {
@@ -83,7 +87,7 @@ function isMiniProgramRuntimeFile(relativePath: string): boolean {
   return /\.(js|json|wxml|wxss)$/.test(relativePath);
 }
 
-function loadInterpretDream(env: Record<string, string>, exposeParser = false): InterpretDreamModule {
+function loadInterpretDream(env: Record<string, string>, exposeParser = false, database?: unknown): InterpretDreamModule {
   const commonJsModule = { exports: {} as InterpretDreamModule };
   const sandbox = {
     module: commonJsModule,
@@ -96,6 +100,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false): 
         return {
           DYNAMIC_CURRENT_ENV: 'mock-current-env',
           init() {},
+          database: database ? () => database : undefined,
         };
       }
 
@@ -187,7 +192,7 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false): 
   };
 
   const source = exposeParser
-    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.sanitizeMetaphysicalText = sanitizeMetaphysicalText;\nmodule.exports.buildBaziChart = buildBaziChart;'
+    ? read(interpretDreamPath) + '\nmodule.exports.parseJsonResponse = parseJsonResponse;\nmodule.exports.parseDreamChatContent = parseDreamChatContent;\nmodule.exports.normalizeSymbols = normalizeSymbols;\nmodule.exports.normalizeAiResult = normalizeAiResult;\nmodule.exports.validateAiSemanticPayload = validateAiSemanticPayload;\nmodule.exports.sanitizeMetaphysicalText = sanitizeMetaphysicalText;\nmodule.exports.validateMetaphysicalContract = validateMetaphysicalContract;\nmodule.exports.buildInterpretationSystemPrompt = buildInterpretationSystemPrompt;\nmodule.exports.buildBaziChart = buildBaziChart;\nmodule.exports.loadCurrentPortrait = loadCurrentPortrait;\nmodule.exports.sanitizeProfileInput = sanitizeProfileInput;'
     : read(interpretDreamPath);
   vm.runInNewContext(source, sandbox, { filename: interpretDreamPath });
   return commonJsModule.exports;
@@ -227,9 +232,13 @@ for (const expected of [
   'loadDreamMemory',
   'DREAM_CHAT_SYSTEM_PROMPT',
   'chatAboutDream',
+  'METAPHYSICAL_PROMPT_RULES',
+  'METAPHYSICAL_READING_SYSTEM_PROMPT',
+  'metaphysicalReading',
+  'metaphysicalAvailable',
   'reading_hook',
   'alternative_reading',
-  'oneiro-freeform-reading-v0.4-metaphysical-lens',
+  'oneiro-freeform-reading-v0.5-optional-metaphysical',
 ]) {
   assertIncludes(interpretDreamPath, expected);
 }
@@ -237,10 +246,10 @@ for (const expected of [
 for (const expected of [
   'INTERPRET_PROVIDER=deepseek',
   'DEEPSEEK_API_KEY=<rotate-and-set-in-cloudbase-only>',
-  'INTERPRET_TIMEOUT_MS=30000',
+  'INTERPRET_TIMEOUT_MS=45000',
   'healthCheck',
   'providerConfigured',
-  'reports a 60-second timeout',
+  'keeps the CloudBase platform timeout at',
 ]) {
   assertIncludes('docs/CLOUDBASE_DEPLOYMENT.md', expected);
 }
@@ -252,6 +261,9 @@ for (const expected of [
   'providerConfigured',
   'cloudBase.aiHealth',
   'cloudBase.aiSmokeTest',
+  'INTERPRET_TIMEOUT_MS=45000',
+  '70000',
+  'provider_timeout',
   'AI SMOKE TEST',
   '/pages/diagnostics/index',
   'interpretationProvider',
@@ -297,7 +309,7 @@ assert.equal(
 );
 assert.equal(
   packageJson.scripts?.['check:mini-release'],
-  'npm run check:ai-readiness && npm run check:cloudbase && npm run check:miniprogram && npm run check:phase3 && npm run check:image-contract && npm run check:image-quality-job && npm run check:dream && npm run typecheck',
+  'npm run check:ai-readiness && npm run check:cloudbase && npm run check:miniprogram && npm run check:phase3 && npm run check:image-contract && npm run check:image-quality-job && npm run typecheck',
   'package.json should expose check:mini-release'
 );
 
@@ -340,7 +352,7 @@ assert.equal(staticHealth.ok, true);
 assert.equal(staticHealth.provider, 'cloudbase-static');
 assert.equal(staticHealth.providerConfigured, false);
 assert.equal(staticHealth.hasApiKey, false);
-assert.equal(staticHealth.requestTimeoutMs, 30000);
+assert.equal(staticHealth.requestTimeoutMs, 45000);
 assert.equal(staticHealth.fallbackProvider, 'none');
 
 const deepseekHealth = await loadInterpretDream({
@@ -356,7 +368,13 @@ assert.equal(deepseekHealth.providerConfigured, true);
 assert.equal(deepseekHealth.hasApiKey, true);
 assert.equal(deepseekHealth.model, 'deepseek-chat');
 assert.equal(deepseekHealth.baseUrlHost, 'api.deepseek.com');
-assert.equal(deepseekHealth.requestTimeoutMs, 30000);
+assert.equal(deepseekHealth.requestTimeoutMs, 45000);
+const cappedHealth = await loadInterpretDream({
+  INTERPRET_PROVIDER: 'deepseek',
+  DEEPSEEK_API_KEY: 'test-key-not-real',
+  INTERPRET_TIMEOUT_MS: '90000',
+}).main({ healthCheck: true });
+assert.equal(cappedHealth.requestTimeoutMs, 50000);
 
 const staticSmokeTest = await loadInterpretDream({}).main({ smokeTest: true });
 assert.equal(staticSmokeTest.ok, false);
@@ -396,6 +414,80 @@ assert.equal(
 const normalizeAiResult = exposedInterpretDream.normalizeAiResult;
 assert.ok(normalizeAiResult);
 const validateAiSemanticPayload = exposedInterpretDream.validateAiSemanticPayload;
+
+function portraitDatabase(stateDocs: Record<string, unknown>[], snapshots: Record<string, unknown>[]) {
+  return {
+    collection(name: string) {
+      let query: Record<string, unknown> = {};
+      const chain = {
+        where(next: Record<string, unknown>) {
+          query = next;
+          return chain;
+        },
+        orderBy() {
+          return chain;
+        },
+        limit() {
+          return chain;
+        },
+        async get() {
+          if (name === 'profile_memory_state') return { data: stateDocs };
+          if (name === 'profile_snapshots') {
+            return {
+              data: snapshots.filter((snapshot) => Object.entries(query).every(([key, value]) => snapshot[key] === value)),
+            };
+          }
+          return { data: [] };
+        },
+      };
+      return chain;
+    },
+  };
+}
+
+const validPortrait = {
+  _id: 'portrait-current',
+  openid: 'portrait-user',
+  summary: '最近在换工作，也在重新整理生活节奏。',
+  status: 'confirmed',
+  isCurrent: true,
+  useInFutureReadings: true,
+};
+const loadPortrait = async (stateDocs: Record<string, unknown>[], snapshots: Record<string, unknown>[]) => {
+  const module = loadInterpretDream({}, true, portraitDatabase(stateDocs, snapshots));
+  assert.ok(module.loadCurrentPortrait);
+  return module.loadCurrentPortrait?.('portrait-user');
+};
+
+assert.equal(
+  JSON.stringify(exposedInterpretDream.sanitizeProfileInput?.({
+    nickname: 'Runtu',
+    currentPortrait: { summary: '客户端伪造画像' },
+    confirmedPortrait: { summary: '客户端缓存画像' },
+  })),
+  JSON.stringify({ nickname: 'Runtu' }),
+  'client-provided portraits must not enter the trusted profile context'
+);
+assert.equal(
+  await loadPortrait([{ openid: 'portrait-user', currentSnapshotId: 'portrait-current', paused: true }], [validPortrait]),
+  null,
+  'a paused state pointer must not inject a portrait'
+);
+assert.equal(
+  await loadPortrait([{ openid: 'portrait-user', currentSnapshotId: '' }], [validPortrait]),
+  null,
+  'a state document without a pointer must not fall back to older portraits'
+);
+assert.equal(
+  await loadPortrait([{ openid: 'portrait-user', currentSnapshotId: 'portrait-current' }], [{ ...validPortrait, useInFutureReadings: false }]),
+  null,
+  'a pointed portrait disabled for future readings must not fall back'
+);
+assert.equal(
+  (await loadPortrait([], [validPortrait]))?.summary,
+  validPortrait.summary,
+  'legacy users without a state document may fall back to a current confirmed portrait'
+);
 assert.ok(validateAiSemanticPayload);
 assert.throws(
   () => validateAiSemanticPayload({}, '我梦见西红柿里爆出了一颗水蜜桃', null),
@@ -572,9 +664,20 @@ const chartModelResult = normalizeAiResult(
   baziChart,
   null
 );
-assert.ok(chartModelResult.metaphysical_resonance);
-assert.ok(chartModelResult.metaphysical_basis);
-assert.ok(chartModelResult.metaphysical_reading.dream_echo);
+assert.equal(chartModelResult.metaphysicalAvailable, true);
+assert.deepEqual(JSON.parse(JSON.stringify(chartModelResult.metaphysical_reading)), {
+  temperament: '',
+  dream_echo: '',
+  tension: '',
+  rhythm: '',
+  basis: '',
+});
+assert.equal(chartModelResult.metaphysical_resonance, '');
+assert.equal(chartModelResult.metaphysical_basis, '');
+assert.doesNotMatch(
+  exposedInterpretDream.buildInterpretationSystemPrompt?.(baziChart) || '',
+  /必须全部非空|出生节律参考（只能解释/
+);
 
 const incompleteChartPayload = JSON.parse(JSON.stringify(chartModelPayload));
 incompleteChartPayload.metaphysical_reading.tension = '';
@@ -593,7 +696,8 @@ const incompleteChartResult = normalizeAiResult(
   baziChart,
   null
 );
-assert.match(incompleteChartResult.metaphysical_reading.tension, /四柱结构/);
+assert.equal(incompleteChartResult.metaphysical_resonance, '');
+assert.equal(incompleteChartResult.metaphysical_reading.tension, '');
 
 const missingMetaphysicalKeysPayload = JSON.parse(JSON.stringify(completeModelPayload));
 delete missingMetaphysicalKeysPayload.metaphysical_resonance;
@@ -614,10 +718,15 @@ const missingMetaphysicalKeysResult = normalizeAiResult(
   baziChart,
   null
 );
-assert.match(missingMetaphysicalKeysResult.metaphysical_resonance, /四柱|日主|五行/);
-assert.match(missingMetaphysicalKeysResult.metaphysical_basis, /四柱|日主|五行/);
-assert.match(missingMetaphysicalKeysResult.metaphysical_reading.basis, /四柱|日主|五行/);
-assert.doesNotMatch(JSON.stringify(missingMetaphysicalKeysResult.metaphysical_reading), /运势|吉凶|凶吉|注定|必然|命运/);
+assert.equal(missingMetaphysicalKeysResult.metaphysical_resonance, '');
+assert.equal(missingMetaphysicalKeysResult.metaphysical_basis, '');
+assert.deepEqual(JSON.parse(JSON.stringify(missingMetaphysicalKeysResult.metaphysical_reading)), {
+  temperament: '',
+  dream_echo: '',
+  tension: '',
+  rhythm: '',
+  basis: '',
+});
 
 const shortDreamChartPayload = JSON.parse(JSON.stringify(completeModelPayload));
 shortDreamChartPayload.dream_facts = { objects: ['猫'] };
@@ -656,8 +765,8 @@ const shortDreamFallbackResult = normalizeAiResult(
   null
 );
 assert.deepEqual(JSON.parse(JSON.stringify(shortDreamFallbackResult.dream_facts.objects)), ['猫']);
-assert.match(shortDreamFallbackResult.metaphysical_resonance, /猫/);
-assert.match(shortDreamFallbackResult.metaphysical_reading.temperament, /猫/);
+assert.equal(shortDreamFallbackResult.metaphysical_resonance, '');
+assert.equal(shortDreamFallbackResult.metaphysical_reading.temperament, '');
 
 const ungroundedChartPayload = JSON.parse(JSON.stringify(chartModelPayload));
 ungroundedChartPayload.metaphysical_resonance = '日主甲木只作为技术参照。';
@@ -682,8 +791,8 @@ const groundedFallbackResult = normalizeAiResult(
   baziChart,
   null
 );
-assert.match(groundedFallbackResult.metaphysical_resonance, /爆出/);
-assert.match(groundedFallbackResult.metaphysical_reading.temperament, /爆出/);
+assert.equal(groundedFallbackResult.metaphysical_resonance, '');
+assert.equal(groundedFallbackResult.metaphysical_reading.temperament, '');
 
 const predictiveChartPayload = JSON.parse(JSON.stringify(chartModelPayload));
 predictiveChartPayload.metaphysical_resonance = '梦中西红柿里爆出水蜜桃，预示未来运势会变好。';
@@ -702,11 +811,35 @@ const predictiveFallbackResult = normalizeAiResult(
   baziChart,
   null
 );
-assert.doesNotMatch(predictiveFallbackResult.metaphysical_resonance, /预示|未来运势|会变好/);
-assert.match(predictiveFallbackResult.metaphysical_resonance, /日主|五行/);
+assert.equal(predictiveFallbackResult.metaphysical_resonance, '');
+assert.equal(predictiveFallbackResult.metaphysical_basis, '');
+assert.deepEqual(JSON.parse(JSON.stringify(predictiveFallbackResult.metaphysical_reading)), {
+  temperament: '',
+  dream_echo: '',
+  tension: '',
+  rhythm: '',
+  basis: '',
+});
 assert.equal(
   exposedInterpretDream.sanitizeMetaphysicalText?.('梦中西红柿里爆出水蜜桃，运势会变好。'),
   ''
+);
+assert.doesNotThrow(() => exposedInterpretDream.validateMetaphysicalContract?.(
+  chartModelPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  true,
+  '按需命理'
+));
+const incompleteMetaphysicalPayload = JSON.parse(JSON.stringify(chartModelPayload));
+incompleteMetaphysicalPayload.metaphysical_reading.rhythm = '';
+assert.throws(
+  () => exposedInterpretDream.validateMetaphysicalContract?.(
+    incompleteMetaphysicalPayload,
+    '我梦见西红柿里爆出了一颗水蜜桃',
+    true,
+    '按需命理'
+  ),
+  /incomplete metaphysical fields/
 );
 const contaminatedBasePayload = JSON.parse(JSON.stringify(completeModelPayload));
 contaminatedBasePayload.metaphysical_resonance = '梦中西红柿里爆出水蜜桃。';
@@ -810,9 +943,15 @@ const restrictedChartResult = normalizeAiResult(
   baziChart,
   null
 );
-assert.match(restrictedChartResult.metaphysical_basis, /四柱|日主|五行/);
-assert.match(restrictedChartResult.metaphysical_resonance, /别人说/);
-assert.doesNotMatch(JSON.stringify(restrictedChartResult.metaphysical_reading), /运势|吉凶|凶吉|注定|必然|命运/);
+assert.equal(restrictedChartResult.metaphysical_basis, '');
+assert.equal(restrictedChartResult.metaphysical_resonance, '');
+assert.deepEqual(JSON.parse(JSON.stringify(restrictedChartResult.metaphysical_reading)), {
+  temperament: '',
+  dream_echo: '',
+  tension: '',
+  rhythm: '',
+  basis: '',
+});
 
 const staticDreamChat = await loadInterpretDream({}).main({
   chatAboutDream: true,
@@ -841,6 +980,29 @@ assert.equal(missingKeyFallback.reason, 'ai_provider_error');
 assert.equal(missingKeyFallback.retryable, true);
 assert.match(String(missingKeyFallback.provider_error || ''), /Missing API key/);
 assert.equal(Object.prototype.hasOwnProperty.call(missingKeyFallback, 'result'), false);
+
+const missingMetaphysicalProfile = await loadInterpretDream({
+  INTERPRET_PROVIDER: 'deepseek',
+  DEEPSEEK_API_KEY: 'test-key-not-real',
+}).main({
+  metaphysicalReading: true,
+  dreamText: '我梦见在月光下的图书馆找到一把银色钥匙',
+  profile: { nickname: 'Runtu', birthDate: '1998-01-01' },
+  baseResult: { title: '月光钥匙', symbols: ['图书馆', '钥匙'] },
+});
+assert.equal(missingMetaphysicalProfile.ok, false);
+assert.equal(missingMetaphysicalProfile.reason, 'birth_profile_missing');
+
+const unavailableMetaphysicalReading = await loadInterpretDream({}).main({
+  metaphysicalReading: true,
+  dreamText: '我梦见在月光下的图书馆找到一把银色钥匙',
+  profile: { nickname: 'Runtu', birthDate: '1998-01-01', birthTime: '08:30', birthPlace: '青岛' },
+  baseResult: { title: '月光钥匙', symbols: ['图书馆', '钥匙'] },
+});
+assert.equal(unavailableMetaphysicalReading.ok, false);
+assert.equal(unavailableMetaphysicalReading.reason, 'ai_provider_unavailable');
+assert.equal(unavailableMetaphysicalReading.errorCode, 'provider_error');
+assert.ok(unavailableMetaphysicalReading.provider_error);
 
 const safetyBlock = await loadInterpretDream({
   INTERPRET_PROVIDER: 'deepseek',
@@ -878,6 +1040,8 @@ assert.equal(
   ).realityClue,
   ''
 );
+// 模型决定事实是否 eligible；服务端只接受当前用户消息里的连续原文，
+// 不能把模型的推测、改写或补全作为资料写入。
 assert.equal(
   parseDreamChatContent(
     '{"reply":"这只是模型推测。","memory_candidate":{"eligible":true,"quote":"最近在换工作"}}',
@@ -905,6 +1069,13 @@ assert.equal(
   parseDreamChatContent(
     '{"reply":"不能改写证据。","memory_candidate":{"eligible":true,"quote":"正在准备离职"}}',
     '我最近在换工作。'
+  ).realityClue,
+  ''
+);
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"这是梦里的画面。","memory_candidate":{"eligible":false,"quote":"梦里我正在换工作"}}',
+    '梦里我正在换工作。'
   ).realityClue,
   ''
 );

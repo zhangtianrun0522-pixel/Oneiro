@@ -655,6 +655,14 @@
   line-height: 1.82;
 }
 
+.reading-diagnostic {
+  display: block;
+  margin-top: 14rpx;
+  color: rgba(33, 29, 23, 0.48);
+  font-size: 22rpx;
+  letter-spacing: 0;
+}
+
 /* 命理视角内容更丰富（多个子结构），但外层不再套卡片背景/边框，
    与文化象征、心理视角保持同一套「纯文字」视觉语言 */
 .metaphysical-reading {
@@ -1077,4 +1085,55 @@
 
 .more-actions .text-button:last-child {
   border-bottom: 0;
+}
+.dream-feedback {
+  margin-top: 28rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
+}
+
+.feedback-question {
+  display: block;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.feedback-chips {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.feedback-chip {
+  min-height: 56rpx;
+  padding: 0 18rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.18);
+  border-radius: 28rpx;
+  background: transparent;
+  color: var(--ink-70);
+  font-size: 23rpx;
+  line-height: 56rpx;
+}
+
+.feedback-chip.is-selected {
+  border-color: var(--gold-line);
+  background: rgba(184, 134, 59, 0.12);
+  color: var(--gold-ink);
+}
+
+.cloud-sync-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24rpx;
+  padding: 18rpx 20rpx;
+  border-left: 3rpx solid var(--gold-line);
+  background: rgba(184, 134, 59, 0.08);
+  color: var(--ink-70);
+  font-size: 23rpx;
+}
+
+.dream-chat-entry.has-feedback {
+  border-color: rgba(184, 134, 59, 0.65);
+  background: rgba(184, 134, 59, 0.08);
 }

@@ -1,7 +1,8 @@
-var analytics = require('../../utils/analytics');
+ var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
 var dreamMemory = require('../../utils/dreamMemory');
 var tabNav = require('../../utils/tabNav');
+var syncQueue = require('../../utils/syncQueue');
 
 var PROFILE_MEMORY_KEY = 'oneiro:profileMemory';
 
@@ -38,7 +39,14 @@ function snapshotId(snapshot) {
 function withClientId(snapshot) {
   if (!snapshot) return null;
   var summary = String(snapshot.summary || snapshot.profileText || '').trim();
-  return Object.assign({}, snapshot, { summary: summary, profileText: snapshot.profileText || summary, clientId: snapshotId(snapshot) });
+  return Object.assign({}, snapshot, {
+    summary: summary,
+    profileText: snapshot.profileText || summary,
+    status: ['draft', 'confirmed', 'rejected', 'superseded'].indexOf(snapshot.status) >= 0 ? snapshot.status : 'confirmed',
+    isCurrent: snapshot.isCurrent !== false,
+    useInFutureReadings: snapshot.useInFutureReadings !== false,
+    clientId: snapshotId(snapshot)
+  });
 }
 
 // V7 and earlier stored page instructions as the portrait itself. Treat those
@@ -97,6 +105,7 @@ Page({
     memoryLoaded: false,
     portraitLoadError: false,
     portraitGenerateFailed: false,
+    portraitMigrationState: '',
     portraitLoading: false,
     portraitAutoGenerateTriggered: false,
     portraitSaving: false,
@@ -315,13 +324,19 @@ Page({
       var local = normalizeMemoryState(that.data.memoryState);
       if (!remote.current && !remote.latestDraft && !remote.history.length && (local.current || local.history.length)) {
         that.setData({ memoryLoaded: true, portraitLoadError: false });
-        if (needsPortraitMigration(local.current)) that.ensurePortraitGenerated(true, '旧版本画像升级');
+        if (needsPortraitMigration(local.current)) {
+          that.setData({ portraitMigrationState: 'migrating' });
+          that.ensurePortraitGenerated(true, '旧版本画像升级');
+        }
         return;
       }
       persistMemoryState(remote);
       that.setData({ memoryState: remote, memoryLoaded: true, portraitLoadError: false });
       if (!remote.current) that.ensurePortraitGenerated();
-      else if (needsPortraitMigration(remote.current)) that.ensurePortraitGenerated(true, '旧版本画像升级');
+      else if (needsPortraitMigration(remote.current)) {
+        that.setData({ portraitMigrationState: 'migrating' });
+        that.ensurePortraitGenerated(true, '旧版本画像升级');
+      }
     });
   },
 
@@ -348,11 +363,24 @@ Page({
     if ((!allowExisting && state.current) || this.data.portraitLoading || this.data.portraitAutoGenerateTriggered) return;
     this.setData({ portraitLoading: true, portraitAutoGenerateTriggered: true, portraitGenerateFailed: false });
     analytics.trackEvent(allowExisting ? 'profile_portrait_refresh' : 'profile_portrait_auto_generate', { dreamCount: this.data.insights.dreamCount });
-    cloudBase.generateProfilePortrait(reason || '首次打开画像时自动梳理', function (result) {
+    var requestReason = reason || '首次打开画像时自动梳理';
+    var retryDelays = [2000, 5000, 10000];
+    function requestPortrait(attempt) {
+      cloudBase.generateProfilePortrait(requestReason, function (result) {
       var nextState;
       var snapshot;
       if (!result || !result.ok || !result.snapshot) {
+        if (result && result.reason === 'sources_changed' && attempt < 3) {
+          setTimeout(function () { requestPortrait(attempt + 1); }, retryDelays[attempt]);
+          return;
+        }
+        // 生成失败不丢任务；下次保存梦或应用启动时静默补偿。
+        syncQueue.enqueue('portrait_refresh', {
+          refreshKey: 'profile:' + String(that.data.insights.dreamCount),
+          reason: requestReason
+        });
         that.setData({ portraitLoading: false, portraitGenerateFailed: true });
+        if (that.data.portraitMigrationState === 'migrating') that.setData({ portraitMigrationState: 'failed' });
         return;
       }
       nextState = normalizeMemoryState(that.data.memoryState);
@@ -365,8 +393,10 @@ Page({
       })).slice(0, 30);
       nextState.lastGeneratedDreamCount = that.data.insights.dreamCount;
       persistMemoryState(nextState);
-      that.setData({ memoryState: nextState, memoryLoaded: true, portraitLoading: false, portraitGenerateFailed: false });
-    });
+      that.setData({ memoryState: nextState, memoryLoaded: true, portraitLoading: false, portraitGenerateFailed: false, portraitMigrationState: '' });
+      });
+    }
+    requestPortrait(0);
   },
 
   onInput: function (event) {

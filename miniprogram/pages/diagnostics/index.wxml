@@ -173,4 +173,9 @@
   <button class="primary-button" loading="{{loading}}" bindtap="refresh">刷新状态</button>
   <button class="ghost-button smoke-button" loading="{{smokeLoading}}" bindtap="runSmokeTest">AI SMOKE TEST</button>
   <button class="ghost-button smoke-button" loading="{{imageLoading}}" bindtap="runImageTest">IMAGE TEST</button>
+  <view class="panel diagnostics-admin-panel">
+    <text class="panel-label">管理员区块 · 阶段画像</text>
+    <text class="panel-value">{{portraitResult.ok ? '已重新生成' : portraitResult.reason}}</text>
+    <button class="ghost-button smoke-button" loading="{{portraitLoading}}" disabled="{{portraitLoading}}" bindtap="regeneratePortrait">重新生成画像</button>
+  </view>
 </view>

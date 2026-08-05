@@ -1,11 +1,15 @@
 var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
 var dreamMemory = require('../../utils/dreamMemory');
-var recorderManager = wx.getRecorderManager();
-var recorderListenersBound = false;
-var activeRecorderPage = null;
+var recorderRouter = require('../../utils/recorderRouter');
+var syncQueue = require('../../utils/syncQueue');
 
 var MAX_USER_TURNS = 6;
+var FEEDBACK_OPENINGS = {
+  too_generic: "你标了'有点泛'。梦里哪个画面你觉得最被忽略了？我们从它开始",
+  too_mystical: '你觉得太玄了。我们抛开象征，只说梦里实际发生了什么',
+  not_grounded: '你觉得不贴合。说说醒来后你想到的第一件现实里的事？'
+};
 
 function voiceFailureMessage(result) {
   var reason = result && result.reason ? String(result.reason) : '';
@@ -32,7 +36,18 @@ function persistDream(dream, callback) {
   var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
   var next = archive.map(function (item) { return item.id === dream.id ? dream : item; });
   wx.setStorageSync('oneiro:dreamArchive', next);
-  cloudBase.saveDream(dream, callback);
+  cloudBase.saveDream(dream, function (result) {
+    dream.cloudSynced = !!(result && result.ok);
+    if (dream.cloudSynced) syncQueue.removeByKey('dream:' + String(dream.id));
+    var latest = wx.getStorageSync('oneiro:dreamArchive') || [];
+    wx.setStorageSync('oneiro:dreamArchive', latest.map(function (item) {
+      return item.id === dream.id ? dream : item;
+    }));
+    if (dream.cloudSynced && getApp && getApp().flushPendingSyncTasks) {
+      getApp().flushPendingSyncTasks();
+    }
+    if (callback) callback(result);
+  });
 }
 
 function userTurnCount(messages) {
@@ -56,6 +71,8 @@ Page({
   onLoad: function (options) {
     var dream = findDream(options && options.id);
     var messages;
+    var feedback = String(options && options.feedback || (dream && dream.feedback) || '');
+    var feedbackKey = 'oneiro:feedbackOpening:' + String(dream && dream.id || '');
 
     // 与 result 页保持一致：拿不到梦就退回去，不要把用户留在一个
     // 看起来能用、实际没有任何上下文的对话界面上。
@@ -71,40 +88,51 @@ Page({
     if (!messages.length) {
       messages = [{
         role: 'assistant',
-        content: dream.result.integration_question || '你最想从这个梦的哪个画面开始聊？',
+        content: FEEDBACK_OPENINGS[feedback] && !wx.getStorageSync(feedbackKey)
+          ? FEEDBACK_OPENINGS[feedback]
+          : dream.result.integration_question || '你最想从这个梦的哪个画面开始聊？',
         createdAt: new Date().toISOString()
       }];
+      if (FEEDBACK_OPENINGS[feedback] && !wx.getStorageSync(feedbackKey)) {
+        wx.setStorageSync(feedbackKey, true);
+      }
     }
     this.setData({
       dream: dream,
       messages: messages,
       turnCount: userTurnCount(messages),
+      feedbackType: feedback,
+      cloudSyncPending: dream.cloudSynced === false,
       scrollTarget: 'message-' + String(messages.length - 1)
     });
-    activeRecorderPage = this;
-    if (!recorderListenersBound) {
-      recorderManager.onStop(function (result) {
-        if (activeRecorderPage) activeRecorderPage.onRecorderStop(result);
-      });
-      recorderManager.onError(function () {
-        if (!activeRecorderPage) return;
-        activeRecorderPage.stopRecordingTimer();
-        activeRecorderPage.setData({ recording: false, recordingSeconds: 0 });
-        analytics.trackEvent('dream_chat_voice_error', { dreamId: activeRecorderPage.data.dream.id });
-        wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none' });
-      });
-      recorderListenersBound = true;
-    }
+    this.pageActive = true;
+    recorderRouter.register(this);
     analytics.trackEvent('dream_chat_view', { dreamId: dream.id, existingMessages: messages.length });
   },
 
   onUnload: function () {
+    this.pageActive = false;
     this.clearVoiceStartTimer();
+    this.stopRecorderForExit();
+    recorderRouter.unregister(this);
+  },
+
+  onShow: function () {
+    this.pageActive = true;
+    recorderRouter.register(this);
+  },
+
+  onHide: function () {
+    this.pageActive = false;
+    this.stopRecorderForExit();
+    recorderRouter.unregister(this);
+  },
+
+  onRecorderError: function () {
     this.stopRecordingTimer();
-    if (this.data.recording) {
-      try { recorderManager.stop(); } catch (error) {}
-    }
-    if (activeRecorderPage === this) activeRecorderPage = null;
+    this.setData({ recording: false, recordingSeconds: 0 });
+    analytics.trackEvent('dream_chat_voice_error', { dreamId: this.data.dream && this.data.dream.id || '' });
+    wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none' });
   },
 
   onInput: function (event) {
@@ -138,11 +166,11 @@ Page({
     this.voiceStartMode = mode || 'tap';
     wx.authorize({
       scope: 'scope.record',
-      success: function () { that.startRecorder(); },
+      success: function () { if (that.pageActive !== false) that.startRecorder(); },
       fail: function () {
         wx.openSetting({
           success: function (setting) {
-            if (setting.authSetting && setting.authSetting['scope.record']) that.startRecorder();
+            if (setting.authSetting && setting.authSetting['scope.record'] && that.pageActive !== false) that.startRecorder();
             else wx.showToast({ title: voiceFailureMessage({ reason: 'record_permission_denied' }), icon: 'none' });
           },
           fail: function () {
@@ -164,7 +192,7 @@ Page({
       setTimeout(function () { that.stopRecorder(); }, 0);
     }
     try {
-      recorderManager.start({ format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, duration: 60000 });
+      recorderRouter.start({ format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, duration: 60000 });
     } catch (error) {
       this.stopRecordingTimer();
       this.setData({ recording: false, recordingSeconds: 0 });
@@ -176,7 +204,14 @@ Page({
     if (!this.data.recording) return;
     this.stopRecordingTimer();
     analytics.trackEvent('dream_chat_voice_stop', { dreamId: this.data.dream.id, seconds: this.data.recordingSeconds });
-    try { recorderManager.stop(); } catch (error) { this.setData({ recording: false, recordingSeconds: 0 }); }
+    try { recorderRouter.stop(); } catch (error) { this.setData({ recording: false, recordingSeconds: 0 }); }
+  },
+
+  stopRecorderForExit: function () {
+    if (!this.data.recording) return;
+    this.stopRecordingTimer();
+    this.setData({ recording: false, recordingSeconds: 0 });
+    try { recorderRouter.stopForExit(this); } catch (error) {}
   },
 
   clearVoiceStartTimer: function () {
@@ -295,14 +330,28 @@ Page({
     });
 
     cloudBase.chatAboutDream(dream.dreamText, dream.result, requestHistory, userMessage.content, function (result) {
+      if (!result || !result.reply || result.ok === false) {
+        that.setData({
+          // 失败只移除本次刚加入的 user 消息，保留此前已存在的聊天记录。
+          messages: messages.slice(0, -1),
+          inputValue: content,
+          sending: false,
+          turnCount: Math.max(0, that.data.turnCount - 1),
+          scrollTarget: 'message-' + String(Math.max(0, messages.length - 2))
+        });
+        analytics.trackEvent('dream_chat_reply_failed', {
+          dreamId: dream.id,
+          reason: result && result.reason ? result.reason : 'missing_reply'
+        });
+        wx.showToast({ title: '没发出去，内容已放回输入框', icon: 'none' });
+        return;
+      }
       var current = that.data.messages.slice();
-      var reply = result && result.reply
-        ? result.reply
-        : '这次我没有接住这句话。你可以换一个梦里的画面再说说。';
-      current.push({ role: 'assistant', content: reply, createdAt: new Date().toISOString() });
+      current.push({ role: 'assistant', content: String(result.reply), createdAt: new Date().toISOString() });
       dream.chatMessages = current.slice(-12);
       dream.updatedAt = new Date().toISOString();
       persistDream(dream, function (saveResult) {
+        that.setData({ cloudSyncPending: !(saveResult && saveResult.ok) });
         var realityClue = result && result.ok ? String(result.realityClue || '').trim() : '';
         var refreshPortrait = function (reason, refreshKey) {
           dreamMemory.refreshPortraitInBackground({
@@ -313,7 +362,19 @@ Page({
           });
         };
 
-        if (realityClue) {
+        if (!saveResult || !saveResult.ok) {
+          syncQueue.enqueue('dream_sync', { dream: dream });
+          // 聊天已在本地保留；没有待写入的现实线索时，单独排队画像刷新。
+          // 有现实线索则由 life_note 队列在补写成功后触发画像刷新。
+          if (!realityClue) {
+            syncQueue.enqueue('portrait_refresh', {
+              refreshKey: 'discussion:' + String(dream.id) + ':' + String(current.length),
+              reason: '梦后讨论有了新内容'
+            });
+          }
+        }
+
+        if (realityClue && saveResult && saveResult.ok) {
           cloudBase.addLifeNote(dream.id, realityClue, function (noteResult) {
             if (noteResult && noteResult.ok) {
               refreshPortrait(
@@ -330,6 +391,11 @@ Page({
               dreamId: dream.id,
               reason: noteResult && noteResult.reason ? noteResult.reason : 'unknown'
             });
+            syncQueue.enqueue('life_note', {
+              dreamId: dream.id,
+              text: realityClue,
+              refreshKey: 'life-note:' + String(dream.id) + ':' + String(current.length)
+            });
           });
           return;
         }
@@ -338,12 +404,19 @@ Page({
             '梦后讨论有了新内容',
             'discussion:' + String(dream.id) + ':' + String(current.length)
           );
+        } else if (realityClue) {
+          syncQueue.enqueue('life_note', {
+            dreamId: dream.id,
+            text: realityClue,
+            refreshKey: 'life-note:' + String(dream.id) + ':' + String(current.length)
+          });
         }
       });
       that.setData({
         dream: dream,
         messages: current,
         sending: false,
+        cloudSyncPending: dream.cloudSynced !== true,
         scrollTarget: 'message-' + String(current.length - 1)
       });
       analytics.trackEvent('dream_chat_reply', {
@@ -351,6 +424,6 @@ Page({
         provider: result && result.provider ? result.provider : 'unavailable',
         fallback: !!(result && result.fallback)
       });
-    });
+    }, this.data.feedbackType || '');
   }
 });

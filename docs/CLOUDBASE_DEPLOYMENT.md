@@ -77,7 +77,7 @@ INTERPRET_PROVIDER=deepseek
 DEEPSEEK_API_KEY=<rotate-and-set-in-cloudbase-only>
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-INTERPRET_TIMEOUT_MS=30000
+INTERPRET_TIMEOUT_MS=45000
 ```
 
 OpenAI-compatible providers are also supported through:
@@ -93,7 +93,10 @@ Compatibility aliases are also accepted for the OpenAI-compatible path: `OPENAI_
 
 Keep provider keys server-side in CloudBase only. Do not put them in Mini Program source files, `project.config.json`, or frontend storage. Dream semantics are model-only: if the provider is unavailable, missing a key, times out, or returns malformed JSON, `interpretDream` returns a retryable error without `result`. The original dream remains saved, and the result page offers “重新解读”. No local keyword classifier generates substitute symbols or interpretations.
 
-The deployed `interpretDream` function now reports a 60-second timeout, safely above the configured 30-second provider request budget.
+The deployed `interpretDream` function keeps the CloudBase platform timeout at
+60 seconds and clamps the provider request budget to `45000`-`50000` ms. The
+default is `45000` ms, leaving time for response validation and persistence.
+The Mini Program client waits up to `70000` ms for `interpretDream` results.
 
 `interpretDream` also supports a safe provider health check:
 
@@ -104,7 +107,15 @@ wx.cloud.callFunction({
 });
 ```
 
-The response intentionally does not expose secrets. It reports `provider`, `providerConfigured`, `hasApiKey`, `model`, `baseUrlHost`, `requestTimeoutMs`, and `fallbackProvider`. `fallbackProvider` is `none`. Before real AI setup it should report `provider: cloudbase-static` and `providerConfigured: false`; interpretation requests fail retryably rather than fabricating local results. After real AI setup it should report `provider: deepseek` or `provider: openai-compatible` and `providerConfigured: true`.
+The response intentionally does not expose secrets. It reports `provider`,
+`providerConfigured`, `hasApiKey`, `model`, `baseUrlHost`, `requestTimeoutMs`,
+`timeoutBudget`, and `fallbackProvider`. Provider failures also include a
+stable `errorCode` (for example `provider_timeout`) plus `diagnostics` with
+provider, model, request budget, and elapsed time. Before real AI setup it
+should report `provider: cloudbase-static` and `providerConfigured: false`;
+interpretation requests fail retryably rather than fabricating local results.
+After real AI setup it should report `provider: deepseek` or
+`provider: openai-compatible` and `providerConfigured: true`.
 
 ## Real AI Image Provider
 
@@ -217,7 +228,7 @@ Then list deployed functions:
 ## Known MVP Limits
 
 - `interpretDream` has a real AI provider boundary and static fallback. The current CloudBase environment has working DeepSeek and image-provider credentials; rotate/audit those server-side credentials before a public launch and never copy them into client source.
-- `interpretDream` and `generateDreamImage` are both active with 60-second timeouts. Recheck these values after future console or deployment changes.
+- `interpretDream` and `generateDreamImage` are both active with 60-second platform timeouts. Recheck these values after future console or deployment changes; the former's provider request budget must remain below 60 seconds.
 - Live non-cached image generation passed after the ownership/race fix with `nano-banana-fast` (811,786-byte JPG, 17.2-second provider latency), followed by successful source-dream and owned-asset cleanup. A nonexistent dream id was rejected before provider work, and deletion blocked subsequent life-note writes. Physical-device rendering and album-save permission still require QR acceptance.
 - Content safety is currently a basic local/server regex gate. Production should add WeChat content security and provider-side moderation before wider launch.
 - `generated_assets` is verified through `cloudHealth` and is used only for owner-scoped generated dream artwork. Share-card Canvas files stay local; `share_pages` stores only the server-built card-only payload and never stores a client-provided image file id.

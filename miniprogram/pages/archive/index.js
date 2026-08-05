@@ -3,6 +3,7 @@ var cloudBase = require('../../utils/cloudBase');
 var dreamArtifacts = require('../../utils/dreamArtifacts');
 var dreamMemory = require('../../utils/dreamMemory');
 var tabNav = require('../../utils/tabNav');
+var syncQueue = require('../../utils/syncQueue');
 
 function dateLabel(value) {
   var date = new Date(value);
@@ -106,6 +107,9 @@ function normalizeCloudDream(item) {
     interpretationProvider: String((item && item.interpretationProvider) || ''),
     interpretationRevision: Math.max(0, Number(item && item.interpretationRevision) || 0),
     interpretationMeta: item && item.interpretationMeta ? item.interpretationMeta : {},
+    feedback: String((item && item.feedback) || ''),
+    feedbackAt: item && item.feedbackAt ? item.feedbackAt : null,
+    cloudSynced: status === 'ready' && !!result,
     createdAt: item && item.createdAt ? item.createdAt : new Date().toISOString(),
     updatedAt: item && item.updatedAt ? item.updatedAt : item && item.createdAt
   };
@@ -119,7 +123,8 @@ Page({
     archetypeEligible: false,
     archetype: null,
     insights: dreamMemory.buildInsights([]),
-    timelineGroups: []
+    timelineGroups: [],
+    archiveLoadError: false
   },
 
   onLoad: function (options) {
@@ -138,6 +143,7 @@ Page({
     this._archiveLoadToken = (this._archiveLoadToken || 0) + 1;
     var loadToken = this._archiveLoadToken;
     var savedArchive = wx.getStorageSync('oneiro:dreamArchive') || [];
+    this.setData({ archiveLoadError: false });
     var archive = savedArchive.map(function (item, index) {
       if (!item.id) {
         item.id = String(item.createdAt || Date.now()) + '-' + index;
@@ -152,7 +158,10 @@ Page({
     this.renderArchive(archive);
     this.hydrateArchiveImages(archive, loadToken);
     cloudBase.getDreamArchive(function (result) {
-      if (!result || !result.ok || !Array.isArray(result.dreams)) return;
+      if (!result || !result.ok || !Array.isArray(result.dreams)) {
+        if (!archive.length) that.setData({ archiveLoadError: true, hasArchive: false });
+        return;
+      }
       var pendingDeletes = wx.getStorageSync('oneiro:pendingCloudDeletes') || [];
       var remote = result.dreams.map(normalizeCloudDream).filter(function (item) {
         return item.id && item.dreamText && pendingDeletes.indexOf(item.id) < 0;
@@ -173,7 +182,7 @@ Page({
           local.status === 'ready' &&
           (item.status !== 'ready' || localUpdatedAt > remoteUpdatedAt)
         ) {
-          return local;
+          return Object.assign({}, local, { cloudSynced: false });
         }
         if (!local || item.thumbnailPath) return item;
         return Object.assign({}, item, { thumbnailPath: local.thumbnailPath || '' });
@@ -182,6 +191,10 @@ Page({
       remote.forEach(function (item) { remoteIds[item.id] = true; });
       var localOnly = archive.filter(function (item) {
         return !remoteIds[item.id] && ['pending', 'ready', 'blocked'].indexOf(item.status) >= 0;
+      }).map(function (item) {
+        return item && item.status === 'ready' && item.result
+          ? Object.assign({}, item, { cloudSynced: false })
+          : item;
       });
       var merged = remote.concat(localOnly).sort(function (left, right) {
         return new Date(right.updatedAt || right.createdAt || 0).getTime() -
@@ -190,8 +203,37 @@ Page({
       wx.setStorageSync('oneiro:dreamArchive', merged);
       that.renderArchive(merged);
       that.hydrateArchiveImages(merged, loadToken);
+      that.repairStaleCloudDreams(merged);
       analytics.trackEvent('archive_cloud_synced', { archiveCount: merged.length });
     });
+  },
+
+  repairStaleCloudDreams: function (archive) {
+    var that = this;
+    this._repairingDreamIds = this._repairingDreamIds || {};
+    (Array.isArray(archive) ? archive : []).forEach(function (dream) {
+      if (!dream || dream.status !== 'ready' || dream.cloudSynced === true || !dream.result || that._repairingDreamIds[dream.id]) return;
+      that._repairingDreamIds[dream.id] = true;
+      cloudBase.saveDream(dream, function (saveResult) {
+        that._repairingDreamIds[dream.id] = false;
+        var current = wx.getStorageSync('oneiro:dreamArchive') || [];
+        if (!saveResult || !saveResult.ok) {
+          syncQueue.enqueue('dream_sync', { dream: dream, refreshPortrait: false });
+          wx.setStorageSync('oneiro:dreamArchive', current.map(function (item) {
+            return item.id === dream.id ? Object.assign({}, item, { cloudSynced: false }) : item;
+          }));
+          return;
+        }
+        wx.setStorageSync('oneiro:dreamArchive', current.map(function (item) {
+          return item.id === dream.id ? Object.assign({}, item, { cloudSynced: true }) : item;
+        }));
+        that.renderArchive(wx.getStorageSync('oneiro:dreamArchive') || []);
+      });
+    });
+  },
+
+  retryArchiveLoad: function () {
+    this.onShow();
   },
 
   renderArchive: function (archive) {

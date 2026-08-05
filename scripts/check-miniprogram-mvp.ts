@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
@@ -46,9 +47,34 @@ function assertJson(path: string): void {
   JSON.parse(read(path));
 }
 
+function assertTrackedRuntimeFile(path: string): void {
+  assert.equal(fs.existsSync(path), true, `${path} should exist in the release snapshot`);
+  let tracked = false;
+  try {
+    execFileSync('git', ['ls-files', '--error-unmatch', '--', path], { stdio: 'ignore' });
+    tracked = true;
+  } catch (_error) {
+    tracked = false;
+  }
+  if (!tracked) {
+    // The contract runs before the caller stages a new release file. Accept a
+    // visible worktree addition while still rejecting files hidden by ignore
+    // rules or absent from the snapshot entirely.
+    const status = execFileSync('git', ['status', '--short', '--', path], { encoding: 'utf8' });
+    assert.match(status, /^(?:\?\?|[ MARC])[ MARC]/m, `${path} should be tracked or present as a release worktree addition`);
+  }
+}
+
 function last<T>(values: T[]): T {
   assert.ok(values.length > 0, 'expected a non-empty array');
   return values[values.length - 1];
+}
+
+for (const requiredRuntimeFile of [
+  'miniprogram/utils/recorderRouter.js',
+  'miniprogram/utils/syncQueue.js',
+]) {
+  assertTrackedRuntimeFile(requiredRuntimeFile);
 }
 
 type AcceptanceModule = {
@@ -181,6 +207,14 @@ type WxMock = {
   blockNextInterpret: boolean;
   failNextInterpret: boolean;
   failNextDreamSave: boolean;
+  failNextReadyDreamSave: boolean;
+  failDreamSaveIds: string[];
+  failDreamSaveTitles: string[];
+  beforeDreamSaveSuccess?: (options: Record<string, any>) => void;
+  beforePortraitGenerate?: () => void;
+  recorderStopListener?: (result: Record<string, any>) => void;
+  recorderErrorListener?: (error: Record<string, any>) => void;
+  recorderStopCalls: number;
   failNextPortraitToggle: boolean;
   failNextPortraitSave: boolean;
   failNextPortraitGenerate: boolean;
@@ -252,6 +286,10 @@ function createWxMock(): WxMock {
     blockNextInterpret: false,
     failNextInterpret: false,
     failNextDreamSave: false,
+    failNextReadyDreamSave: false,
+    failDreamSaveIds: [],
+    failDreamSaveTitles: [],
+    recorderStopCalls: 0,
     failNextPortraitToggle: false,
     failNextPortraitSave: false,
     failNextPortraitGenerate: false,
@@ -262,10 +300,10 @@ function createWxMock(): WxMock {
     },
     getRecorderManager() {
       return {
-        onStop() {},
-        onError() {},
+        onStop(callback: (result: Record<string, any>) => void) { wx.recorderStopListener = callback; },
+        onError(callback: (error: Record<string, any>) => void) { wx.recorderErrorListener = callback; },
         start() {},
-        stop() {},
+        stop() { wx.recorderStopCalls += 1; },
       };
     },
     authorize(options) {
@@ -383,7 +421,46 @@ function createWxMock(): WxMock {
         options.success({ result: { ok: false, reason: 'mock_save_failed' } });
         return;
       }
+      if (options.name === 'saveDream' && wx.failNextReadyDreamSave && options.data?.dream?.status === 'ready') {
+        wx.failNextReadyDreamSave = false;
+        options.success({ result: { ok: false, reason: 'mock_ready_save_failed' } });
+        return;
+      }
+      if (options.name === 'saveDream' && wx.beforeDreamSaveSuccess) {
+        wx.beforeDreamSaveSuccess(options);
+      }
+      if (options.name === 'saveDream' && wx.failDreamSaveIds.includes(String(options.data?.dream?.id || ''))) {
+        wx.failDreamSaveIds = wx.failDreamSaveIds.filter((id) => id !== String(options.data?.dream?.id || ''));
+        options.success({ result: { ok: false, reason: 'mock_replaced_save_failed' } });
+        return;
+      }
+      if (options.name === 'saveDream' && wx.failDreamSaveTitles.includes(String(options.data?.dream?.result?.title || ''))) {
+        wx.failDreamSaveTitles = wx.failDreamSaveTitles.filter((title) => title !== String(options.data?.dream?.result?.title || ''));
+        options.success({ result: { ok: false, reason: 'mock_replaced_save_failed' } });
+        return;
+      }
       if (options.name === 'interpretDream') {
+        if (options.data?.metaphysicalReading) {
+          options.success({
+            result: {
+              ok: true,
+              provider: 'mock-metaphysical',
+              model: 'mock-metaphysical-model',
+              promptVersion: 'oneiro-freeform-reading-v0.5-optional-metaphysical',
+              elapsedMs: 1234,
+              metaphysical_resonance: '梦里的学校走廊与日主甲木的行动底色形成有限呼应。',
+              metaphysical_basis: '四柱中的日主甲木是本次确定性计算的技术锚点。',
+              metaphysical_reading: {
+                temperament: '学校走廊里的追逐调动了日主甲木的主动应对底色。',
+                dream_echo: '梦里的学校走廊与五行木的展开意象形成有限呼应。',
+                tension: '追逐和迟到把十神只作为观察拉扯的技术参照。',
+                rhythm: '先记录梦里被追上的那一刻，不把它用于预测。',
+                basis: '四柱中的日主甲木为确定性盘面锚点。',
+              },
+            },
+          });
+          return;
+        }
         if (options.data?.refineDream) {
           options.success({
             result: {
@@ -433,7 +510,7 @@ function createWxMock(): WxMock {
               hasApiKey: true,
               model: 'mock-model',
               baseUrlHost: 'mock.example.com',
-              requestTimeoutMs: 30000,
+              requestTimeoutMs: 45000,
               fallbackProvider: 'none',
             },
           });
@@ -469,7 +546,7 @@ function createWxMock(): WxMock {
             ok: true,
             provider: 'mock-cloud',
             model: 'mock-grounded-model',
-            promptVersion: 'oneiro-freeform-reading-v0.4-metaphysical-lens',
+            promptVersion: 'oneiro-freeform-reading-v0.5-optional-metaphysical',
             schemaVersion: 'dream-entry-v0.2',
             result: {
               title: '云影',
@@ -546,6 +623,7 @@ function createWxMock(): WxMock {
       }
       if (options.name === 'profileMemory') {
         if (options.data?.action === 'generate') {
+          if (wx.beforePortraitGenerate) wx.beforePortraitGenerate();
           if (wx.failNextPortraitGenerate) {
             wx.failNextPortraitGenerate = false;
             options.success({ result: { ok: false, reason: 'mock_generate_failed' } });
@@ -762,10 +840,33 @@ function loadPage(
   return page!;
 }
 
+function loadApp(
+  path: string,
+  modules: Record<string, unknown>,
+  wx: WxMock
+): Record<string, any> {
+  let app: Record<string, any> | null = null;
+  const sandbox = {
+    console,
+    Date,
+    wx,
+    module: { exports: {} },
+    App(config: Record<string, any>) { app = config; },
+    require(request: string) {
+      if (Object.prototype.hasOwnProperty.call(modules, request)) return modules[request];
+      throw new Error(`Unexpected require(${request}) while loading ${path}`);
+    },
+  };
+  vm.runInNewContext(read(path), sandbox, { filename: path });
+  assert.ok(app, `${path} should register an App`);
+  return app!;
+}
+
 const acceptance = loadCommonJS<AcceptanceModule>('miniprogram/utils/acceptanceDream.js');
 const contentSafety = loadCommonJS<ContentSafetyModule>('miniprogram/utils/contentSafety.js');
 const dreamArtifacts = loadCommonJS<DreamArtifactsModule>('miniprogram/utils/dreamArtifacts.js');
-const dreamMemory = loadCommonJS<DreamMemoryModule>('miniprogram/utils/dreamMemory.js');
+const syncQueue = loadCommonJS<Record<string, any>>('miniprogram/utils/syncQueue.js', { wx: createWxMock() });
+const dreamMemory = loadCommonJS<DreamMemoryModule>('miniprogram/utils/dreamMemory.js', {}, { './syncQueue': syncQueue });
 const canvasFrame = loadCommonJS<CanvasFrameModule>('miniprogram/utils/canvasFrame.js');
 
 for (const path of [
@@ -835,12 +936,7 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', '文化象征'],
   ['miniprogram/pages/result/index.wxml', '心理视角'],
   ['miniprogram/pages/result/index.wxml', '聊聊这个梦'],
-  ['miniprogram/pages/result/index.wxml', 'class="dream-refinement"'],
-  ['miniprogram/pages/result/index.wxml', 'bindinput="onRefineAnswerInput"'],
-  ['miniprogram/pages/result/index.wxml', 'bindtap="refineDreamCard"'],
-  ['miniprogram/pages/result/index.wxml', 'bindtap="retryDreamImageSync"'],
-  ['miniprogram/pages/result/index.wxml', 'bindtap="retryRefinementSync"'],
-  ['miniprogram/pages/result/index.wxml', '最终梦卡已更新'],
+  ['miniprogram/pages/result/index.wxml', 'bindtap="retryCloudSync"'],
   ['miniprogram/pages/result/index.wxml', 'class="core-observation"'],
   ['miniprogram/pages/result/index.wxml', 'dream.result.reading_hook'],
   // 设计稿去掉了「三个视角」分组标题，三个 block 直接平铺。原先断言这个
@@ -906,6 +1002,7 @@ for (const [path, expected] of [
   ['miniprogram/utils/cloudBase.js', "createShareCard"],
   ['miniprogram/utils/cloudBase.js', "getShareCard"],
   ['miniprogram/utils/cloudBase.js', "interpretDream"],
+  ['miniprogram/utils/cloudBase.js', "metaphysicalReading"],
   ['miniprogram/utils/cloudBase.js', "aiHealth"],
   ['miniprogram/utils/cloudBase.js', "aiSmokeTest"],
   ['miniprogram/utils/cloudBase.js', "generateDreamImage"],
@@ -923,6 +1020,8 @@ for (const [path, expected] of [
   ['miniprogram/utils/cloudBase.js', "refineDream"],
   ['miniprogram/utils/cloudBase.js', "getProfileMemory"],
   ['miniprogram/utils/cloudBase.js', "generateProfilePortrait"],
+  ['miniprogram/utils/recorderRouter.js', "register"],
+  ['miniprogram/utils/syncQueue.js', "enqueue"],
   ['miniprogram/pages/home/index.js', "validateDreamText"],
   ['miniprogram/pages/home/index.js', "interpretDream"],
   ['miniprogram/pages/home/index.js', "cloudResult.blocked"],
@@ -948,8 +1047,9 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.js', "imageErrorMessage"],
   ['miniprogram/pages/result/index.js', "retryDreamImage"],
   ['miniprogram/pages/result/index.js', "retryInterpretation"],
+  ['miniprogram/pages/result/index.js', "cloudBase.metaphysicalReading"],
+  ['miniprogram/pages/result/index.js', "metaphysical_reading_done"],
   ['miniprogram/pages/result/index.js', "dream_chat_open"],
-  ['miniprogram/pages/result/index.js', "dream_refine_success"],
   ['miniprogram/pages/result/index.js', "dream_deleted"],
   ['miniprogram/pages/result/index.wxml', "重新生成画面"],
   ['miniprogram/pages/result/index.wxml', "重新解读"],
@@ -1093,7 +1193,13 @@ assert.ok(portraitDraft.summary.includes('学校'));
 assert.equal(portraitDraft.sourceRefs.length, 3);
 
 const wx = createWxMock();
-const cloudBase = loadCommonJS<CloudBaseModule>('miniprogram/utils/cloudBase.js', { wx });
+const mainSyncQueue = loadCommonJS<Record<string, any>>('miniprogram/utils/syncQueue.js', { wx });
+const cloudBase = loadCommonJS<CloudBaseModule>('miniprogram/utils/cloudBase.js', {
+  wx,
+  setTimeout,
+  clearTimeout,
+});
+const recorderRouter = loadCommonJS<Record<string, any>>('miniprogram/utils/recorderRouter.js', { wx });
 const analytics = loadCommonJS<AnalyticsModule>(
   'miniprogram/utils/analytics.js',
   { wx },
@@ -1109,9 +1215,10 @@ cloudBase.getIdentity((identity: { openid: string; source: string }) => {
 });
 assert.equal(identitySource, 'cloud');
 let aiHealthProvider = '';
-cloudBase.aiHealth((health: { provider: string; providerConfigured: boolean }) => {
+  cloudBase.aiHealth((health: { provider: string; providerConfigured: boolean; requestTimeoutMs: number }) => {
   aiHealthProvider = health.provider;
   assert.equal(health.providerConfigured, true);
+  assert.equal(health.requestTimeoutMs, 45000);
 });
 assert.equal(aiHealthProvider, 'mock-cloud');
 analytics.trackEvent('app_start', { source: 'test', ignored: { nested: true } });
@@ -1149,11 +1256,35 @@ const pageModules = {
   '../../utils/dreamMemory': dreamMemory,
   '../../utils/canvasFrame': canvasFrame,
   '../../utils/tabNav': tabNav,
+  '../../utils/syncQueue': mainSyncQueue,
+  '../../utils/recorderRouter': recorderRouter,
 };
 
 const homePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);
 homePage.onLoad({ fromShare: '1' });
 assert.equal(homePage.data.fromShare, true);
+
+// Leaving while recording stops the native recorder before unregistering the
+// page, resets visible state immediately, and discards the late terminal
+// callback rather than recognizing a partial clip.
+homePage.data.recording = true;
+homePage.data.recordingSeconds = 3;
+const recorderStopsBeforeHomeHide = wx.recorderStopCalls;
+homePage.onHide();
+assert.equal(homePage.data.recording, false);
+assert.equal(homePage.data.recordingSeconds, 0);
+assert.equal(wx.recorderStopCalls, recorderStopsBeforeHomeHide + 1);
+if (wx.recorderStopListener) wx.recorderStopListener({ tempFilePath: '/tmp/partial.m4a', duration: 3000 });
+assert.equal(homePage.data.recognizing, false);
+homePage.onShow();
+
+const dreamChatExitPage = loadPage('miniprogram/pages/dream-chat/index.js', pageModules, wx, app);
+dreamChatExitPage.onShow();
+dreamChatExitPage.data.recording = true;
+dreamChatExitPage.data.recordingSeconds = 2;
+dreamChatExitPage.onHide();
+assert.equal(dreamChatExitPage.data.recording, false);
+assert.equal(dreamChatExitPage.data.recordingSeconds, 0);
 
 // Drag submission is based on finger coordinates, never on asynchronous
 // rendering state. Keep this focused on the gesture path so recording and
@@ -1387,7 +1518,7 @@ assert.equal(archiveAfterDream[0].interpretationProvider, 'mock-cloud');
 assert.equal(archiveAfterDream[0].status, 'ready');
 assert.equal(archiveAfterDream[0].dreamFacts.places[0], '学校');
 assert.equal(archiveAfterDream[0].interpretationMeta.schemaVersion, 'dream-entry-v0.2');
-assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.4-metaphysical-lens');
+assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.5-optional-metaphysical');
 assert.equal(archiveAfterDream[0].result.title, '云影');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream'));
 assert.equal(
@@ -1405,6 +1536,8 @@ assert.equal(resultPage.data.dream.id, archiveAfterDream[0].id);
 assert.equal(resultPage.data.entryReady, true);
 resultPage.requestDreamImage();
 assert.equal(resultPage.data.imageStatus, 'ready');
+assert.equal(resultPage.data.metaphysicalEntryVisible, false);
+assert.equal(resultPage.data.metaphysicalReadingReady, true);
 assert.equal(resultPage.data.dream.result.imageUrl, 'https://mock-image.example.com/oneiro.png');
 assert.equal(resultPage.data.dream.result.image_cache_hit, true);
 assert.equal(resultPage.data.dream.result.image_style_version, 'oneiro-seedream-dream-v2.0');
@@ -1419,6 +1552,37 @@ assert.ok(qualityImageSave);
 assert.match(qualityImageSave.data.dream.result.image_generation_token, /^image-[0-9a-z]+-[a-z0-9_-]{4,64}$/);
 assert.equal(qualityImageSave.data.dream.result.image_quality_status, 'ready');
 assert.match(resultPage.data.displayTimestamp, /^\d{4}\.\d{2}\.\d{2} · \d{2}:\d{2}$/);
+
+const optionalMetaphysicalDream: Record<string, any> = Object.assign({}, archiveAfterDream[0], {
+  id: 'optional-metaphysical-dream',
+  cloudSynced: true,
+  result: Object.assign({}, archiveAfterDream[0].result, {
+    metaphysicalAvailable: true,
+    metaphysical_resonance: '',
+    metaphysical_basis: '',
+    metaphysical_reading: {
+      temperament: '',
+      dream_echo: '',
+      tension: '',
+      rhythm: '',
+      basis: '',
+    },
+  }),
+});
+wx.storage['oneiro:dreamArchive'] = [optionalMetaphysicalDream].concat(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).filter((dream) => dream.id !== optionalMetaphysicalDream.id)
+);
+const optionalResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+optionalResultPage.onLoad({ id: optionalMetaphysicalDream.id });
+assert.equal(optionalResultPage.data.metaphysicalEntryVisible, true);
+assert.equal(optionalResultPage.data.metaphysicalReadingReady, false);
+optionalResultPage.openMetaphysicalReading();
+assert.equal(optionalResultPage.data.metaphysicalReadingLoading, false);
+assert.equal(optionalResultPage.data.metaphysicalReadingReady, true);
+assert.equal(optionalResultPage.data.metaphysicalEntryVisible, false);
+assert.equal(optionalResultPage.data.dream.result.metaphysical_resonance.includes('学校走廊'), true);
+assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data?.metaphysicalReading));
+assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data?.dream?.id === optionalMetaphysicalDream.id && call.data?.dream?.result?.metaphysical_basis));
 assert.equal(resultPage.data.cardFlipped, false);
 const reopenedResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 reopenedResultPage.onLoad({ id: archiveAfterDream[0].id });
@@ -1506,8 +1670,8 @@ const generationCallsBeforeImageSyncFailure = wx.cloudCalls.filter(
 wx.failNextDreamSave = true;
 imageResultSyncPage.requestDreamImage();
 assert.equal(imageResultSyncPage.data.imageStatus, 'ready');
-assert.equal(imageResultSyncPage.data.imageSyncPending, true);
-assert.equal(imageResultSyncPage.data.dream.cloudSynced, false);
+assert.equal(imageResultSyncPage.data.imageSyncPending, false);
+assert.equal(imageResultSyncPage.data.dream.cloudSynced, true);
 const generationCallsAfterImageSyncFailure = wx.cloudCalls.filter(
   (call) => call.name === 'generateDreamImage' && call.data?.action === 'startPrimaryImage'
 ).length;
@@ -1603,14 +1767,15 @@ const syncRetryDream = Object.assign({}, archiveAfterDream[0], {
 wx.storage['oneiro:dreamArchive'] = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).concat([syncRetryDream]);
 const syncRetryPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 syncRetryPage.onLoad({ id: syncRetryDream.id });
+syncRetryPage.data.dream.cloudSynced = false;
 const imageCallsBeforeSyncRetry = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length;
 wx.failNextDreamSave = true;
 syncRetryPage.requestDreamImage();
 assert.equal(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length, imageCallsBeforeSyncRetry);
 assert.equal(syncRetryPage.data.dream.status, 'ready');
 assert.equal(syncRetryPage.data.dream.cloudSynced, false);
-assert.equal(syncRetryPage.data.imageStatus, 'failed');
-assert.match(syncRetryPage.data.imageErrorMessage, /mock_save_failed/);
+assert.equal(syncRetryPage.data.imageStatus, 'idle');
+assert.equal(syncRetryPage.data.imageErrorMessage, '');
 assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === syncRetryDream.id)?.cloudSynced,
   false
@@ -1646,61 +1811,21 @@ resultPage.saveCard();
 assert.equal(last(wx.savedImages), '/tmp/oneiro-card.png');
 assert.equal(resultPage.data.cardSaved, true);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'createShareCard'));
-resultPage.onRefineAnswerInput({ detail: { value: '我最近确实很怕赶不上期限。' } });
-resultPage.refineDreamCard();
-assert.equal(resultPage.data.dream.result.title, '期限门');
-assert.equal(resultPage.data.dream.result.public_title, '云影');
-assert.ok(resultPage.data.dream.result.personal_connection.includes('截止时间'));
-assert.equal(resultPage.data.dream.result.reflection_answer, '我最近确实很怕赶不上期限。');
-assert.ok(resultPage.data.dream.result.finalized_at);
-assert.equal(resultPage.data.dream.refinementSyncPending, false);
+// 反馈只改变反馈字段，不再改写最终梦卡；负面反馈会带入聊天入口。
+resultPage.chooseDreamFeedback({ currentTarget: { dataset: { feedback: 'too_generic' } } });
+assert.equal(resultPage.data.feedback, 'too_generic');
+assert.equal(resultPage.data.dream.feedback, 'too_generic');
+assert.ok(resultPage.data.dream.feedbackAt);
 assert.equal(resultPage.data.dream.cloudSynced, true);
-assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.refineDream));
-
-// Refinement is stored locally first, but its success state is not shown as
-// cloud-final until saveDream confirms it. A later reload exposes the retry.
-const refinementSyncDream = Object.assign({}, archiveAfterDream[0], {
-  id: 'refinement-sync-dream',
-  result: Object.assign({}, archiveAfterDream[0].result, {
-    reflection_answer: '', finalized_at: '', personal_connection: ''
-  })
-});
-wx.storage['oneiro:dreamArchive'] = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).concat([refinementSyncDream]);
-const refinementSyncPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
-refinementSyncPage.onLoad({ id: refinementSyncDream.id });
-refinementSyncPage.onRefineAnswerInput({ detail: { value: '这次我想到的是换工作时的不确定。' } });
-wx.failNextDreamSave = true;
-refinementSyncPage.refineDreamCard();
-assert.equal(refinementSyncPage.data.refinementSyncPending, true);
-assert.equal(refinementSyncPage.data.dream.refinementSyncPending, true);
-assert.equal(refinementSyncPage.data.dream.cloudSynced, false);
-assert.ok(wx.toasts.includes('最终梦卡待同步'));
-const reloadedRefinementSyncPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
-reloadedRefinementSyncPage.onLoad({ id: refinementSyncDream.id });
-assert.equal(reloadedRefinementSyncPage.data.refinementSyncPending, true);
-reloadedRefinementSyncPage.retryRefinementSync();
-assert.equal(reloadedRefinementSyncPage.data.refinementSyncPending, false);
-assert.equal(reloadedRefinementSyncPage.data.dream.refinementSyncPending, false);
-assert.equal(reloadedRefinementSyncPage.data.dream.cloudSynced, true);
+assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data?.dream?.feedback === 'too_generic'));
+resultPage.openDreamChat();
+assert.ok(last(wx.navigations).includes('feedback=too_generic'));
+const feedbackChatPage = loadPage('miniprogram/pages/dream-chat/index.js', pageModules, wx, app);
+feedbackChatPage.onLoad({ id: archiveAfterDream[0].id, feedback: 'too_generic' });
+assert.equal(feedbackChatPage.data.messages[0].content, '你标了\'有点泛\'。梦里哪个画面你觉得最被忽略了？我们从它开始');
 resultPage.prepareShareCard();
-assert.equal(
-  wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('你的回答让学校与追逐落在了现实期限上'),
-  false
-);
-assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('期限门'), false);
 assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('云影'), false);
-assert.equal(
-  wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('写下正在追你的事'),
-  false
-);
 assert.ok(resultPage.onShareAppMessage().title.includes('云影'));
-assert.equal(resultPage.onShareAppMessage().title.includes('期限门'), false);
-const refinedPublicTitle = resultPage.data.dream.result.public_title;
-delete resultPage.data.dream.result.public_title;
-resultPage.prepareShareCard();
-assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('期限门'), false);
-assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('梦卡'), false);
-resultPage.data.dream.result.public_title = refinedPublicTitle;
 resultPage.saveFullReading();
 assert.equal(last(wx.savedImages), '/tmp/oneiro-card.png');
 assert.equal(resultPage.data.shareImagePath, '/tmp/oneiro-card.png');
@@ -1716,10 +1841,6 @@ assert.equal(dreamChatPage.data.messages.length, 3);
 assert.equal(dreamChatPage.data.turnCount, 1);
 assert.ok(dreamChatPage.data.messages[2].content.includes('期限感'));
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.chatAboutDream));
-assert.equal(
-  last(wx.cloudCalls.filter((call) => call.name === 'interpretDream' && call.data.chatAboutDream)).data.dreamResult.reflection_answer,
-  '我最近确实很怕赶不上期限。'
-);
 assert.equal(
   wx.cloudCalls.filter((call) => call.name === 'saveDream' && call.data.action === 'addLifeNote').length,
   lifeNoteCallsBeforeChat + 1
@@ -1743,6 +1864,170 @@ assert.equal(
   false
 );
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data.action === 'delete'));
+
+// A completed interpretation is useful locally even if the final cloud write
+// fails. It must be persisted as a replayable dream_sync task, not trigger a
+// portrait refresh before the ready record exists in the cloud.
+wx.setStorageSync(mainSyncQueue.STORAGE_KEY, []);
+const firstRevisionTask = mainSyncQueue.enqueue('dream_sync', {
+  dream: { id: 'revision-dream', status: 'ready', result: { title: '旧版本' }, cloudSynced: false },
+});
+const secondRevisionTask = mainSyncQueue.enqueue('dream_sync', {
+  dream: { id: 'revision-dream', status: 'ready', result: { title: '新版本' }, cloudSynced: false },
+});
+assert.notEqual(firstRevisionTask.instanceId, secondRevisionTask.instanceId);
+assert.equal(mainSyncQueue.remove(firstRevisionTask), false);
+assert.equal(mainSyncQueue.list()[0].instanceId, secondRevisionTask.instanceId);
+assert.equal(mainSyncQueue.remove(secondRevisionTask), true);
+const foregroundCleanupTask = mainSyncQueue.enqueue('dream_sync', {
+  dream: { id: 'foreground-cleanup', status: 'ready', result: { title: '已成功写入' }, cloudSynced: false },
+});
+assert.equal(mainSyncQueue.removeByKey(foregroundCleanupTask.key), true);
+assert.equal(mainSyncQueue.list().some((task: any) => task.key === foregroundCleanupTask.key), false);
+wx.failNextReadyDreamSave = true;
+newDreamPage.onDreamInput({ detail: { value: '我梦见一扇门在雨里缓缓打开。' } });
+newDreamPage.generateDreamCard();
+const queuedReadyDream = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((item) =>
+  item.dreamText.includes('一扇门在雨里')
+);
+assert.ok(queuedReadyDream);
+assert.equal(queuedReadyDream.status, 'ready');
+assert.equal(queuedReadyDream.cloudSynced, false);
+assert.equal(mainSyncQueue.list().filter((task: any) => task.type === 'dream_sync' && task.dream.id === queuedReadyDream.id).length, 1);
+assert.equal(mainSyncQueue.list().filter((task: any) => task.type === 'portrait_refresh').length, 0);
+
+// Simulate a fresh app process: a successful replay removes dream_sync and
+// schedules exactly one portrait generation after all replayed dreams land.
+const portraitCallsBeforeReplay = wx.cloudCalls.filter((call) =>
+  call.name === 'profileMemory' && call.data?.action === 'generate'
+).length;
+const restartedApp = loadApp('miniprogram/app.js', {
+  './utils/analytics': analytics,
+  './utils/cloudBase': cloudBase,
+  './utils/syncQueue': mainSyncQueue,
+}, wx);
+restartedApp.flushPendingSyncTasks();
+assert.equal(mainSyncQueue.list().filter((task: any) => task.type === 'dream_sync').length, 0);
+assert.equal(mainSyncQueue.list().filter((task: any) => task.type === 'portrait_refresh').length, 0);
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'profileMemory' && call.data?.action === 'generate').length,
+  portraitCallsBeforeReplay + 1
+);
+assert.equal(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((item) => item.id === queuedReadyDream.id)?.cloudSynced,
+  true
+);
+
+// A different-key task added while the batch's first task is in flight is
+// discovered at the batch boundary and drained immediately. The original
+// snapshot's failed tasks are still not retried in a loop.
+const batchDrainDream = Object.assign({}, queuedReadyDream, {
+  id: 'batch-drain-dream',
+  cloudSynced: false,
+});
+wx.storage['oneiro:dreamArchive'] = [batchDrainDream];
+wx.setStorageSync(mainSyncQueue.STORAGE_KEY, []);
+mainSyncQueue.enqueue('portrait_refresh', { refreshKey: 'batch-drain-portrait', reason: '测试批尾排空' });
+wx.beforePortraitGenerate = function () {
+  wx.beforePortraitGenerate = undefined;
+  mainSyncQueue.enqueue('dream_sync', { dream: batchDrainDream });
+};
+const batchDrainApp = loadApp('miniprogram/app.js', {
+  './utils/analytics': analytics,
+  './utils/cloudBase': cloudBase,
+  './utils/syncQueue': mainSyncQueue,
+}, wx);
+batchDrainApp.flushPendingSyncTasks();
+assert.equal(mainSyncQueue.list().length, 0);
+assert.equal(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((item) => item.id === batchDrainDream.id)?.cloudSynced,
+  true
+);
+
+// If a newer payload replaces an in-flight replay, the old callback must not
+// mark the newer local record synced. The new task is retried in the same
+// flush, but an ordinary network failure remains queued without looping.
+const concurrentId = 'concurrent-replay-dream';
+const concurrentOld = Object.assign({}, queuedReadyDream, {
+  id: concurrentId,
+  result: Object.assign({}, queuedReadyDream.result, { title: '旧云端写入' }),
+  cloudSynced: false,
+});
+const concurrentNew = Object.assign({}, concurrentOld, {
+  result: Object.assign({}, queuedReadyDream.result, { title: '本地较新写入' }),
+  updatedAt: new Date(Date.now() + 1000).toISOString(),
+  cloudSynced: false,
+});
+wx.storage['oneiro:dreamArchive'] = [concurrentOld];
+wx.setStorageSync(mainSyncQueue.STORAGE_KEY, []);
+mainSyncQueue.enqueue('dream_sync', { dream: concurrentOld });
+  wx.beforeDreamSaveSuccess = function () {
+    wx.beforeDreamSaveSuccess = undefined;
+    mainSyncQueue.enqueue('dream_sync', { dream: concurrentNew });
+  wx.failDreamSaveTitles.push('本地较新写入');
+};
+const concurrentApp = loadApp('miniprogram/app.js', {
+  './utils/analytics': analytics,
+  './utils/cloudBase': cloudBase,
+  './utils/syncQueue': mainSyncQueue,
+}, wx);
+concurrentApp.flushPendingSyncTasks();
+assert.equal(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((item) => item.id === concurrentId)?.cloudSynced,
+  false
+);
+assert.equal(mainSyncQueue.list().find((task: any) => task.type === 'dream_sync')?.dream.result.title, '本地较新写入');
+concurrentApp.flushPendingSyncTasks();
+assert.equal(mainSyncQueue.list().filter((task: any) => task.type === 'dream_sync').length, 0);
+assert.equal(
+  (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((item) => item.id === concurrentId)?.cloudSynced,
+  true
+);
+
+// Repairing several historical archive entries restores cloud consistency
+// only; it must not fan out into one portrait generation per entry.
+wx.setStorageSync(mainSyncQueue.STORAGE_KEY, []);
+const archiveRepairBatch = [1, 2, 3, 4].map((index) => Object.assign({}, queuedReadyDream, {
+  id: 'archive-batch-' + index,
+  cloudSynced: false,
+}));
+const archiveRepairBatchPage = loadPage('miniprogram/pages/archive/index.js', pageModules, wx, app);
+const portraitCallsBeforeArchiveRepair = wx.cloudCalls.filter((call) =>
+  call.name === 'profileMemory' && call.data?.action === 'generate'
+).length;
+archiveRepairBatchPage.repairStaleCloudDreams(archiveRepairBatch);
+assert.equal(mainSyncQueue.list().filter((task: any) => task.type === 'portrait_refresh').length, 0);
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'profileMemory' && call.data?.action === 'generate').length,
+  portraitCallsBeforeArchiveRepair
+);
+
+// Archive repair uses the same persistent queue when its automatic save
+// cannot reach the cloud, so it survives leaving the archive page.
+const archiveRepairDream = Object.assign({}, queuedReadyDream, {
+  id: 'archive-repair-failure',
+  cloudSynced: false,
+});
+wx.storage['oneiro:dreamArchive'] = [archiveRepairDream];
+const repairArchivePage = loadPage('miniprogram/pages/archive/index.js', pageModules, wx, app);
+wx.failNextDreamSave = true;
+repairArchivePage.repairStaleCloudDreams([archiveRepairDream]);
+assert.equal(mainSyncQueue.list().filter((task: any) => task.type === 'dream_sync' && task.dream.id === archiveRepairDream.id).length, 1);
+assert.equal(mainSyncQueue.list().find((task: any) => task.dream.id === archiveRepairDream.id)?.refreshPortrait, false);
+const portraitCallsBeforeArchiveReplay = wx.cloudCalls.filter((call) =>
+  call.name === 'profileMemory' && call.data?.action === 'generate'
+).length;
+const archiveReplayApp = loadApp('miniprogram/app.js', {
+  './utils/analytics': analytics,
+  './utils/cloudBase': cloudBase,
+  './utils/syncQueue': mainSyncQueue,
+}, wx);
+archiveReplayApp.flushPendingSyncTasks();
+assert.equal(mainSyncQueue.list().filter((task: any) => task.type === 'dream_sync').length, 0);
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'profileMemory' && call.data?.action === 'generate').length,
+  portraitCallsBeforeArchiveReplay
+);
 
 wx.storage['oneiro:dreamArchive'] = [
   {
@@ -1801,9 +2086,12 @@ for (const expected of [
   'profile_view',
   'profile_saved',
   'dream_chat_open',
+  'dream_feedback',
   'dream_chat_view',
   'dream_chat_reply',
   'result_view',
+  'metaphysical_reading_open',
+  'metaphysical_reading_done',
   'share',
   'share_card_ready',
   'share_card_open',

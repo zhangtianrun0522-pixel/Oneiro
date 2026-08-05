@@ -74,6 +74,7 @@ assertIncludes('miniprogram/utils/cloudBase.js', 'startDreamImageQuality');
 assertIncludes('miniprogram/utils/cloudBase.js', 'pollDreamImageQuality');
 assertIncludes('miniprogram/utils/cloudBase.js', 'getProfileMemory');
 assertIncludes('miniprogram/utils/cloudBase.js', 'generateProfilePortrait');
+assertIncludes('miniprogram/utils/cloudBase.js', 'metaphysicalReading');
 
 assertIncludes('miniprogram/pages/home/index.js', "cloudBase.interpretDream");
 assertIncludes('miniprogram/pages/home/index.js', "cloudBase.saveDream");

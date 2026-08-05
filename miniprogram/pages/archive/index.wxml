@@ -64,7 +64,11 @@
     <text class="archetype-strip-arrow">查看原型卡 ›</text>
   </view>
 
-  <view wx:if="{{!hasArchive}}" class="empty">
+  <view wx:if="{{archiveLoadError}}" class="empty archive-load-error" bindtap="retryArchiveLoad">
+    <text>暂时无法读取云端档案，点击重试</text>
+  </view>
+
+  <view wx:elif="{{!hasArchive}}" class="empty">
     <text>还没有记录。从刚醒来时记得的一个画面开始。</text>
   </view>
 

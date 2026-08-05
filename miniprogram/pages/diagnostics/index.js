@@ -116,7 +116,9 @@ Page({
     smokeLoading: false,
     smokeTest: emptySmokeTest(),
     imageLoading: false,
-    imageTest: emptyImageTest()
+    imageTest: emptyImageTest(),
+    portraitLoading: false,
+    portraitResult: { ok: false, reason: 'not_run' }
   },
 
   onLoad: function () {
@@ -234,6 +236,15 @@ Page({
           that.startImageTest();
         }
       }
+    });
+  },
+
+  regeneratePortrait: function () {
+    var that = this;
+    if (this.data.portraitLoading) return;
+    this.setData({ portraitLoading: true, portraitResult: { ok: false, reason: 'running' } });
+    cloudBase.generateProfilePortrait('管理员诊断：基于修复后的云端数据重新生成', function (result) {
+      that.setData({ portraitLoading: false, portraitResult: result || { ok: false, reason: 'empty_result' } });
     });
   }
 });

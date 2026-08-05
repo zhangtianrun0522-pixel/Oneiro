@@ -35,6 +35,7 @@ function normalizedSnapshot(snapshot) {
   copy.summary = text(copy.summary || copy.profileText, 500);
   copy.profileText = text(copy.profileText || copy.summary, 500);
   copy.status = allowedStatus(copy.status, 'confirmed');
+  copy.isCurrent = copy.isCurrent !== false;
   copy.useInFutureReadings = copy.useInFutureReadings !== false;
   return copy;
 }
@@ -146,13 +147,6 @@ function baseProfile(user) {
   };
 }
 
-function isUsefulDiscussionText(value) {
-  const source = text(value, 220);
-  if (source.length < 8) return false;
-  if (/^(嗯|哦|好的|是的|不是|不知道|可能吧|哈哈|我觉得|感觉像)[，。,.！!？?、\s]*$/i.test(source)) return false;
-  return /最近|这几天|今天|昨晚|工作|学习|学校|项目|同事|老板|家人|朋友|伴侣|父母|生活|压力|焦虑|难过|害怕|开心|生气|疲惫|失眠|关系|决定|搬|换|离开|面试|考试|加班|旅行|钱|计划|正在|发生|联系|争吵|失去|等待/.test(source);
-}
-
 function discussionTexts(dream) {
   const messages = Array.isArray(dream && dream.chatMessages) ? dream.chatMessages : [];
   const userMessages = messages.filter(function (message) {
@@ -163,16 +157,6 @@ function discussionTexts(dream) {
   const revisitAnswer = text(dream && dream.revisitAnswer, 220);
   if (revisitAnswer && userMessages.indexOf(revisitAnswer) < 0) userMessages.push(revisitAnswer);
   return userMessages;
-}
-
-function profileFoundationSummary(profile) {
-  const fields = [];
-  if (profile.nickname) fields.push('称呼');
-  if (profile.birthDate) fields.push('出生日期');
-  if (profile.birthTime) fields.push('出生时间');
-  if (profile.birthPlace) fields.push('出生地');
-  if (profile.gender) fields.push('性别');
-  return fields.length ? '你留下的' + fields.join('、') : '你刚刚开始留下自己的资料';
 }
 
 function longTermPatterns(sources) {
@@ -216,8 +200,8 @@ function promptEvidence(sources) {
   };
 }
 
-async function loadAllByOpenid(collectionName, openid) {
-  return loadAllByOpenidFrom(db, collectionName, openid);
+async function loadAllByOpenid(collectionName, openid, sortField) {
+  return loadAllByOpenidFrom(db, collectionName, openid, sortField);
 }
 
 async function loadAllByOpenidFrom(database, collectionName, openid, sortField) {
@@ -287,9 +271,9 @@ async function sourcesStillCurrent(openid, expected) {
 async function loadSources(openid) {
   const results = await Promise.all([
     db.collection('users').where({ openid: openid }).limit(1).get().catch(function () { return { data: [] }; }),
-    loadAllByOpenid('dream_entries', openid).catch(function () { return []; }),
-    loadAllByOpenid('life_notes', openid).catch(function () { return []; }),
-    db.collection('profile_snapshots').where({ openid: openid }).limit(MAX_HISTORY).get().catch(function () { return { data: [] }; }),
+    loadAllByOpenid('dream_entries', openid, 'createdAt').catch(function () { return []; }),
+    loadAllByOpenid('life_notes', openid, 'createdAt').catch(function () { return []; }),
+    db.collection('profile_snapshots').where({ openid: openid }).orderBy('updatedAt', 'desc').limit(MAX_HISTORY).get().catch(function () { return { data: [] }; }),
     db.collection('profile_memory_state').where({ openid: openid }).limit(1).get().catch(function () { return { data: [] }; })
   ]);
   const user = results[0].data && results[0].data[0] ? results[0].data[0] : null;
@@ -309,6 +293,8 @@ async function loadSources(openid) {
   const notes = (results[2] || []).map(function (note) {
     return { id: text(note._id, 80), text: text(note.text, 220), createdAt: note.createdAt || null, ref: sourceRef('life_notes', note) };
   }).filter(function (item) { return item.id && item.text; });
+  sortByDate(dreams);
+  sortByDate(notes);
   const userRef = user ? sourceRef('users', user) : null;
   const portraitHistory = sortByDate((results[3] && results[3].data ? results[3].data : []).map(normalizedSnapshot));
   const priorPortrait = portraitHistory.filter(function (item) { return item.status === 'confirmed' && item.isCurrent !== false && item.stale !== true; })[0]
@@ -332,7 +318,7 @@ async function loadSources(openid) {
 async function ensureMemoryState(openid) {
   const existing = await db.collection('profile_memory_state').where({ openid: openid }).limit(1).get();
   if (existing.data && existing.data[0]) return existing.data[0];
-  const snapshotsResult = await db.collection('profile_snapshots').where({ openid: openid }).limit(MAX_HISTORY).get();
+  const snapshotsResult = await db.collection('profile_snapshots').where({ openid: openid }).orderBy('updatedAt', 'desc').limit(MAX_HISTORY).get();
   const snapshots = sortByDate((snapshotsResult.data || []).map(normalizedSnapshot));
   const current = snapshots.filter(function (item) { return item.status === 'confirmed' && item.isCurrent !== false && item.stale !== true; })[0]
     || snapshots.filter(function (item) { return item.status === 'confirmed' && item.stale !== true; })[0]
@@ -380,13 +366,8 @@ function deterministicDraft(sources) {
   sources.dreams.forEach(function (dream) {
     refs.push(dream.ref);
     dream.symbols.forEach(function (symbol) { if (themes.indexOf(symbol) < 0) themes.push(symbol); });
-    if (dream.emotion && contexts.indexOf('近期梦中出现：' + dream.emotion) < 0) contexts.push('近期梦中出现：' + dream.emotion);
-    dream.discussion.filter(isUsefulDiscussionText).forEach(function (item) {
-      contexts.push('梦后提到的现实线索：' + item);
-    });
   });
   sources.notes.forEach(function (note) { refs.push(note.ref); contexts.push('生活记录提到：' + note.text); });
-  contexts.unshift(profileFoundationSummary(profile) + '。');
   if (sources.dreams.length) traits.push('会留意并记录内在体验');
   if (sources.notes.length) traits.push('愿意把感受连接到现实生活');
   if (themes.length) traits.push('对反复出现的意象保持观察');
@@ -409,7 +390,7 @@ function deterministicDraft(sources) {
     traits: cleanStrings(traits, 5, 80),
     themes: cleanStrings(themes, 3, 40),
     realLifeContext: cleanStrings(contexts, 5, 140),
-    sourceRefs: refs.slice(0, 18),
+    sourceRefs: sortByDate(refs).slice(0, 18),
     baseProfile: profile,
     sourceCounts: {
       dreamCount: sources.dreams.length,
@@ -509,7 +490,7 @@ function snapshotForClient(snapshot) {
 }
 
 async function sourceAvailability(openid, refs) {
-  const list = Array.isArray(refs) ? refs.slice(0, 18) : [];
+  const list = sortByDate(Array.isArray(refs) ? refs.slice() : []).slice(0, 18);
   return Promise.all(list.map(async function (ref) {
     const clean = Object.assign({}, ref);
     const id = safeId(ref && ref.sourceId);

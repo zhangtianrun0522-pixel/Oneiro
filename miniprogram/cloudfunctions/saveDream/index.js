@@ -526,6 +526,20 @@ function mergedDreamWrite(record) {
   };
 }
 
+function atomicDreamObjectWrites(record) {
+  const data = Object.assign({}, record);
+  // CloudBase expands a plain object passed to update() into nested paths.
+  // Legacy records can have any structured field stored as null (not only
+  // result), so replace every top-level plain object atomically.
+  Object.keys(data).forEach(function (key) {
+    const value = data[key];
+    if (key === 'result' || Object.prototype.toString.call(value) === '[object Object]') {
+      data[key] = db.command.set(value);
+    }
+  });
+  return data;
+}
+
 async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
   const jobId = deletionJobId(openid, dream.localId);
   const legacyJob = await findDeletionJob(openid, dream.localId);
@@ -536,13 +550,13 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
       if (existingRecord.deletionPending) return { ok: false, reason: 'dream_deleted' };
       if (isConcurrentReadyWrite(existingRecord, dream)) {
         const merged = mergeConcurrentReadyWrite(existingRecord, dream);
-        await db.collection('dream_entries').doc(existingRecord._id).update({ data: merged });
+        await db.collection('dream_entries').doc(existingRecord._id).update({ data: atomicDreamObjectWrites(merged) });
         return mergedDreamWrite(existingRecord);
       }
       if (isStaleInterpretationWrite(existingRecord, dream)) {
         return { ok: false, reason: 'stale_interpretation_write' };
       }
-      await db.collection('dream_entries').doc(existingRecord._id).update({ data: dream });
+      await db.collection('dream_entries').doc(existingRecord._id).update({ data: atomicDreamObjectWrites(dream) });
       return { ok: true, id: existingRecord._id, updated: true };
     }
     const created = await db.collection('dream_entries').add({ data: dream });
@@ -558,13 +572,13 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
       if (!current || current.deletionPending) return { ok: false, reason: 'dream_deleted' };
       if (isConcurrentReadyWrite(current, dream)) {
         const merged = mergeConcurrentReadyWrite(current, dream);
-        await transaction.collection('dream_entries').doc(existingRecord._id).update({ data: merged });
+        await transaction.collection('dream_entries').doc(existingRecord._id).update({ data: atomicDreamObjectWrites(merged) });
         return mergedDreamWrite(current);
       }
       if (isStaleInterpretationWrite(current, dream)) {
         return { ok: false, reason: 'stale_interpretation_write' };
       }
-      await transaction.collection('dream_entries').doc(existingRecord._id).update({ data: dream });
+      await transaction.collection('dream_entries').doc(existingRecord._id).update({ data: atomicDreamObjectWrites(dream) });
       return { ok: true, id: existingRecord._id, updated: true };
     }
 
@@ -943,12 +957,15 @@ exports.main = async function (event) {
       return String(symbol || '').trim() === oldSymbol ? newSymbol : symbol;
     });
 
-    await db.collection('dream_entries').doc(symbolRecord._id).update({
-      data: {
-        symbols: updatedEntrySymbols,
-        'result.symbols': updatedResultSymbols
-      }
-    });
+    var symbolUpdate = { symbols: updatedEntrySymbols };
+    if (symbolRecord.result && typeof symbolRecord.result === 'object') {
+      // Keep the card's result coherent without using result.symbols, which
+      // fails when historical records have result:null.
+      symbolUpdate.result = db.command.set(Object.assign({}, symbolRecord.result, {
+        symbols: updatedResultSymbols
+      }));
+    }
+    await db.collection('dream_entries').doc(symbolRecord._id).update({ data: symbolUpdate });
 
     try {
       await invalidateProfileSnapshots(wxContext.OPENID, 'dream_entries', symbolDreamId, 'source_dream_corrected');

@@ -17,7 +17,7 @@ This runbook covers the last manual CloudBase steps required before the Mini Pro
   "providerConfigured": true,
   "hasApiKey": true,
   "model": "deepseek-v4-flash",
-  "requestTimeoutMs": 30000,
+  "requestTimeoutMs": 45000,
   "fallbackProvider": "none"
 }
 ```
@@ -39,10 +39,18 @@ INTERPRET_PROVIDER=deepseek
 DEEPSEEK_API_KEY=<rotated-production-key>
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-INTERPRET_TIMEOUT_MS=30000
+INTERPRET_TIMEOUT_MS=45000
 ```
 
+The cloud function clamps this provider budget to `45000`-`50000` ms. Keep the
+CloudBase function timeout at `60` seconds so the function can normalize and
+persist a response after the provider returns. The Mini Program waits up to
+`70000` ms for `interpretDream`, covering the platform result-fetch window.
+
 There is no local semantic fallback or strict-mode switch. Provider failures return a retryable error without a generated result; the original dream stays saved for a later retry.
+
+Timeout failures use the stable `provider_timeout` diagnostic code and include
+safe provider, model, request budget, and elapsed-time fields for triage.
 
 ## Configure OpenAI-Compatible Provider
 
@@ -53,7 +61,7 @@ INTERPRET_PROVIDER=openai-compatible
 OPENAI_COMPATIBLE_API_KEY=<provider-key>
 OPENAI_COMPATIBLE_BASE_URL=https://example.com/v1
 OPENAI_COMPATIBLE_MODEL=<model-name>
-INTERPRET_TIMEOUT_MS=30000
+INTERPRET_TIMEOUT_MS=45000
 ```
 
 Compatibility aliases accepted by the cloud function:
@@ -103,7 +111,7 @@ Expected DeepSeek result:
   "hasApiKey": true,
   "model": "deepseek-chat",
   "baseUrlHost": "api.deepseek.com",
-  "requestTimeoutMs": 30000
+  "requestTimeoutMs": 45000
 }
 ```
 
@@ -114,7 +122,7 @@ Expected OpenAI-compatible result:
   "provider": "openai-compatible",
   "providerConfigured": true,
   "hasApiKey": true,
-  "requestTimeoutMs": 30000
+  "requestTimeoutMs": 45000
 }
 ```
 
@@ -174,7 +182,7 @@ If `interpretationError` is `ai_provider_error`, the cloud function reached the 
 `providerConfigured: true` but dreams remain pending with `ai_provider_error`
 
 - Check provider base URL, model name, quota, network access, and JSON response format support.
-- Confirm `INTERPRET_TIMEOUT_MS` is lower than or equal to the CloudBase function timeout.
+- Confirm the reported `requestTimeoutMs` is between `45000` and `50000`, and lower than the CloudBase function timeout.
 - Recheck the CloudBase function timeout if a future deployment lowers it below `INTERPRET_TIMEOUT_MS`; the current verified timeout is 60 seconds.
 
 `providerConfigured: true` but generated dreams fail instead of falling back

@@ -1,6 +1,26 @@
 # Oneiro Project Progress
 
-Last updated: 2026-07-31
+Last updated: 2026-08-04
+
+## 当前接管记录：小程序线上超时与网页版封存（2026-08-04）
+
+- 继续使用 `codex/release-dream-sync-portrait`；工作区原有未提交的小程序抢修改动全部保留，不重置、不回退。
+- 已确认两个发布风险：`interpretDream` 真实 DeepSeek 请求在约 30.9 秒被当前服务端预算截断；工作区新增的 `miniprogram/utils/recorderRouter.js` 与 `miniprogram/utils/syncQueue.js` 尚未被 Git 跟踪，按不完整树发布可能导致启动时 `Cannot find module`。
+- 本轮正在将供应商预算调整为 45–50 秒、客户端等待调整为高于 CloudBase 60 秒平台上限，并补稳定超时诊断码与最终 `saveDream` 失败入队/成功清队合同测试。完成后必须用同一份发布快照生成预览并重新部署 `interpretDream`，不能只依赖本地 mock。
+- 旧 Vite/Vercel 网页原型已移入 `archive/web-vite/`，根目录只保留显式 `web:*` 复现命令；它不再是产品、发布目标或小程序验收面。Vercel 控制台中的既有项目尚未执行暂停/删除等外部操作。
+- 当前基线验证：`npm run check:ai-readiness`、`npm run check:miniprogram`、`git diff --check` 已通过；这些检查仍不覆盖真实供应商超时和实际微信预览发布。
+- 2026-08-04 本轮微信开发者工具真实验收：模拟器冷启动、首页渲染、文本输入、下滑提交、原梦先保存、结果页和“重新解读”链路均可运行；首次旧云函数返回泛化 `ai_provider_error`，随后已将当前工作区 `interpretDream` 部署到 `cloud1-d9gb0sjvg6a8d9864`（3 files，27.0 KB），线上信息确认 `Active / Nodejs16.13 / 60s`。
+- 发布后用同一条测试梦 `dream in rain` 重试，结果页正确保留原梦并显示稳定诊断码 `provider_timeout · 45250ms`；控制台无小程序运行时错误，仅有自动热重载、SharedArrayBuffer 和 `reportRealtimeAction` 兼容性警告。当前阻塞点仍是 DeepSeek 供应商在 45 秒预算内未返回，尚不能宣称真实 AI 解读完整成功。
+
+## 解梦链路线上超时待修复（2026-08-04）
+
+- 当前实际工作分支是 `codex/release-dream-sync-portrait`；工作区已有一批未提交的小程序整理改动，后续必须保留并在其基础上修复，不要重置或回退。
+- 2026-08-04 微信开发者工具实测确认：`interpretDream` 线上健康检查正常，供应商为 `deepseek`，密钥已识别，模型为 `deepseek-v4-flash`，云函数平台超时为 60 秒。
+- 用失败原文“我梦见沙漠里正在下暴雨”直接执行线上 AI smoke test，30,897ms 后返回 `provider_error: AI provider request timed out`。因此不是小程序没保存梦，也不是云函数或密钥缺失；真实失败点是当前 30 秒的 DeepSeek 请求预算切断了模型返回。
+- 开发者工具本地存储中的失败记录 ID 为 `1785848881046-fvu70k`：原梦已保存，`status=pending`、`result=null`、`interpretationError=ai_provider_error`。客户端丢掉了云函数返回的 `provider_error`，所以页面只能显示泛化的“未生成解读”，这是当前的可观测性缺口。
+- 建议下一步：将供应商请求预算提高到给 60 秒云函数留有收尾余量的范围（建议默认 45 秒、上限 50 秒），小程序端等待时间改为高于平台上限（如 70 秒）；同时保存稳定的超时诊断码，并补齐“重新解读成功后最终 `saveDream` 失败入队、成功清除 `cloudSyncPending`”的同步闭环。
+- 现有 `npm run check:miniprogram` 和 `npm run check:ai-readiness` 通过，但使用同步 mock，没有覆盖这次真实 30 秒供应商超时、60 秒客户端竞态和重试后入队遗漏。需要补完合同测试后再部署 `interpretDream`，最后在微信开发者工具里用同一条梦完成“保存 → 解读 → 结果页”真实复测。
+- 本次仅完成诊断和记录，没有修改业务代码，没有部署、提交或推送。
 
 ## 梦卡稳定性、命理视角与反馈链路修复（2026-07-31）
 

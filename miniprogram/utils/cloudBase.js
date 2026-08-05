@@ -1,6 +1,7 @@
 var CLOUD_STATUS_KEY = 'oneiro:cloudStatus';
 var CLOUD_ENV_ID = 'cloud1-d9gb0sjvg6a8d9864';
 var LOCAL_ID_KEY = 'oneiro:localOpenId';
+var INTERPRET_CLIENT_TIMEOUT_MS = 70000;
 var cloudReady = false;
 var cloudChecked = false;
 
@@ -61,49 +62,96 @@ function initCloud(callback) {
   return cloudReady;
 }
 
-function callCloudFunction(name, data, callback) {
+function callCloudFunction(name, data, callback, options) {
+  var settings = options || {};
+  var timeoutMs = Number(settings.timeoutMs || (name === 'interpretDream' ? INTERPRET_CLIENT_TIMEOUT_MS : 30000));
+  var startedAt = Date.now();
+  var settled = false;
+  var timer = null;
+
+  function settle(result) {
+    if (settled) return;
+    settled = true;
+    if (timer) clearTimeout(timer);
+    if (callback) callback(result);
+  }
+
   if (!cloudReady) {
     initCloud();
   }
 
   if (!cloudReady || !hasCloud()) {
-    if (callback) {
-      callback({
-        ok: false,
-        reason: 'cloud_unavailable',
-        functionName: name,
-        message: 'wx.cloud is unavailable or not initialized'
-      });
-    }
+    settle({
+      ok: false,
+      reason: 'cloud_unavailable',
+      errorCode: 'cloud_unavailable',
+      error_code: 'cloud_unavailable',
+      functionName: name,
+      requestTimeoutMs: timeoutMs,
+      elapsedMs: Math.max(0, Date.now() - startedAt),
+      message: 'wx.cloud is unavailable or not initialized'
+    });
     return false;
   }
 
-  wx.cloud.callFunction({
-    name: name,
-    data: data || {},
-    success: function (res) {
-      if (callback) {
-        callback(res && res.result ? res.result : res);
-      }
-    },
-    fail: function (error) {
-      var message = error && error.errMsg ? error.errMsg : 'cloud function call failed';
-      var reason = /-404010|result expired|timeout for result fetching/.test(message)
-        ? 'cloud_result_expired'
-        : 'cloud_call_failed';
+  timer = setTimeout(function () {
+    settle({
+      ok: false,
+      reason: 'client_timeout',
+      errorCode: 'client_timeout',
+      error_code: 'client_timeout',
+      functionName: name,
+      requestTimeoutMs: timeoutMs,
+      elapsedMs: Math.max(0, Date.now() - startedAt),
+      diagnostics: {
+        code: 'client_timeout',
+        functionName: name,
+        requestTimeoutMs: timeoutMs,
+        elapsedMs: Math.max(0, Date.now() - startedAt)
+      },
+      message: '请求超时，请重试'
+    });
+  }, timeoutMs);
 
-      if (callback) {
-        callback({
+  try {
+    wx.cloud.callFunction({
+      name: name,
+      data: data || {},
+      success: function (res) {
+        settle(res && res.result ? res.result : res);
+      },
+      fail: function (error) {
+        var message = error && error.errMsg ? error.errMsg : 'cloud function call failed';
+        var reason = /-404010|result expired|timeout for result fetching/.test(message)
+          ? 'cloud_result_expired'
+          : 'cloud_call_failed';
+
+        settle({
           ok: false,
           reason: reason,
+          errorCode: reason,
+          error_code: reason,
           functionName: name,
+          requestTimeoutMs: timeoutMs,
+          elapsedMs: Math.max(0, Date.now() - startedAt),
           message: reason === 'cloud_result_expired'
             ? '等待云函数结果时小程序进入后台或等待过久，结果已过期。请保持当前页面打开后重试。'
             : message
         });
       }
-    }
-  });
+    });
+  } catch (error) {
+    settle({
+      ok: false,
+      reason: 'cloud_call_failed',
+      errorCode: 'cloud_call_failed',
+      error_code: 'cloud_call_failed',
+      functionName: name,
+      requestTimeoutMs: timeoutMs,
+      elapsedMs: Math.max(0, Date.now() - startedAt),
+      message: error && error.message ? error.message : 'cloud function call failed'
+    });
+  }
 
   return true;
 }
@@ -418,7 +466,16 @@ function interpretDream(dreamText, profile, cardIndex, callback) {
     dreamText: dreamText,
     profile: profile || {},
     cardIndex: cardIndex || 1
-  }, callback);
+  }, callback, { timeoutMs: INTERPRET_CLIENT_TIMEOUT_MS });
+}
+
+function metaphysicalReading(dreamText, profile, baseResult, callback) {
+  return callCloudFunction('interpretDream', {
+    metaphysicalReading: true,
+    dreamText: dreamText || '',
+    profile: profile || {},
+    baseResult: baseResult || {}
+  }, callback, { timeoutMs: 40000 });
 }
 
 function speechRecognize(audioBase64, duration, callback) {
@@ -429,13 +486,14 @@ function speechRecognize(audioBase64, duration, callback) {
   }, callback);
 }
 
-function chatAboutDream(dreamText, dreamResult, messages, userMessage, callback) {
+function chatAboutDream(dreamText, dreamResult, messages, userMessage, callback, feedback) {
   return callCloudFunction('interpretDream', {
     chatAboutDream: true,
     dreamText: dreamText || '',
     dreamResult: dreamResult || {},
     messages: messages || [],
-    userMessage: userMessage || ''
+    userMessage: userMessage || '',
+    feedback: feedback || ''
   }, callback);
 }
 
@@ -572,6 +630,7 @@ module.exports = {
   imageHealth: imageHealth,
   imageSmokeTest: imageSmokeTest,
   interpretDream: interpretDream,
+  metaphysicalReading: metaphysicalReading,
   speechRecognize: speechRecognize,
   chatAboutDream: chatAboutDream,
   refineDream: refineDream,

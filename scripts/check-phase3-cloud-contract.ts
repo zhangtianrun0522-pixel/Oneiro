@@ -15,10 +15,15 @@ function setPath(value: Row, path: string, next: any): void {
   const parts = path.split('.');
   let current = value;
   parts.slice(0, -1).forEach((key) => {
+    if (current[key] === null) throw new Error('mock_nested_update_under_null');
     if (!current[key] || typeof current[key] !== 'object') current[key] = {};
     current = current[key];
   });
   current[parts[parts.length - 1]] = next;
+}
+
+function isPlainObject(value: any): value is Row {
+  return Object.prototype.toString.call(value) === '[object Object]';
 }
 
 function matches(row: Row, query: Row): boolean {
@@ -30,7 +35,31 @@ function fakeDatabase(seed: Record<string, Row[]>): any {
   const failNextUpdates = new Set<string>();
   let beforeNextTransaction: (() => void) | null = null;
   const collections: Record<string, Row[]> = {};
+  const command = {
+    set(value: any) {
+      return { __fakeDbCommand: 'set', value };
+    },
+  };
   Object.entries(seed).forEach(([name, rows]) => { collections[name] = rows.map((row) => ({ ...row })); });
+
+  function applyUpdate(row: Row, data: Row): void {
+    function apply(path: string, value: any): void {
+      if (value && value.__fakeDbCommand === 'set') {
+        setPath(row, path, value.value);
+        return;
+      }
+      // CloudBase treats a plain object in update() as nested field updates.
+      // This deliberately makes result:{...} fail when the stored parent is
+      // result:null, matching the production PathNotViable behavior.
+      if (isPlainObject(value)) {
+        Object.entries(value).forEach(([key, child]) => apply(`${path}.${key}`, child));
+        return;
+      }
+      setPath(row, path, value);
+    }
+
+    Object.entries(data).forEach(([key, value]) => apply(key, value));
+  }
 
   function collection(name: string): any {
     if (!collections[name]) collections[name] = [];
@@ -88,7 +117,7 @@ function fakeDatabase(seed: Record<string, Row[]>): any {
             }
             const row = collections[name].find((item) => item._id === id);
             if (!row) return { stats: { updated: 0 } };
-            Object.entries(data).forEach(([key, value]) => setPath(row, key, value));
+            applyUpdate(row, data);
             return { stats: { updated: 1 } };
           },
         };
@@ -96,18 +125,24 @@ function fakeDatabase(seed: Record<string, Row[]>): any {
     };
   }
 
-  return {
+  const database: any = {
     collection,
+    command,
     rows: collections,
     failNextUpdate(name: string, id: string) { failNextUpdates.add(`${name}:${id}`); },
     beforeTransaction(work: () => void) { beforeNextTransaction = work; },
-    async runTransaction(work: (transaction: { collection: typeof collection }) => Promise<any>) {
+  };
+  const runTransaction = async (work: (transaction: { collection: typeof collection }) => Promise<any>) => {
       const before = beforeNextTransaction;
       beforeNextTransaction = null;
       if (before) before();
       return work({ collection });
-    },
   };
+  database.runTransaction = runTransaction;
+  database.setTransactionsEnabled = (enabled: boolean) => {
+    database.runTransaction = enabled ? runTransaction : undefined;
+  };
+  return database;
 }
 
 function loadCloudFunction(path: string, cloud: Row): (event: Row) => Promise<Row> {
@@ -201,6 +236,37 @@ assert.equal(firstDraft.snapshot.sourceRefs.some((ref: Row) => Object.prototype.
 assert.equal(JSON.stringify(firstDraft.snapshot.baseProfile), JSON.stringify({ nickname: 'Runtu', birthDate: '1990-01-02', birthTime: '08:30', birthPlace: '上海', gender: 'male' }));
 assert.equal(firstDraft.snapshot.sourceCounts.dreamCount, 3);
 assert.equal(firstDraft.snapshot.sourceCounts.discussionCount, 2);
+
+// A normal dream discussion is prompt evidence, not a persisted reality clue.
+// Only an automatically stored life_note may populate deterministicDraft's
+// realLifeContext and its corresponding sourceRefs.
+const isolatedDatabase = fakeDatabase({
+  users: [{ _id: 'isolated-user', openid: 'isolated-a', nickname: '测试用户', createdAt: now, updatedAt: now }],
+  dream_entries: [{
+    _id: 'isolated-dream', openid: 'isolated-a', localId: 'isolated-dream',
+    dreamText: '一场普通的梦', status: 'ready', symbols: ['门'], emotionalWeather: '平静',
+    chatMessages: [{ role: 'user', content: '我最近在换工作，压力有点大。' }],
+    result: { title: '普通梦', symbols: ['门'], emotional_weather: '平静' }, createdAt: now,
+  }],
+  life_notes: [], profile_snapshots: [], profile_memory_state: [], deletion_jobs: [],
+});
+const isolatedCloud = {
+  ...cloud,
+  database: () => isolatedDatabase,
+  getWXContext: () => ({ OPENID: 'isolated-a' }),
+};
+const isolatedProfileMain = loadCloudFunction('miniprogram/cloudfunctions/profileMemory/index.js', isolatedCloud);
+const chatOnlyPortrait = await isolatedProfileMain({ action: 'generate', changeReason: '聊天语义回归' });
+assert.equal(chatOnlyPortrait.ok, true, JSON.stringify(chatOnlyPortrait));
+assert.equal(chatOnlyPortrait.snapshot.realLifeContext.some((item: string) => item.includes('换工作')), false);
+assert.equal(chatOnlyPortrait.snapshot.sourceRefs.some((ref: Row) => ref.sourceType === 'life_notes'), false);
+isolatedDatabase.rows.life_notes.push({
+  _id: 'isolated-note', openid: 'isolated-a', text: '我最近在换工作，压力有点大。', sourceDreamId: 'isolated-dream', createdAt: new Date(now.getTime() + 1000),
+});
+const lifeNotePortrait = await isolatedProfileMain({ action: 'generate', changeReason: '自动生活线索回归' });
+assert.equal(lifeNotePortrait.ok, true, JSON.stringify(lifeNotePortrait));
+assert.equal(lifeNotePortrait.snapshot.realLifeContext.some((item: string) => item.includes('换工作')), true);
+assert.equal(lifeNotePortrait.snapshot.sourceRefs.some((ref: Row) => ref.sourceType === 'life_notes' && ref.sourceId === 'isolated-note'), true);
 
 const edited = await profileMain({
   action: 'save',
@@ -338,6 +404,27 @@ database.rows.profile_snapshots.push({
   sourceRefs: [{ sourceType: 'dream_entries', sourceId: 'dream-cloud-1', sourceLocalId: 'dream-1' }],
 });
 
+// Portrait sourceRefs must keep the newest material when there are more than
+// the display cap. This mirrors the July 30 records that were previously
+// excluded by insertion-order truncation.
+const recentPortraitDreamIds: string[] = [];
+for (let index = 1; index <= 20; index += 1) {
+  const localId = index === 20 ? 'dream-2026-07-30-latest' : `dream-recent-${index}`;
+  recentPortraitDreamIds.push(localId);
+  database.rows.dream_entries.push({
+    _id: `portrait-recent-${index}`, openid: 'user-a', localId,
+    dreamText: index === 20 ? '7月30日最新的换工作梦' : `近期梦境 ${index}`,
+    status: 'ready', symbols: ['变化'], emotionalWeather: '思索', chatMessages: [],
+    result: { title: `近期梦境 ${index}`, symbols: ['变化'], emotional_weather: '思索' },
+    createdAt: new Date(now.getTime() + index * 1000),
+  });
+}
+const newestSourcesPortrait = await profileMain({ action: 'generate', changeReason: '最新梦境纳入回归' });
+assert.equal(newestSourcesPortrait.ok, true);
+assert.equal(newestSourcesPortrait.snapshot.sourceRefs.length, 18);
+assert.equal(newestSourcesPortrait.snapshot.sourceRefs.some((ref: Row) => ref.sourceLocalId === 'dream-2026-07-30-latest'), true);
+database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => !recentPortraitDreamIds.includes(item.localId));
+
 const saveDreamMain = loadCloudFunction('miniprogram/cloudfunctions/saveDream/index.js', cloud);
 const pendingContractDreamWrite = await saveDreamMain({ dream: {
   id: 'dream-pending-contract',
@@ -351,13 +438,21 @@ assert.equal(pendingContractDreamWrite.ok, true);
 const storedPendingDream = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-pending-contract');
 assert.equal(storedPendingDream.status, 'pending');
 assert.equal(storedPendingDream.result, null);
+const pendingSymbolCorrection = await saveDreamMain({ action: 'editSymbol', dreamId: 'dream-pending-contract', oldSymbol: '不存在', newSymbol: '新标签' });
+assert.equal(pendingSymbolCorrection.ok, true);
+assert.equal(storedPendingDream.result, null);
+// Historical records may also have structured non-result fields stored as
+// null. A plain-object update would expand these into invalid nested paths.
+storedPendingDream.dreamFacts = null;
+storedPendingDream.interpretationMeta = null;
 const readyRevisionWrite = await saveDreamMain({ dream: {
   id: 'dream-pending-contract',
   dreamText: '等待云端模型解读',
   status: 'ready',
   result: {
     title: '已完成',
-    symbols: ['云端模型']
+    symbols: ['云端模型'],
+    alternative_reading: '从另一面看，这个梦也可能关乎正在发生的变化。'
   },
   interpretationRevision: 1,
   createdAt: now,
@@ -376,6 +471,70 @@ assert.equal(stalePendingWrite.reason, 'stale_interpretation_write');
 const storedReadyDream = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-pending-contract');
 assert.equal(storedReadyDream.status, 'ready');
 assert.equal(storedReadyDream.result.title, '已完成');
+assert.equal(storedReadyDream.result.alternative_reading, '从另一面看，这个梦也可能关乎正在发生的变化。');
+assert.equal(JSON.stringify(storedReadyDream.dreamFacts), JSON.stringify({ people: [], places: [], objects: [], actions: [], emotions: [], timeSense: [] }));
+assert.equal(storedReadyDream.interpretationMeta.schemaVersion, 'dream-entry-v0.2');
+const readySymbolCorrection = await saveDreamMain({ action: 'editSymbol', dreamId: 'dream-pending-contract', oldSymbol: '云端模型', newSymbol: '修正标签' });
+assert.equal(readySymbolCorrection.ok, true);
+assert.deepEqual(storedReadyDream.symbols, ['修正标签']);
+assert.deepEqual(storedReadyDream.result.symbols, ['修正标签']);
+
+// Direct pending -> ready recovery must work independently of editSymbol. The
+// strict fake update semantics below would reproduce PathNotViable for a
+// plain nested result write, so this locks the production regression itself.
+const directPendingWrite = await saveDreamMain({ dream: {
+  id: 'dream-direct-null', dreamText: '直接恢复的卡死梦', status: 'pending', result: null, createdAt: now,
+} });
+assert.equal(directPendingWrite.ok, true);
+const directReadyWrite = await saveDreamMain({ dream: {
+  id: 'dream-direct-null', dreamText: '直接恢复的卡死梦', status: 'ready', createdAt: now,
+  result: {
+    title: '直接恢复完成', symbols: ['桥'],
+    alternative_reading: '也可以从现实处境的变化来理解。',
+  },
+} });
+assert.equal(directReadyWrite.ok, true);
+const storedDirectReady = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-direct-null');
+assert.equal(storedDirectReady.status, 'ready');
+assert.equal(storedDirectReady.result.title, '直接恢复完成');
+assert.equal(storedDirectReady.result.alternative_reading, '也可以从现实处境的变化来理解。');
+
+// Production CloudBase has both transactional and non-transactional update
+// paths. A blocked legacy record with result:null must promote to a complete
+// ready card without attempting result.alternative_reading as a dot-path.
+database.rows.dream_entries.push({
+  _id: 'dream-blocked-null', openid: 'user-a', localId: 'dream-blocked-null',
+  dreamText: '一条卡死的梦', status: 'blocked', result: null,
+  dreamFacts: null, interpretationMeta: null,
+  interpretationRevision: 0, createdAt: now,
+});
+database.setTransactionsEnabled(false);
+const blockedRecoveryWrite = await saveDreamMain({ dream: {
+  id: 'dream-blocked-null', dreamText: '一条卡死的梦', status: 'ready', interpretationRevision: 1, createdAt: now,
+  result: { title: '已从阻塞状态恢复', symbols: ['门'], alternative_reading: '另一个观察角度' },
+} });
+database.setTransactionsEnabled(true);
+assert.equal(blockedRecoveryWrite.ok, true);
+const storedBlockedRecovery = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-blocked-null');
+assert.equal(storedBlockedRecovery.status, 'ready');
+assert.equal(storedBlockedRecovery.result.alternative_reading, '另一个观察角度');
+
+// A malformed historical ready record can also have result:null. The
+// same-revision merge path must atomically establish result instead of
+// expanding an incoming nested object beneath that null parent.
+database.rows.dream_entries.push({
+  _id: 'dream-concurrent-null', openid: 'user-a', localId: 'dream-concurrent-null',
+  dreamText: '并发合并的旧梦', status: 'ready', result: null,
+  interpretationRevision: 3, chatMessages: [], createdAt: now,
+});
+const concurrentNullMerge = await saveDreamMain({ dream: {
+  id: 'dream-concurrent-null', dreamText: '并发合并的旧梦', status: 'ready', interpretationRevision: 3, createdAt: now,
+  result: { reflection_answer: '这次并发写入仍应保存', image_quality_status: 'polling' },
+} });
+assert.equal(concurrentNullMerge.ok, true);
+assert.equal(concurrentNullMerge.merged, true);
+const storedConcurrentNull = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-concurrent-null');
+assert.equal(storedConcurrentNull.result.reflection_answer, '这次并发写入仍应保存');
 storedReadyDream.result.title = '云端更新后的标题';
 storedReadyDream.result.card_insight = '云端更新后的卡背文案';
 storedReadyDream.updatedAt = new Date(now.getTime() + 5000);
@@ -536,7 +695,9 @@ assert.equal(delayedOldRefresh.ok, true);
 assert.equal(storedReadyDream.result.image_file_id, 'cloud://refreshed-fast-image.png');
 assert.equal(storedReadyDream.result.image_quality, 'fast');
 
-database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => item.localId !== 'dream-pending-contract');
+database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => ![
+  'dream-pending-contract', 'dream-direct-null', 'dream-blocked-null', 'dream-concurrent-null'
+].includes(item.localId));
 const archiveList = await saveDreamMain({ action: 'list' });
 assert.equal(archiveList.ok, true);
 assert.equal(archiveList.dreams.length, 2);

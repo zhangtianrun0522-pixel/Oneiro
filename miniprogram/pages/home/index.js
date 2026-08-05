@@ -3,9 +3,8 @@ var cloudBase = require('../../utils/cloudBase');
 var contentSafety = require('../../utils/contentSafety');
 var dreamMemory = require('../../utils/dreamMemory');
 var tabNav = require('../../utils/tabNav');
-var recorderManager = wx.getRecorderManager();
-var recorderListenersBound = false;
-var activeRecorderPage = null;
+var recorderRouter = require('../../utils/recorderRouter');
+var syncQueue = require('../../utils/syncQueue');
 var ANALYSIS_STAGES = [
   { title: '先读梦里的画面', detail: '找出人物、场景、动作和真正发生的变化' },
   { title: '把梦中线索排好', detail: '保留你的原话，不替梦补上没有发生的情节' },
@@ -100,6 +99,19 @@ function normalizeDreamFacts(result) {
   };
 }
 
+function normalizeInterpretationDiagnostics(response) {
+  var value = response || {};
+  var nested = value.diagnostics && typeof value.diagnostics === 'object' ? value.diagnostics : {};
+  return {
+    code: String(value.errorCode || value.error_code || value.providerErrorCode || nested.code || value.reason || '').slice(0, 80),
+    provider: String(value.provider || nested.provider || '').slice(0, 80),
+    model: String(value.model || nested.model || '').slice(0, 120),
+    requestTimeoutMs: Number(value.requestTimeoutMs || nested.requestTimeoutMs || 0),
+    elapsedMs: Number(value.elapsedMs || nested.elapsedMs || 0),
+    providerError: String(value.provider_error || nested.providerError || '').slice(0, 240)
+  };
+}
+
 function upsertLocalDream(dream) {
   var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
   var next = archive.filter(function (item) {
@@ -191,24 +203,11 @@ Page({
   onLoad: function (options) {
     var pendingDreamText = wx.getStorageSync('oneiro:pendingDreamText') || '';
     var fromShare = !!(options && options.fromShare === '1');
-    activeRecorderPage = this;
+    this.pageActive = true;
+    recorderRouter.register(this);
 
     this.setData({ fromShare: fromShare });
     analytics.trackEvent(fromShare ? 'share_landing_view' : 'home_view', {});
-
-    if (!recorderListenersBound) {
-      recorderManager.onStop(function (result) {
-        if (activeRecorderPage) activeRecorderPage.onRecorderStop(result);
-      });
-      recorderManager.onError(function () {
-        if (!activeRecorderPage) return;
-        activeRecorderPage.stopRecordingTimer();
-        activeRecorderPage.setData({ recording: false, recordingSeconds: 0 });
-        analytics.trackEvent('voice_record_error', {});
-        wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none', duration: 2500 });
-      });
-      recorderListenersBound = true;
-    }
 
     if (pendingDreamText) {
       this.setData({ dreamText: pendingDreamText });
@@ -233,6 +232,11 @@ Page({
   },
 
   onUnload: function () {
+    this.pageActive = false;
+    if (this.submitTimer) {
+      clearTimeout(this.submitTimer);
+      this.submitTimer = null;
+    }
     this.submitting = false;
     this.stopAnalysisProgress();
     this.clearVoiceStartTimer();
@@ -241,11 +245,8 @@ Page({
       this.dragBounceTimer = null;
     }
     this.voiceTouching = false;
-    this.stopRecordingTimer();
-    if (this.data.recording) {
-      try { recorderManager.stop(); } catch (error) {}
-    }
-    if (activeRecorderPage === this) activeRecorderPage = null;
+    this.stopRecorderForExit();
+    recorderRouter.unregister(this);
   },
 
   startAnalysisProgress: function (dreamText) {
@@ -316,12 +317,12 @@ Page({
     wx.authorize({
       scope: 'scope.record',
       success: function () {
-        self.startRecorder();
+        if (self.pageActive !== false) self.startRecorder();
       },
       fail: function () {
         wx.openSetting({
           success: function (setting) {
-            if (setting.authSetting && setting.authSetting['scope.record']) {
+            if (setting.authSetting && setting.authSetting['scope.record'] && self.pageActive !== false) {
               self.startRecorder();
             } else wx.showToast({ title: voiceFailureMessage({ reason: 'record_permission_denied' }), icon: 'none' });
           },
@@ -351,7 +352,7 @@ Page({
     }
 
     try {
-      recorderManager.start({
+      recorderRouter.start({
         format: 'mp3',
         sampleRate: 16000,
         numberOfChannels: 1,
@@ -376,13 +377,20 @@ Page({
     this.stopRecordingTimer();
     analytics.trackEvent('voice_record_stop', { seconds: this.data.recordingSeconds });
     try {
-      recorderManager.stop();
+      recorderRouter.stop();
     } catch (error) {
       this.setData({
         recording: false,
         recordingSeconds: 0
       });
     }
+  },
+
+  stopRecorderForExit: function () {
+    if (!this.data.recording) return;
+    this.stopRecordingTimer();
+    this.setData({ recording: false, recordingSeconds: 0 });
+    try { recorderRouter.stopForExit(this); } catch (error) {}
   },
 
   clearVoiceStartTimer: function () {
@@ -658,6 +666,8 @@ Page({
   onShow: function () {
     var pendingDreamText = wx.getStorageSync('oneiro:pendingDreamText') || '';
     var tabParams = tabNav.takeParams('pages/home/index');
+    this.pageActive = true;
+    recorderRouter.register(this);
 
     if (tabParams.fromShare) {
       this.setData({ fromShare: true });
@@ -667,6 +677,19 @@ Page({
       this.setData({ dreamText: pendingDreamText });
     }
     this.refreshHeroLabel();
+  },
+
+  onHide: function () {
+    this.pageActive = false;
+    this.stopRecorderForExit();
+    recorderRouter.unregister(this);
+  },
+
+  onRecorderError: function () {
+    this.stopRecordingTimer();
+    this.setData({ recording: false, recordingSeconds: 0 });
+    analytics.trackEvent('voice_record_error', {});
+    wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none', duration: 2500 });
   },
 
   onDreamInput: function (event) {
@@ -711,7 +734,7 @@ Page({
 
     this.startAnalysisProgress(dreamText);
 
-    setTimeout(function () {
+    this.submitTimer = setTimeout(function () {
       var app = getApp();
       var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
       var cardIndex = nextCardIndex(archive);
@@ -727,6 +750,9 @@ Page({
         },
         interpretationSource: '',
         interpretationProvider: '',
+        interpretationError: '',
+        interpretationErrorCode: '',
+        interpretationDiagnostics: null,
         cloudSynced: false,
         interpretationRevision: 1,
         interpretationMeta: {
@@ -738,6 +764,7 @@ Page({
         createdAt: createdAt,
         updatedAt: createdAt
       };
+      that.submitTimer = null;
 
       app.globalData.currentDream = pendingDream;
       upsertLocalDream(pendingDream);
@@ -751,8 +778,11 @@ Page({
         upsertLocalDream(pendingDream);
         cloudBase.interpretDream(dreamText, profile, cardIndex, function (cloudResult) {
         if (cloudResult && cloudResult.blocked) {
+          var blockedDiagnostics = normalizeInterpretationDiagnostics(cloudResult);
           pendingDream.status = 'blocked';
           pendingDream.interpretationError = cloudResult.reason || 'cloud_safety';
+          pendingDream.interpretationErrorCode = blockedDiagnostics.code || pendingDream.interpretationError;
+          pendingDream.interpretationDiagnostics = blockedDiagnostics;
           pendingDream.updatedAt = new Date().toISOString();
           upsertLocalDream(pendingDream);
           cloudBase.saveDream(pendingDream);
@@ -771,6 +801,7 @@ Page({
         }
 
         if (!cloudResult || !cloudResult.ok || !cloudResult.result) {
+          var diagnostics = normalizeInterpretationDiagnostics(cloudResult);
           pendingDream.status = 'pending';
           pendingDream.result = null;
           pendingDream.interpretationSource = 'cloud';
@@ -780,6 +811,8 @@ Page({
           pendingDream.interpretationError = String(
             cloudResult && (cloudResult.reason || cloudResult.message) || 'ai_provider_error'
           ).slice(0, 300);
+          pendingDream.interpretationErrorCode = diagnostics.code || 'ai_provider_error';
+          pendingDream.interpretationDiagnostics = diagnostics;
           pendingDream.updatedAt = new Date().toISOString();
           app.globalData.currentDream = pendingDream;
           upsertLocalDream(pendingDream);
@@ -819,6 +852,8 @@ Page({
           interpretationError: cloudResult && !cloudResult.result
             ? String(cloudResult.reason || cloudResult.message || '')
             : '',
+          interpretationErrorCode: '',
+          interpretationDiagnostics: normalizeInterpretationDiagnostics(cloudResult),
           interpretationMeta: {
             schemaVersion: (cloudResult && cloudResult.schemaVersion) || 'dream-entry-v0.2',
             promptVersion: cloudResult.promptVersion || '',
@@ -835,7 +870,13 @@ Page({
         cloudBase.saveDream(dream, function (saveResult) {
           dream.cloudSynced = !!(saveResult && saveResult.ok);
           upsertLocalDream(dream);
-          refreshPortraitAfterDream(dream);
+          if (!dream.cloudSynced) {
+            syncQueue.enqueue('dream_sync', { dream: dream });
+          } else {
+            syncQueue.removeByKey('dream:' + String(dream.id || ''));
+            if (getApp && getApp().flushPendingSyncTasks) getApp().flushPendingSyncTasks();
+            refreshPortraitAfterDream(dream);
+          }
           if (wx.removeStorageSync) {
             wx.removeStorageSync('oneiro:pendingDreamText');
           }

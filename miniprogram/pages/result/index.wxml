@@ -48,10 +48,6 @@
     <view wx:if="{{imageQualityStatus === 'ready'}}" class="card-image-notice quality-ready-notice">
       <text>高清画面已更新</text>
     </view>
-    <view wx:if="{{imageStatus === 'ready' && imageSyncPending}}" class="card-image-notice">
-      <text>{{imageErrorMessage || '画面已生成，梦册同步待重试'}}</text>
-      <button class="image-retry" bindtap="retryDreamImageSync">重试同步</button>
-    </view>
     <view wx:if="{{imageStatus === 'failed'}}" class="card-image-notice">
       <text>{{imageErrorMessage || '当前展示基础梦象'}}</text>
       <button class="image-retry" bindtap="retryDreamImage">重新生成画面</button>
@@ -76,6 +72,8 @@
     <!-- 未生成解读时直接说明，不藏在折叠里 -->
     <view wx:if="{{interpretationUnavailable}}" class="reading-block">
       <text class="reading-copy">本次未生成解读，原梦仍已保存。语义识别只由云端大模型完成，不使用本地关键词替代。</text>
+      <text wx:if="{{interpretationErrorCode}}" class="reading-diagnostic">诊断码 {{interpretationErrorCode}}<block wx:if="{{interpretationDiagnostics && interpretationDiagnostics.elapsedMs}}"> · {{interpretationDiagnostics.elapsedMs}}ms</block></text>
+      <text wx:if="{{interpretationDiagnostics && interpretationDiagnostics.providerError}}" class="reading-diagnostic">{{interpretationDiagnostics.providerError}}</text>
       <button class="image-retry" loading="{{retryingInterpretation}}" disabled="{{retryingInterpretation}}" bindtap="retryInterpretation">重新解读</button>
     </view>
 
@@ -89,6 +87,20 @@
       <view wx:if="{{dream.result.underneath}}" class="reading-block psychological-reading">
         <text class="reading-label">心理视角</text>
         <text class="reading-copy">{{dream.result.underneath}}</text>
+      </view>
+
+      <view wx:if="{{metaphysicalEntryVisible && !metaphysicalReadingReady}}" class="reading-block metaphysical-reading">
+        <view class="metaphysical-heading">
+          <text class="reading-label">命理视角</text>
+          <text class="metaphysical-caption">出生节律</text>
+        </view>
+        <text class="metaphysical-copy">{{metaphysicalReadingError || '想换一个角度看这个梦吗'}}</text>
+        <button
+          class="image-retry"
+          loading="{{metaphysicalReadingLoading}}"
+          disabled="{{metaphysicalReadingLoading}}"
+          bindtap="openMetaphysicalReading"
+        >{{metaphysicalProfileMissing ? '去资料页补充出生信息' : '从出生节律再看一次'}}</button>
       </view>
 
       <view wx:if="{{dream.result.metaphysical_resonance || (dream.result.metaphysical_reading && (dream.result.metaphysical_reading.temperament || dream.result.metaphysical_reading.dream_echo || dream.result.metaphysical_reading.tension || dream.result.metaphysical_reading.rhythm))}}" class="reading-block metaphysical-reading">
@@ -159,41 +171,27 @@
       <text class="reading-label">今天的小行动</text>
       <text class="reading-copy">{{dream.result.one_small_act}}</text>
     </view>
+
+    <view wx:if="{{!interpretationUnavailable && dream.status === 'ready'}}" class="dream-feedback">
+      <text class="feedback-question">这份解读，贴合你吗</text>
+      <view class="feedback-chips">
+        <button wx:for="{{feedbackOptions}}" wx:key="value" class="feedback-chip {{feedback === item.value ? 'is-selected' : ''}}" data-feedback="{{item.value}}" bindtap="chooseDreamFeedback">{{item.label}}</button>
+      </view>
+    </view>
   </view>
 
-  <!-- 回应问题后更新为最终梦卡；定稿后保留用户的回答，形成从初版解读到继续聊梦的可见链条。 -->
-  <view wx:if="{{!interpretationUnavailable}}" class="dream-refinement">
-    <text class="reading-label">回应这个梦</text>
-    <text wx:if="{{dream.result.integration_question}}" class="refinement-question">{{dream.result.integration_question}}</text>
-
-    <block wx:if="{{dream.result.finalized_at || dream.result.reflection_answer}}">
-      <view class="refinement-complete">
-        <text class="refinement-status">{{refinementSyncPending ? '最终梦卡待同步' : '最终梦卡已更新'}}</text>
-        <text class="refinement-answer">{{dream.result.reflection_answer}}</text>
-        <button wx:if="{{refinementSyncPending}}" class="refinement-retry" bindtap="retryRefinementSync">重试同步</button>
-      </view>
-    </block>
-
-    <block wx:else>
-      <textarea
-        class="refinement-input"
-        value="{{refineAnswer}}"
-        maxlength="500"
-        placeholder="写下你的联想、感受或不同意见"
-        placeholder-class="refinement-placeholder"
-        bindinput="onRefineAnswerInput"
-      ></textarea>
-      <button class="refinement-submit" loading="{{refining}}" disabled="{{refining}}" bindtap="refineDreamCard">更新最终梦卡</button>
-    </block>
+  <view wx:if="{{cloudSyncPending}}" class="cloud-sync-notice">
+    <text>{{cloudRepairing ? '云端同步中' : (qualitySyncPending ? '高清图待同步' : '未同步，稍后自动重试')}}</text>
+    <button wx:if="{{!cloudRepairing}}" class="image-retry" bindtap="retryCloudSync">重试同步</button>
   </view>
 
   <!-- 聊聊这个梦：放在阅读内容结束之后、操作栏（收藏/分享/删除）之前，
        做成一个独立可点卡片（浅底色块 + 细边框 + 明确箭头），比普通文字链更
        醒目，避免被忽略；不做成朱砂实心按钮，保持暖纸/深墨的克制调性 -->
-  <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry" bindtap="openDreamChat">
+  <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry {{feedback === 'too_generic' || feedback === 'too_mystical' || feedback === 'not_grounded' ? 'has-feedback' : ''}}" bindtap="openDreamChat">
     <view class="chat-entry-copy">
-      <text class="reading-label">聊聊这个梦</text>
-      <text class="chat-entry-question">{{dream.result.integration_question}}</text>
+      <text class="reading-label">{{feedback === 'too_generic' ? '从被忽略的画面聊起' : feedback === 'too_mystical' ? '只说梦里实际发生的事' : feedback === 'not_grounded' ? '从醒来后的现实联想聊起' : '聊聊这个梦'}}</text>
+      <text class="chat-entry-question">{{feedback ? '把你的感受说具体一点' : dream.result.integration_question}}</text>
     </view>
     <view class="chat-entry-arrow-badge">
       <text class="chat-entry-arrow">→</text>

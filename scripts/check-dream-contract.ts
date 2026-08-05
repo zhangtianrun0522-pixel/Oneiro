@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { normalizeDreamResult } from '../api/_lib/dreamResult.ts';
-import { ACCEPTANCE_DREAM_RESULT, ACCEPTANCE_DREAM_TEXT } from '../src/fixtures/acceptanceDream.ts';
+import { normalizeDreamResult } from '../archive/web-vite/api/_lib/dreamResult.ts';
+import { ACCEPTANCE_DREAM_RESULT, ACCEPTANCE_DREAM_TEXT } from '../archive/web-vite/src/fixtures/acceptanceDream.ts';
 
 type CaseSpec = {
   name: string;

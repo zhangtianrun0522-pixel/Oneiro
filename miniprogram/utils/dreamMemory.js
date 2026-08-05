@@ -145,16 +145,9 @@ function isUsefulDiscussionText(value) {
 }
 
 function autoExtractedRealLifeContext(archive) {
-  var values = [];
-  readyRecords(archive).forEach(function (record) {
-    (Array.isArray(record.chatMessages) ? record.chatMessages : []).forEach(function (message) {
-      if (message && message.role === 'user' && isUsefulDiscussionText(message.content)) {
-        values.push(cleanText(message.content, 160));
-      }
-    });
-    if (record.revisitAnswer) values.push(cleanText(record.revisitAnswer, 160));
-  });
-  return uniqueList(values, 5);
+  // 现实线索只能来自 AI 的 memory_candidate 和云端 life_notes；本地不
+  // 根据关键词猜测语义，避免把普通聊天误显示为已确认的现实记忆。
+  return [];
 }
 
 function discussionCount(archive) {
@@ -234,6 +227,7 @@ function buildProfileDraft(profile, archive, nextVersion, changeReason) {
 }
 
 var PROFILE_MEMORY_KEY = 'oneiro:profileMemory';
+var syncQueue = require('./syncQueue');
 var portraitRefreshInFlight = false;
 var portraitRefreshPending = null;
 
@@ -300,6 +294,7 @@ function refreshPortraitInBackground(options) {
     var pending;
     portraitRefreshInFlight = false;
     if (!result || !result.ok || !result.snapshot) {
+      syncQueue.enqueue('portrait_refresh', { refreshKey: refreshKey, reason: reason });
       if (typeof input.onComplete === 'function') input.onComplete(result || { ok: false });
       if (portraitRefreshPending) {
         pending = portraitRefreshPending;
@@ -309,6 +304,7 @@ function refreshPortraitInBackground(options) {
       return;
     }
     next = mergePortraitDraft(readPortraitMemory(), result.snapshot, insights.dreamCount, refreshKey);
+    syncQueue.removeByKey('portrait:' + refreshKey);
     writePortraitMemory(next);
     if (typeof input.onUpdated === 'function') input.onUpdated(next, result.snapshot);
     if (typeof input.onComplete === 'function') input.onComplete(result);

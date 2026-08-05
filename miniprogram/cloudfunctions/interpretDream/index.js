@@ -9,20 +9,49 @@ const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1';
 const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat';
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
-// Full grounded readings include the birth-rhythm context and a larger JSON
-// response. The previous 18s deadline regularly cut off otherwise healthy
-// requests before the model response could be validated.
-const DEFAULT_TIMEOUT_MS = 30000;
-const PROMPT_VERSION = 'oneiro-freeform-reading-v0.4-metaphysical-lens';
+// CloudBase gives this function 60 seconds. Keep the provider request below
+// that ceiling so the function still has time to normalize and persist its
+// response before the platform deadline.
+const DEFAULT_TIMEOUT_MS = 45000;
+const MIN_TIMEOUT_MS = 45000;
+const MAX_TIMEOUT_MS = 50000;
+// 思考型模型（如 deepseek-v4-flash）的推理与正文共用同一份输出预算。不显式
+// 声明上限时，供应商默认值会被推理吃掉，正文返回空字符串。
+const MAX_OUTPUT_TOKENS = Number(process.env.INTERPRET_MAX_TOKENS || 8192);
+const PROMPT_VERSION = 'oneiro-freeform-reading-v0.5-optional-metaphysical';
 const SCHEMA_VERSION = 'dream-entry-v0.2';
+
+// 供应商返回 200 但正文为空时，必须区分「推理占满预算被截断」和「真的没内容」，
+// 否则两者都会退化成同一个笼统的 provider_error，线上无法定位。
+function extractMessageContent(data) {
+  const choice = data && data.choices && data.choices[0];
+  const message = choice && choice.message;
+  const content = message ? String(message.content || '').trim() : '';
+  // 思考型模型把正文写进 reasoning_content 时，内容本身仍然可用。
+  const reasoning = message ? String(message.reasoning_content || '').trim() : '';
+
+  return {
+    content: content || reasoning,
+    usedReasoningFallback: !content && !!reasoning,
+    truncated: String(choice && choice.finishReason || choice && choice.finish_reason || '') === 'length'
+  };
+}
+
+function emptyContentError(extracted) {
+  const error = new Error(extracted && extracted.truncated
+    ? 'AI provider response was truncated before message content (finish_reason=length)'
+    : 'AI provider response did not include message content');
+  error.errorCode = extracted && extracted.truncated ? 'provider_output_truncated' : 'provider_empty_content';
+  error.code = 'AI_PROVIDER_EMPTY_CONTENT';
+  return error;
+}
 
 function effectiveTimeoutMs() {
   const configured = Number(process.env.INTERPRET_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
-  // Keep an accidentally stale 18s environment value from overriding the
-  // safer full-reading budget. CloudBase's function budget remains 60s.
-  return Number.isFinite(configured) && configured > DEFAULT_TIMEOUT_MS
-    ? configured
-    : DEFAULT_TIMEOUT_MS;
+  // Clamp stale or overly aggressive environment values to the range that
+  // leaves CloudBase's 60-second function budget room for cleanup.
+  if (!Number.isFinite(configured)) return DEFAULT_TIMEOUT_MS;
+  return Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, configured));
 }
 
 const STEM_ELEMENT = {
@@ -146,20 +175,26 @@ const SYSTEM_PROMPT = [
   '如果原文写的是“雨”或“暴雨”，必须保留原词，不得改写成“清水”“水面”或其他原文没有的水体；如果梦里只有一个事件或一个明确细节，不要为了凑两个细节而发明人物、物件或动作。'
 ].join('\n');
 
-function buildInterpretationSystemPrompt(baziChart) {
-  if (baziChart && baziChart.available) {
-    return SYSTEM_PROMPT + '\n' + [
-      '当前采用含出生节律的解读模板。核心意图：用出生节律参考照亮这次梦的情绪纹理或行动节奏；材料不足时如实说明只看见了梦中这一处呼应，但相关字段仍须完成。',
-      'metaphysical_resonance、metaphysical_basis 和 metaphysical_reading 的 temperament、dream_echo、tension、rhythm、basis 必须全部非空。metaphysical_resonance 必须引用本梦的具体人物、物件、动作或场景；temperament、dream_echo、tension、rhythm 中至少两项也要有这种可核对的梦中呼应。',
-      'metaphysical_basis 与 metaphysical_reading.basis 必须使用用户上下文中确定性计算得出的一个技术锚点：四柱、日主、五行或十神之一；basis 不必重复梦境原文，不得推出未来、吉凶或命运。',
-      '出生节律段落只能依据用户上下文中已提供的参考，不重复固定资料；技术术语只写在命理字段内。',
-      '文化象征、心理视角和出生节律要各自服务自己的核心意图，不要为了完整而互相改写。',
-      '短梦只有一个清晰细节时，承认材料有限，不发明第二个细节、人物、物件、积水或水体；原文只有“雨/暴雨”时保留原词。'
-    ].join('\n');
-  }
+const METAPHYSICAL_PROMPT_RULES = [
+  '核心意图：用出生节律参考照亮这次梦的情绪纹理或行动节奏；材料不足时如实说明只看见了梦中这一处呼应。',
+  'metaphysical_resonance、metaphysical_basis 和 metaphysical_reading 的 temperament、dream_echo、tension、rhythm、basis 必须全部非空。metaphysical_resonance 必须引用本梦的具体人物、物件、动作或场景；temperament、dream_echo、tension、rhythm 中至少两项也要有这种可核对的梦中呼应。',
+  'metaphysical_basis 与 metaphysical_reading.basis 必须使用确定性计算得出的一个技术锚点：四柱、日主、五行或十神之一；basis 不必重复梦境原文，不得推出未来、吉凶或命运。',
+  '出生节律段落只能依据已提供的确定性盘面，不重复固定资料；技术术语只写在命理字段内。',
+  '短梦只有一个清晰细节时，承认材料有限，不发明第二个细节、人物、物件、积水或水体；原文只有“雨/暴雨”时保留原词。',
+  '不得预测吉凶命运，不得把命理视角写成事实判断；只提供可被用户保留、修正或否定的观察。'
+].join('\n');
 
+const METAPHYSICAL_READING_SYSTEM_PROMPT = [
+  '你是 Oneiro，为用户提供一个主动请求的出生节律第二视角。产品是私人梦境记忆，不是算命。',
+  '只返回合法 JSON 对象，不要 markdown，不要代码块，不要生成主解读的其他字段。',
+  '只允许返回以下结构：{"metaphysical_resonance":"","metaphysical_basis":"","metaphysical_reading":{"temperament":"","dream_echo":"","tension":"","rhythm":"","basis":""}}。',
+  '命理技术术语只能出现在上述命理字段中；不得出现运势、吉凶、凶吉、注定、必然或命运，不得进行任何未来预测。',
+  METAPHYSICAL_PROMPT_RULES
+].join('\n');
+
+function buildInterpretationSystemPrompt() {
   return SYSTEM_PROMPT + '\n' + [
-    '当前采用基础梦境解读模板，不得引入任何未提供的个人资料或背景推断。',
+    '当前采用基础梦境解读模板，不得引入出生资料或命理背景推断。出生节律不是本次主解读的必需步骤。',
     'metaphysical_resonance、metaphysical_basis，以及 metaphysical_reading 的 temperament、dream_echo、tension、rhythm、basis 必须全部输出空字符串。'
   ].join('\n');
 }
@@ -914,7 +949,7 @@ async function loadDreamMemory(openid) {
   if (!db || !openid) return buildDreamMemory([], true);
 
   try {
-    const response = await db.collection('dream_entries').where({ openid: openid }).limit(30).get();
+    const response = await db.collection('dream_entries').where({ openid: openid }).orderBy('createdAt', 'desc').limit(30).get();
     return buildDreamMemory(response && response.data ? response.data : []);
   } catch (error) {
     return buildDreamMemory([], true);
@@ -951,32 +986,69 @@ async function loadLifeNote(openid, dreamText) {
 async function loadCurrentPortrait(openid) {
   if (!db || !openid) return null;
   try {
-    var stateResponse = await db.collection('profile_memory_state')
-      .where({ openid: openid })
-      .limit(1)
-      .get()
-      .catch(function () { return { data: [] }; });
-    var memoryState = stateResponse && stateResponse.data && stateResponse.data[0];
+    var stateResponse;
+    try {
+      stateResponse = await db.collection('profile_memory_state')
+        .where({ openid: openid })
+        .limit(1)
+        .get();
+    } catch (stateError) {
+      return null;
+    }
+    var stateDocs = stateResponse && Array.isArray(stateResponse.data) ? stateResponse.data : [];
+    var hasStateDocument = stateDocs.length > 0;
+    var memoryState = hasStateDocument ? stateDocs[0] : null;
     var portrait = null;
-    if (memoryState && memoryState.currentSnapshotId) {
+
+    function normalizeUsablePortrait(value, strict) {
+      if (!value) return null;
+      if (value.paused === true || value.status === 'paused') return null;
+      var copy = Object.assign({}, value);
+      copy.summary = asString(copy.summary || copy.profileText, '', 500);
+      copy.profileText = asString(copy.profileText || copy.summary, '', 500);
+      copy.status = ['draft', 'confirmed', 'rejected', 'superseded'].indexOf(copy.status) >= 0 ? copy.status : 'confirmed';
+      copy.isCurrent = copy.isCurrent !== false;
+      copy.useInFutureReadings = copy.useInFutureReadings !== false;
+      if (
+        !copy.summary ||
+        copy.status !== 'confirmed' ||
+        copy.isCurrent !== true ||
+        copy.stale === true ||
+        copy.useInFutureReadings !== true ||
+        copy.paused === true
+      ) return null;
+      if (strict && value.status !== 'confirmed') return null;
+      return copy;
+    }
+
+    if (
+      hasStateDocument &&
+      (memoryState.paused === true || memoryState.status === 'paused' ||
+        memoryState.useInFutureReadings === false || memoryState.stale === true)
+    ) return null;
+    if (hasStateDocument && !memoryState.currentSnapshotId) return null;
+
+    if (hasStateDocument) {
       var pointed = await db.collection('profile_snapshots')
         .where({ openid: openid, _id: memoryState.currentSnapshotId })
         .limit(1)
         .get();
       portrait = pointed && pointed.data && pointed.data[0];
-    }
-    if (!portrait || portrait.status !== 'confirmed' || portrait.isCurrent === false || portrait.stale === true || portrait.useInFutureReadings === false) {
+      portrait = normalizeUsablePortrait(portrait, true);
+    } else {
       var response = await db.collection('profile_snapshots')
-        .where({ openid: openid, status: 'confirmed', isCurrent: true })
+        .where({ openid: openid })
         .orderBy('updatedAt', 'desc')
-        .limit(1)
+        .limit(30)
         .get();
-      portrait = response && response.data && response.data[0];
+      portrait = (response && response.data ? response.data : []).map(function (item) {
+        return normalizeUsablePortrait(item, false);
+      }).filter(Boolean)[0] || null;
     }
-    if (!portrait || portrait.status !== 'confirmed' || portrait.isCurrent === false || portrait.stale === true || portrait.useInFutureReadings === false) return null;
+    if (!portrait) return null;
     return {
       version: Number(portrait.version || 0),
-      summary: asString(portrait.summary, '', 500),
+      summary: asString(portrait.summary || portrait.profileText, '', 500),
       themes: Array.isArray(portrait.themes) ? portrait.themes.slice(0, 3) : [],
       emotionalTone: asString(portrait.emotionalTone || portrait.emotionTone, '', 100),
       changing: asString(portrait.changing || portrait.change, '', 120),
@@ -1008,6 +1080,14 @@ function isLifeNoteRelevant(lifeNote, dreamText, symbols) {
   });
 
   return phraseMatched || symbolMatched;
+}
+
+function sanitizeProfileInput(value) {
+  var source = value && typeof value === 'object' ? value : {};
+  var copy = Object.assign({}, source);
+  delete copy.currentPortrait;
+  delete copy.confirmedPortrait;
+  return copy;
 }
 
 function freeformText(value, maxLength) {
@@ -1043,7 +1123,7 @@ function metaphysicalReadingFields(reading) {
   });
 }
 
-function validateMetaphysicalContract(payload, dreamText, chartAvailable, errorPrefix) {
+function validateMetaphysicalContract(payload, dreamText, metaphysicalRequired, errorPrefix) {
   const reading = payload && payload.metaphysical_reading;
   const allFields = [
     { field: 'metaphysical_resonance', value: payload && payload.metaphysical_resonance },
@@ -1051,7 +1131,7 @@ function validateMetaphysicalContract(payload, dreamText, chartAvailable, errorP
   ].concat(metaphysicalReadingFields(reading));
   const nonEmpty = allFields.filter(function (item) { return String(item.value || '').trim(); });
 
-  if (!chartAvailable) {
+  if (!metaphysicalRequired) {
     if (nonEmpty.length) throw new Error(errorPrefix + ' must keep metaphysical fields empty without a birth chart');
     return;
   }
@@ -1161,7 +1241,7 @@ function modelMetaphysicalText(value, fallback, options) {
   return text;
 }
 
-function requireCompleteModelResult(result, chartAvailable) {
+function requireCompleteModelResult(result, metaphysicalRequired) {
   const requiredStrings = [
     'title',
     'card_theme',
@@ -1235,13 +1315,7 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
   });
   symbolMilestones = symbolMilestones.slice(0, 1);
   relevantLifeNote = isLifeNoteRelevant(lifeNote, dreamText, symbols) ? lifeNote : null;
-  const chartAvailable = !!(baziChart && baziChart.available);
-  const rawMetaphysicalReading = raw && raw.metaphysical_reading && typeof raw.metaphysical_reading === 'object'
-    ? raw.metaphysical_reading
-    : {};
-  const metaphysicalFallback = chartAvailable
-    ? buildMetaphysicalFallback(baziChart, dreamFacts, dreamText)
-    : { resonance: '', basis: '', reading: { temperament: '', dream_echo: '', tension: '', rhythm: '', basis: '' } };
+  const metaphysicalFallback = { resonance: '', basis: '', reading: { temperament: '', dream_echo: '', tension: '', rhythm: '', basis: '' } };
   const normalized = {
     title: repairDreamTerms(asString(raw && raw.title, '', 24), '梦境记录'),
     card_no: 'NO. ' + String(cardIndex).padStart(3, '0'),
@@ -1250,6 +1324,7 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     dream_facts: dreamFacts,
     visual_plan: visualPlan,
     bazi_chart: baziChart || { available: false, precision: 'missing' },
+    metaphysicalAvailable: !!(baziChart && baziChart.available),
     profile_summary: nickname + ' · ' + (sourceLabel || '梦境记忆'),
     symbols: symbols,
     symbol_milestones: symbolMilestones,
@@ -1283,47 +1358,9 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
       '',
       560
     ), safeBaseFallback('reading_hook')),
-    metaphysical_resonance: chartAvailable
-      ? modelMetaphysicalText(raw && raw.metaphysical_resonance, metaphysicalFallback.resonance, {
-          dreamText: dreamText,
-          requireGrounded: true,
-          maxLength: 700
-        })
-      : '',
-    metaphysical_basis: chartAvailable
-      ? modelMetaphysicalText(raw && raw.metaphysical_basis, metaphysicalFallback.basis, {
-          requireTechnical: true,
-          maxLength: 360
-        })
-      : '',
-    metaphysical_reading: chartAvailable
-      ? {
-          temperament: modelMetaphysicalText(rawMetaphysicalReading.temperament, metaphysicalFallback.reading.temperament, {
-            dreamText: dreamText,
-            requireGrounded: true,
-            maxLength: 520
-          }),
-          dream_echo: modelMetaphysicalText(rawMetaphysicalReading.dream_echo, metaphysicalFallback.reading.dream_echo, {
-            dreamText: dreamText,
-            requireGrounded: true,
-            maxLength: 520
-          }),
-          tension: modelMetaphysicalText(rawMetaphysicalReading.tension, metaphysicalFallback.reading.tension, {
-            dreamText: dreamText,
-            requireGrounded: true,
-            maxLength: 520
-          }),
-          rhythm: modelMetaphysicalText(rawMetaphysicalReading.rhythm, metaphysicalFallback.reading.rhythm, {
-            dreamText: dreamText,
-            requireGrounded: true,
-            maxLength: 520
-          }),
-          basis: modelMetaphysicalText(rawMetaphysicalReading.basis, metaphysicalFallback.reading.basis, {
-            requireTechnical: true,
-            maxLength: 360
-          })
-        }
-      : { temperament: '', dream_echo: '', tension: '', rhythm: '', basis: '' },
+    metaphysical_resonance: metaphysicalFallback.resonance,
+    metaphysical_basis: metaphysicalFallback.basis,
+    metaphysical_reading: metaphysicalFallback.reading,
     underneath: repairDreamTerms(freeformText(raw && raw.underneath, 700), ''),
     cultural_symbolism: repairDreamTerms(freeformText(raw && raw.cultural_symbolism, 700), ''),
     mirror: repairDreamTerms(asString(
@@ -1370,11 +1407,11 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     }
   };
 
-  validateMetaphysicalContract(normalized, dreamText, chartAvailable, 'AI provider normalized result');
-  return requireCompleteModelResult(normalized, chartAvailable);
+  validateMetaphysicalContract(normalized, dreamText, false, 'AI provider normalized result');
+  return requireCompleteModelResult(normalized, false);
 }
 
-function buildUserContext(profile, dreamText, memory, baziChart, lifeNote) {
+function buildUserContext(profile, dreamText, memory, lifeNote) {
   var parts = [];
   var dreamMemory = memory || buildDreamMemory([]);
   var boundedMemory = {
@@ -1388,9 +1425,6 @@ function buildUserContext(profile, dreamText, memory, baziChart, lifeNote) {
   if (profile.nickname) parts.push('用户称呼：' + profile.nickname);
   parts.push('今日日期：' + new Date().toISOString().slice(0, 10));
   parts.push('最多 3 条历史观察（只有具体重复时才可谨慎参考）：' + JSON.stringify(boundedMemory));
-  if (baziChart && baziChart.available) {
-    parts.push('出生节律参考（只能解释，不得自行补算或预测）：' + JSON.stringify(baziChart));
-  }
   if (lifeNote) {
     parts.push('用户曾经明确确认过的真实情况（只能在明显相关时自然提及，不得判断对错，不得预测）：' + lifeNote.text);
   }
@@ -1550,9 +1584,7 @@ function validateAiSemanticPayload(raw, dreamText, baziChart) {
     throw new Error('AI provider response did not include a visual plan structure');
   }
   if (!isRecord(omens)) throw new Error('AI provider response did not include color guidance');
-  // Metaphysical content is optional model enrichment. Schema defects here
-  // must never discard an otherwise valid base dream reading; normalization
-  // supplies a deterministic, non-predictive chart-backed fallback.
+  // 主解读的命理字段由归一化固定为空；完整命理契约只在按需请求中校验。
 }
 
 function providerConfig() {
@@ -1605,9 +1637,37 @@ function publicProviderHealth() {
     model: config.model || '',
     baseUrlHost: hostname,
     requestTimeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS,
+    timeoutBudget: {
+      minMs: MIN_TIMEOUT_MS,
+      maxMs: MAX_TIMEOUT_MS,
+      cloudFunctionMs: 60000
+    },
     supported: !config.unsupported,
     fallbackProvider: 'none'
   };
+}
+
+function providerTimeoutError() {
+  const error = new Error('AI provider request timed out');
+  // Keep the code stable for clients and logs; the human-readable message is
+  // intentionally still available as provider_error for support diagnostics.
+  error.errorCode = 'provider_timeout';
+  error.code = 'AI_PROVIDER_TIMEOUT';
+  error.reason = 'provider_timeout';
+  return error;
+}
+
+function decorateProviderError(error, config, startedAt) {
+  const value = error || new Error('unknown_error');
+  const timedOut = value.errorCode === 'provider_timeout' || value.code === 'AI_PROVIDER_TIMEOUT' || /timed out|timeout/i.test(value.message || '');
+  const timeoutMs = effectiveTimeoutMs();
+  value.errorCode = timedOut ? 'provider_timeout' : (value.errorCode || 'provider_error');
+  value.code = timedOut ? 'AI_PROVIDER_TIMEOUT' : (value.code || 'AI_PROVIDER_ERROR');
+  value.provider = config && config.provider ? config.provider : '';
+  value.model = config && config.model ? config.model : '';
+  value.requestTimeoutMs = timeoutMs;
+  value.elapsedMs = startedAt ? Math.max(0, Date.now() - startedAt) : 0;
+  return value;
 }
 
 function postJson(urlString, headers, body, timeoutMs) {
@@ -1641,7 +1701,7 @@ function postJson(urlString, headers, body, timeoutMs) {
     });
 
     request.on('timeout', function () {
-      request.destroy(new Error('AI provider request timed out'));
+      request.destroy(providerTimeoutError());
     });
 
     request.on('error', reject);
@@ -1657,9 +1717,10 @@ async function callOpenAiCompatible(config, profile, dreamText, memory, baziChar
   }, {
     model: config.model,
     response_format: { type: 'json_object' },
+    max_tokens: MAX_OUTPUT_TOKENS,
     messages: [
-      { role: 'system', content: buildInterpretationSystemPrompt(baziChart) },
-      { role: 'user', content: buildUserContext(profile, dreamText, memory, baziChart, lifeNote) }
+      { role: 'system', content: buildInterpretationSystemPrompt() },
+      { role: 'user', content: buildUserContext(profile, dreamText, memory, lifeNote) }
     ],
     temperature: 0.78
   }, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
@@ -1669,19 +1730,18 @@ async function callOpenAiCompatible(config, profile, dreamText, memory, baziChar
   }
 
   const data = JSON.parse(response.text);
-  const content = data && data.choices && data.choices[0] && data.choices[0].message
-    ? data.choices[0].message.content
-    : '';
+  const extracted = extractMessageContent(data);
 
-  if (!content) {
-    throw new Error('AI provider response did not include message content');
+  if (!extracted.content) {
+    throw emptyContentError(extracted);
   }
 
-  return parseJsonResponse(content);
+  return parseJsonResponse(extracted.content);
 }
 
 async function interpretWithAi(profile, dreamText, cardIndex, memory, baziChart, lifeNote) {
   const config = providerConfig();
+  const startedAt = Date.now();
 
   if (config.provider === 'static') {
     throw new Error('AI provider is not configured');
@@ -1695,14 +1755,168 @@ async function interpretWithAi(profile, dreamText, cardIndex, memory, baziChart,
     throw new Error('Missing API key for INTERPRET_PROVIDER=' + config.provider);
   }
 
-  const raw = await callOpenAiCompatible(config, profile, dreamText, memory, baziChart, lifeNote);
-  validateAiSemanticPayload(raw, dreamText, baziChart);
+  let raw;
+  try {
+    raw = await callOpenAiCompatible(config, profile, dreamText, memory, baziChart, lifeNote);
+    validateAiSemanticPayload(raw, dreamText, baziChart);
+  } catch (error) {
+    throw decorateProviderError(error, config, startedAt);
+  }
 
   return {
     provider: config.provider,
     model: config.model || '',
     result: normalizeAiResult(raw, dreamText, profile, cardIndex, 'AI 梦卡', memory, baziChart, lifeNote)
   };
+}
+
+function compactMetaphysicalBaseResult(value) {
+  const result = value && typeof value === 'object' ? value : {};
+  return {
+    title: asString(result.title, '', 80),
+    symbols: asStringArray(result.symbols, [], 5, 32),
+    dream_translation: asString(result.dream_translation, '', 700),
+    underneath: asString(result.underneath, '', 500)
+  };
+}
+
+function compactMetaphysicalChart(value) {
+  const chart = value && typeof value === 'object' ? value : {};
+  return {
+    precision: chart.precision || '',
+    calculationVersion: chart.calculationVersion || '',
+    pillars: chart.pillars || {},
+    dayMaster: chart.dayMaster || '',
+    fiveElements: chart.fiveElements || {},
+    tenGods: chart.tenGods || {}
+  };
+}
+
+function normalizeMetaphysicalOnlyResult(raw, dreamText) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const rawReading = source.metaphysical_reading && typeof source.metaphysical_reading === 'object'
+    ? source.metaphysical_reading
+    : {};
+  const result = {
+    metaphysical_resonance: asString(source.metaphysical_resonance, '', 700),
+    metaphysical_basis: asString(source.metaphysical_basis, '', 360),
+    metaphysical_reading: {
+      temperament: asString(rawReading.temperament, '', 520),
+      dream_echo: asString(rawReading.dream_echo, '', 520),
+      tension: asString(rawReading.tension, '', 520),
+      rhythm: asString(rawReading.rhythm, '', 520),
+      basis: asString(rawReading.basis, '', 360)
+    }
+  };
+
+  validateMetaphysicalContract(result, dreamText, true, 'Metaphysical reading');
+  return result;
+}
+
+async function runMetaphysicalReading(event, profile, baziChart) {
+  const config = providerConfig();
+  const dreamText = asString(event && event.dreamText, '', 1200);
+  const baseResult = compactMetaphysicalBaseResult(event && event.baseResult);
+  const timeoutMs = effectiveTimeoutMs();
+  const startedAt = Date.now();
+  const safety = validateDreamText(dreamText);
+
+  if (!safety.safe) {
+    return { ok: false, blocked: true, reason: safety.reason, message: safety.message };
+  }
+  if (!baziChart || !baziChart.available) {
+    return { ok: false, reason: 'birth_profile_missing', message: '请先补充出生日期、时间和城市。' };
+  }
+  if (config.provider === 'static' || config.unsupported || !config.apiKey) {
+    const diagnostic = decorateProviderError(
+      new Error(config.provider === 'static' ? 'AI provider is not configured' : 'Missing API key for configured provider'),
+      config,
+      startedAt
+    );
+    return {
+      ok: false,
+      reason: 'ai_provider_unavailable',
+      retryable: true,
+      provider: diagnostic.provider,
+      model: diagnostic.model,
+      errorCode: diagnostic.errorCode,
+      error_code: diagnostic.errorCode,
+      providerErrorCode: diagnostic.errorCode,
+      requestTimeoutMs: diagnostic.requestTimeoutMs,
+      elapsedMs: diagnostic.elapsedMs,
+      diagnostics: {
+        code: diagnostic.errorCode,
+        provider: diagnostic.provider,
+        model: diagnostic.model,
+        requestTimeoutMs: diagnostic.requestTimeoutMs,
+        elapsedMs: diagnostic.elapsedMs
+      },
+      provider_error: diagnostic.message ? diagnostic.message.slice(0, 180) : 'unknown_error',
+      message: '出生节律暂时不可用，请稍后再试。'
+    };
+  }
+
+  try {
+    const response = await postJson(config.baseUrl + '/chat/completions', {
+      Authorization: 'Bearer ' + config.apiKey
+    }, {
+      model: config.model,
+      response_format: { type: 'json_object' },
+      max_tokens: MAX_OUTPUT_TOKENS,
+      messages: [
+        { role: 'system', content: METAPHYSICAL_READING_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: '确定性出生盘面：' + JSON.stringify(compactMetaphysicalChart(baziChart)) +
+            '\n主解读摘要：' + JSON.stringify(baseResult) +
+            '\n梦境原文：' + dreamText
+        }
+      ],
+      temperature: 0.58
+    }, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new Error('AI provider HTTP ' + response.statusCode + ': ' + response.text.slice(0, 180));
+    }
+    const data = JSON.parse(response.text);
+    const extracted = extractMessageContent(data);
+    if (!extracted.content) throw emptyContentError(extracted);
+    const result = normalizeMetaphysicalOnlyResult(parseJsonResponse(extracted.content), dreamText);
+
+    return {
+      ok: true,
+      metaphysical_resonance: result.metaphysical_resonance,
+      metaphysical_basis: result.metaphysical_basis,
+      metaphysical_reading: result.metaphysical_reading,
+      provider: config.provider,
+      model: config.model || '',
+      promptVersion: PROMPT_VERSION,
+      elapsedMs: Math.max(0, Date.now() - startedAt)
+    };
+  } catch (error) {
+    const diagnostic = decorateProviderError(error, config, startedAt);
+    return {
+      ok: false,
+      reason: 'ai_provider_error',
+      retryable: true,
+      provider: diagnostic.provider,
+      model: diagnostic.model,
+      errorCode: diagnostic.errorCode,
+      error_code: diagnostic.errorCode,
+      providerErrorCode: diagnostic.errorCode,
+      requestTimeoutMs: diagnostic.requestTimeoutMs,
+      elapsedMs: diagnostic.elapsedMs,
+      diagnostics: {
+        code: diagnostic.errorCode,
+        provider: diagnostic.provider,
+        model: diagnostic.model,
+        requestTimeoutMs: diagnostic.requestTimeoutMs,
+        elapsedMs: diagnostic.elapsedMs
+      },
+      provider_error: diagnostic.message ? diagnostic.message.slice(0, 180) : 'unknown_error',
+      message: '出生节律暂时不可用，请稍后再试。'
+    };
+  }
 }
 
 function normalizeChatHistory(value) {
@@ -1736,6 +1950,8 @@ function chatResultSummary(value) {
 }
 
 function validatedRealityClue(value, userMessage, eligible) {
+  // The model makes the semantic decision. The server only proves that its
+  // candidate is a contiguous quote from this exact user message.
   const clue = asString(value, '', 300);
   const source = asString(userMessage, '', 500);
   if (eligible !== true || !clue || source.indexOf(clue) < 0) return '';
@@ -1775,6 +1991,7 @@ async function runDreamChat(event) {
   const history = normalizeChatHistory(event && event.messages);
   const summary = chatResultSummary(event && event.dreamResult);
   const timeoutMs = effectiveTimeoutMs();
+  const startedAt = Date.now();
   let i;
 
   if (!dreamText || !userMessage) {
@@ -1800,6 +2017,7 @@ async function runDreamChat(event) {
       Authorization: 'Bearer ' + config.apiKey
     }, {
       model: config.model,
+      max_tokens: MAX_OUTPUT_TOKENS,
       messages: [
         { role: 'system', content: DREAM_CHAT_SYSTEM_PROMPT },
         { role: 'system', content: '当前梦境原文：' + dreamText + '\n当前解读上下文：' + JSON.stringify(summary) }
@@ -1808,12 +2026,14 @@ async function runDreamChat(event) {
       response_format: { type: 'json_object' }
     }, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
     const data = JSON.parse(response.text);
-    const content = data && data.choices && data.choices[0] && data.choices[0].message
-      ? asString(data.choices[0].message.content, '', 1200)
-      : '';
+    const extracted = extractMessageContent(data);
+    const content = asString(extracted.content, '', 1200);
 
-    if (response.statusCode < 200 || response.statusCode >= 300 || !content) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
       throw new Error('Dream chat provider failed');
+    }
+    if (!content) {
+      throw emptyContentError(extracted);
     }
     const chatContent = parseDreamChatContent(content, userMessage);
     return {
@@ -1825,11 +2045,26 @@ async function runDreamChat(event) {
       realityClue: chatContent.realityClue
     };
   } catch (error) {
+    const diagnostic = decorateProviderError(error, config, startedAt);
     return {
       ok: false,
       reason: 'ai_provider_error',
       retryable: true,
-      provider_error: error && error.message ? error.message.slice(0, 180) : 'unknown_error',
+      provider: diagnostic.provider,
+      model: diagnostic.model,
+      errorCode: diagnostic.errorCode,
+      error_code: diagnostic.errorCode,
+      providerErrorCode: diagnostic.errorCode,
+      requestTimeoutMs: diagnostic.requestTimeoutMs,
+      elapsedMs: diagnostic.elapsedMs,
+      diagnostics: {
+        code: diagnostic.errorCode,
+        provider: diagnostic.provider,
+        model: diagnostic.model,
+        requestTimeoutMs: diagnostic.requestTimeoutMs,
+        elapsedMs: diagnostic.elapsedMs
+      },
+      provider_error: diagnostic.message ? diagnostic.message.slice(0, 180) : 'unknown_error',
       message: 'AI 对话暂时不可用，请稍后再试。'
     };
   }
@@ -1842,6 +2077,7 @@ async function runDreamRefinement(event) {
   const summary = chatResultSummary(event && event.dreamResult);
   const profile = event && event.profile && typeof event.profile === 'object' ? event.profile : {};
   const timeoutMs = effectiveTimeoutMs();
+  const startedAt = Date.now();
   let i;
 
   if (!dreamText || !answer) {
@@ -1866,6 +2102,7 @@ async function runDreamRefinement(event) {
     }, {
       model: config.model,
       response_format: { type: 'json_object' },
+      max_tokens: MAX_OUTPUT_TOKENS,
       messages: [
         { role: 'system', content: DREAM_REFINE_SYSTEM_PROMPT },
         { role: 'user', content: '原梦：' + dreamText + '\n初版解读与上下文：' + JSON.stringify(summary) + '\n画像摘要：' + JSON.stringify(profile.confirmedPortrait || profile.profileSummary || summary.profileSummary || '') + '\n用户原始回答：' + answer }
@@ -1874,10 +2111,11 @@ async function runDreamRefinement(event) {
     }, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
     if (response.statusCode < 200 || response.statusCode >= 300) throw new Error('Dream refinement provider failed');
     const data = JSON.parse(response.text);
-    const content = data && data.choices && data.choices[0] && data.choices[0].message
-      ? data.choices[0].message.content
-      : '';
-    const parsed = parseJsonResponse(content);
+    const extracted = extractMessageContent(data);
+    if (!extracted.content) {
+      throw emptyContentError(extracted);
+    }
+    const parsed = parseJsonResponse(extracted.content);
     const finalTitle = asString(parsed.final_title, '', 16);
     const finalInsight = asString(parsed.final_card_insight, '', 240);
     const personalConnection = asString(parsed.personal_connection, '', 360);
@@ -1894,11 +2132,26 @@ async function runDreamRefinement(event) {
       personal_connection: personalConnection
     };
   } catch (error) {
+    const diagnostic = decorateProviderError(error, config, startedAt);
     return {
       ok: false,
       reason: 'ai_provider_error',
       retryable: true,
-      provider_error: error && error.message ? error.message.slice(0, 180) : 'unknown_error'
+      provider: diagnostic.provider,
+      model: diagnostic.model,
+      errorCode: diagnostic.errorCode,
+      error_code: diagnostic.errorCode,
+      providerErrorCode: diagnostic.errorCode,
+      requestTimeoutMs: diagnostic.requestTimeoutMs,
+      elapsedMs: diagnostic.elapsedMs,
+      diagnostics: {
+        code: diagnostic.errorCode,
+        provider: diagnostic.provider,
+        model: diagnostic.model,
+        requestTimeoutMs: diagnostic.requestTimeoutMs,
+        elapsedMs: diagnostic.elapsedMs
+      },
+      provider_error: diagnostic.message ? diagnostic.message.slice(0, 180) : 'unknown_error'
     };
   }
 }
@@ -1988,7 +2241,7 @@ async function runAiSmokeTest(event) {
 
 exports.main = async function (event) {
   const dreamText = String((event && event.dreamText) || '').trim();
-  const profile = event && event.profile ? event.profile : {};
+  const profile = sanitizeProfileInput(event && event.profile);
   const cardIndex = Number((event && event.cardIndex) || 1);
   const wxContext = cloud.getWXContext ? cloud.getWXContext() : {};
   const baziChart = buildBaziChart(profile);
@@ -2010,6 +2263,10 @@ exports.main = async function (event) {
 
   if (event && event.refineDream) {
     return runDreamRefinement(event);
+  }
+
+  if (event && event.metaphysicalReading === true) {
+    return runMetaphysicalReading(event, profile, baziChart);
   }
 
   safety = validateDreamText(dreamText);
@@ -2039,10 +2296,15 @@ exports.main = async function (event) {
       model: interpreted.model || '',
       promptVersion: PROMPT_VERSION,
       schemaVersion: SCHEMA_VERSION,
+      metaphysicalAvailable: !!(baziChart && baziChart.available),
       memoryUnavailable: !!(memory && memory.memoryUnavailable),
       result: interpreted.result
     };
   } catch (error) {
+    const config = providerConfig();
+    const diagnostic = error && error.errorCode && error.requestTimeoutMs
+      ? error
+      : decorateProviderError(error, config);
     return {
       ok: false,
       blocked: false,
@@ -2051,7 +2313,21 @@ exports.main = async function (event) {
       promptVersion: PROMPT_VERSION,
       schemaVersion: SCHEMA_VERSION,
       memoryUnavailable: !!(memory && memory.memoryUnavailable),
-      provider_error: error && error.message ? error.message.slice(0, 180) : 'unknown_error',
+      provider: diagnostic.provider,
+      model: diagnostic.model,
+      errorCode: diagnostic.errorCode,
+      error_code: diagnostic.errorCode,
+      providerErrorCode: diagnostic.errorCode,
+      requestTimeoutMs: diagnostic.requestTimeoutMs,
+      elapsedMs: diagnostic.elapsedMs,
+      diagnostics: {
+        code: diagnostic.errorCode,
+        provider: diagnostic.provider,
+        model: diagnostic.model,
+        requestTimeoutMs: diagnostic.requestTimeoutMs,
+        elapsedMs: diagnostic.elapsedMs
+      },
+      provider_error: diagnostic.message ? diagnostic.message.slice(0, 180) : 'unknown_error',
       message: 'AI 解读暂时不可用，请稍后再试。'
     };
   }

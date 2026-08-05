@@ -50,7 +50,7 @@ INTERPRET_PROVIDER=deepseek
 DEEPSEEK_API_KEY=<rotated-production-key>
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-INTERPRET_TIMEOUT_MS=30000
+INTERPRET_TIMEOUT_MS=45000
 ```
 
 Keep keys in CloudBase function environment variables only. Do not put provider keys in Mini Program files, `project.config.json`, or local storage.
@@ -131,7 +131,9 @@ Scan the preview QR on a real device and verify:
 
 Do not treat the build as real-AI ready if any of these are true:
 
-- `interpretDream` timeout is lower than its configured provider request budget.
+- `interpretDream` keeps a `45`-`50` second provider request budget below the
+  `60` second CloudBase platform timeout, while the Mini Program client waits
+  up to `70` seconds for the result.
 - Diagnostics shows `providerConfigured: false`.
 - Smoke test returns the configured model provider, or a clear `static_provider` / provider error without a locally generated interpretation.
 - Result card keeps showing only the fallback symbolic card art after `generateDreamImage` is configured.

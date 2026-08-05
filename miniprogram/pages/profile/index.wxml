@@ -49,7 +49,7 @@
   <view class="portrait-block">
     <view class="section-row">
       <text class="section-label">阶段画像{{memoryState.current ? ' · V' + memoryState.current.version : ''}}</text>
-      <text class="portrait-focus-label {{memoryState.current ? (memoryState.current.useInFutureReadings === false ? 'is-paused' : 'is-active') : 'is-waiting'}}">{{memoryState.current ? (memoryState.current.useInFutureReadings === false ? '已暂停解读' : '用于解读中') : (!memoryLoaded ? '读取中' : (portraitLoading ? '正在梳理' : (portraitLoadError || portraitGenerateFailed ? '暂时不可用' : '等待形成')))}}</text>
+      <text class="portrait-focus-label {{portraitMigrationState === 'failed' ? 'is-paused' : portraitMigrationState ? 'is-waiting' : memoryState.current ? (memoryState.current.useInFutureReadings === false ? 'is-paused' : 'is-active') : 'is-waiting'}}">{{portraitMigrationState === 'migrating' ? '画像迁移中' : portraitMigrationState === 'failed' ? '画像迁移失败' : memoryState.current ? (memoryState.current.useInFutureReadings === false ? '已暂停解读' : '用于解读中') : (!memoryLoaded ? '读取中' : (portraitLoading ? '正在梳理' : (portraitLoadError || portraitGenerateFailed ? '暂时不可用' : '等待形成')))}}</text>
     </view>
 
     <!-- 内容优先：只要当前画像有值就展示，不受异步读取状态影响。 -->
