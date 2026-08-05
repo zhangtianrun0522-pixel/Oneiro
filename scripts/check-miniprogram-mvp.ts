@@ -480,7 +480,7 @@ function createWxMock(): WxMock {
               ok: true,
               provider: 'mock-metaphysical',
               model: 'mock-metaphysical-model',
-              promptVersion: 'oneiro-freeform-reading-v0.6-relevance-memory',
+              promptVersion: 'oneiro-freeform-reading-v0.7-grounded-modules',
               elapsedMs: 1234,
               metaphysical_resonance: '梦里的学校走廊与日主甲木的行动底色形成有限呼应。',
               metaphysical_basis: '四柱中的日主甲木是本次确定性计算的技术锚点。',
@@ -580,7 +580,7 @@ function createWxMock(): WxMock {
             ok: true,
             provider: 'mock-cloud',
             model: 'mock-grounded-model',
-            promptVersion: 'oneiro-freeform-reading-v0.6-relevance-memory',
+            promptVersion: 'oneiro-freeform-reading-v0.7-grounded-modules',
             schemaVersion: 'dream-entry-v0.2',
             result: {
               title: '云影',
@@ -987,7 +987,7 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', 'metaphysical-reading'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="toggleFullReading"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="toggleMoreActions"'],
-  ['miniprogram/pages/result/index.wxml', '另一种可能'],
+  ['miniprogram/pages/result/index.wxml', '传统解梦怎么说'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="saveCard"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="saveFullReading"'],
   ['miniprogram/pages/result/index.wxml', '收藏梦卡'],
@@ -1170,7 +1170,7 @@ for (const [path, expected] of [
   ['miniprogram/cloudfunctions/interpretDream/index.js', "dream_facts"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "possible_connections"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "reading_hook"],
-  ['miniprogram/cloudfunctions/interpretDream/index.js', "alternative_reading"],
+  ['miniprogram/cloudfunctions/interpretDream/index.js', "sanitizeFortuneClaims"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "loadDreamMemory"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "cultural_symbolism"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "loadCurrentPortrait"],
@@ -1224,7 +1224,7 @@ for (const visible of ['与你有关', '你之前提到过', '心理视角', '�
   const at = resultTemplate.indexOf(visible);
   assert.ok(at > 0 && at < foldStart, `${visible} 必须在折叠区之外`);
 }
-for (const folded of ['梦里发生了什么', '另一种可能', '文化象征']) {
+for (const folded of ['梦里发生了什么', '传统解梦怎么说']) {
   const at = resultTemplate.indexOf(folded);
   assert.ok(at > foldStart, `${folded} 应留在折叠区内`);
 }
@@ -1640,7 +1640,7 @@ assert.equal(archiveAfterDream[0].interpretationProvider, 'mock-cloud');
 assert.equal(archiveAfterDream[0].status, 'ready');
 assert.equal(archiveAfterDream[0].dreamFacts.places[0], '学校');
 assert.equal(archiveAfterDream[0].interpretationMeta.schemaVersion, 'dream-entry-v0.2');
-assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.6-relevance-memory');
+assert.equal(archiveAfterDream[0].interpretationMeta.promptVersion, 'oneiro-freeform-reading-v0.7-grounded-modules');
 assert.equal(archiveAfterDream[0].result.title, '云影');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream'));
 assert.equal(

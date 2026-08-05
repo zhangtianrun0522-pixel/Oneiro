@@ -18,7 +18,7 @@ const MAX_TIMEOUT_MS = 50000;
 // 思考型模型（如 deepseek-v4-flash）的推理与正文共用同一份输出预算。不显式
 // 声明上限时，供应商默认值会被推理吃掉，正文返回空字符串。
 const MAX_OUTPUT_TOKENS = Number(process.env.INTERPRET_MAX_TOKENS || 8192);
-const PROMPT_VERSION = 'oneiro-freeform-reading-v0.6-relevance-memory';
+const PROMPT_VERSION = 'oneiro-freeform-reading-v0.7-grounded-modules';
 const SCHEMA_VERSION = 'dream-entry-v0.2';
 
 // 供应商返回 200 但正文为空时，必须区分「推理占满预算被截断」和「真的没内容」，
@@ -108,9 +108,21 @@ const DREAM_REFINE_SYSTEM_PROMPT = [
 const SYSTEM_PROMPT = [
   '你是 Oneiro，一个敏锐、有边界的梦境观察者。',
   '核心意图：先把原梦中真正发生的事说清楚，再让每个模块提供一条有辨识度、可被用户修正的观察。',
-  '模块核心意图：dream_translation 只复述场景与感受；reading_hook 找到一个具体转折；文化象征只提供共同文化语境；underneath 观察梦中细节之间的个人张力；possible_connections 只在有具体呼应时提出现实假设；alternative_reading 保留另一种不把梦固定成性格的看法；integration_question 留一个容易回答的问题；one_small_act 给一个轻量行动。',
+  '模块核心意图：dream_translation 只复述场景与感受；reading_hook 找到一个具体转折；cultural_symbolism 给出中国传统解梦对本梦意象的说法；underneath 观察梦中细节之间的个人张力；possible_connections 只在有具体呼应时提出现实假设；integration_question 留一个容易回答的问题；one_small_act 给一个轻量行动。',
   '模块核心意图：历史记忆只有在历史观察、生活片段或画像与本梦有具体呼应时才使用，并显式说出来源与时间感；没有具体呼应时禁止假装记得。',
-  '模块核心意图：上下文若给出「已核实的历史呼应」，那是系统比对过的确凿重复，必须至少点出其中一处，写清是哪个意象、上一次大约什么时候出现、那次和这次有什么不同；只复述给定的次数与时间，不得据此推断现实生活中发生了什么。',
+  // 旧版要求「写清是哪个意象、上一次什么时候出现、那次和这次有什么不同」，
+  // 模型只做了前两件（查数据，容易），跳过了第三件（说出差别，难），于是输出
+  // 变成「这是你第 12 次梦见沙漠」这类报表。次数是真的，但它不产生任何理解——
+  // 用户早就知道自己老梦见沙漠，他想知道的是这次和那 11 次有什么不一样。
+  '模块核心意图：上下文若给出「已核实的历史呼应」，那是系统比对过的确凿重复。点出其中一处时，重点必须落在「这次和上次有什么不同」：同一个意象这次出现在什么位置、你在梦里做了什么、结局是否变了。严禁只播报统计——「这是你第 N 次梦见 X」「与 M 天前的梦共享 Y 元素」这类句子本身不构成理解，单独出现视为未完成。说不出这次与上次的差别时，宁可完全不提这处呼应。次数与时间只能作为背景，不得据此推断现实生活中发生了什么。',
+  // 「沙漠象征匮乏，石榴象征丰饶，两者形成反差」——这是把两个词典义拼起来，
+  // 再加一句「或许映射着」。它没有用到梦里任何一个具体动作，所以对任何一个
+  // 做了同类梦的人都成立。
+  '模块核心意图：underneath 必须引用本梦里至少一个具体动作、位置或变化（谁在做什么、什么在动、什么本该发生却没有发生），再说出它与另一处细节之间的张力。禁止把两个意象的词典义拼成对比句式（「A 象征匮乏、B 象征丰饶，形成反差」属于查词典，不是观察）。',
+  '模块核心意图：cultural_symbolism 给出中国传统解梦（周公解梦一脉）对本梦具体意象的传统说法，并写清那是传统里的讲法、不是对用户的判断。可以引用传统释义的原意，但不得输出吉凶、运势、宜忌、预兆、主何事或任何对未来的断言。传统说法与本梦情节不符时如实指出不符，或者留空。',
+  // 梦见石榴 → 今天去尝一颗石榴。这是把象征当购物清单，也是模块化 prompt
+  // 最容易退化成的形态：拿梦里的名词，映射成现实里的一个动作。
+  '模块核心意图：one_small_act 必须连向梦所指向的现实处境，不得把梦里的物件搬进现实当道具（梦见石榴就去吃石榴、梦见钥匙就去配一把钥匙，都属于错误）。没有可连的现实处境时，给一个关于留意或记录的行动，或者留空。',
   '模块核心意图：visual_plan 只把原梦中最重要的事件、场景和少量元素交给生图，短梦就画短梦，不补齐缺失世界。',
   '全局红线一：只引用梦里真实出现的内容，不把象征解释写成事实，也不得改写用户的原梦。',
   '全局红线二：没有现实证据就提问而不是断言，现实关联可以为零；不确定就明说不确定。',
@@ -135,16 +147,15 @@ const SYSTEM_PROMPT = [
   '  "card_insight": "一句收藏卡摘要，必须引用一个梦中细节",',
   '  "dream_translation": "2-3句话复述梦中发生的事和情绪，不加推测",',
   '  "reading_hook": "一句有材料支持的核心观察；梦中细节少时可以更短，不要补第二个细节",',
-  '  "cultural_symbolism": "只提供共同文化语境；有具体依据才写，没有依据可以为空",',
+  '  "cultural_symbolism": "中国传统解梦对本梦意象的说法，写明这是传统讲法；不得出现吉凶、运势、宜忌、预兆或未来断言；与本梦不符或无传统说法时留空",',
   '  "metaphysical_resonance": "按当前模板规则输出",',
   '  "metaphysical_basis": "按当前模板规则输出",',
   '  "metaphysical_reading": { "temperament": "这次梦被调动的内在底色；无具体呼应可为空", "dream_echo": "出生节律与本梦具体意象的呼应；无具体呼应可为空", "tension": "出生节律与梦中行动的拉扯；无具体呼应可为空", "rhythm": "基于本梦的当下行动节奏；无具体依据可为空", "basis": "内部计算记录，可为空" },',
-  '  "underneath": "观察梦中细节之间的个人张力；有材料才写，可以为空；不要使用字典式象征解释",',
+  '  "underneath": "引用梦里至少一个具体动作或变化，说出它与另一处细节之间的张力；禁止把两个意象的词典义拼成反差句；有材料才写，可以为空",',
   '  "possible_connections": ["只有梦中细节与用户上下文有具体呼应时才写现实关联，0条完全可以"],',
   '  "mirror": "对 possible_connections 的简短总结",',
-  '  "alternative_reading": "一种不把梦当成固定自我特征的理解角度",',
   '  "integration_question": "一个围绕当次梦的可回答问题",',
-  '  "one_small_act": "今天可做的一个小行动，不超过20字",',
+  '  "one_small_act": "连向梦所指向的现实处境的一个小行动，不超过20字；不得把梦里的物件搬成现实道具；无可连处境时留空",',
   '  "image": "1-2句话描述梦卡画面",',
   '  "image_prompt": "英文视觉摘要，不超过60词；只描述梦中主事件与关键元素，不写固定画风",',
   '  "visual_plan": {',
@@ -262,10 +273,22 @@ function asString(value, fallback, maxLength) {
 }
 
 const PREDICTIVE_METAPHYSICAL_PATTERN = /运势|吉凶|凶吉|注定|必然|命运/;
+// 传统解梦文本天然带占卜口吻（「梦见水主财」「主口舌」「大凶」「此乃预兆」）。
+// 引用传统说法是产品选择，输出吉凶判断不是——后者撞的是这个产品自己的红线：
+// 不预测、不断吉凶。所以传统释义只作为文化材料保留，凡是把它写成对用户未来
+// 的断言，整段丢弃。
+const FORTUNE_CLAIM_PATTERN = /主[吉凶财病灾祸难]|大吉|大凶|不祥|预兆|征兆|宜忌|主何|应验/;
 const METAPHYSICAL_TECHNICAL_PATTERN = /四柱|八字|日主|五行|十神|排盘|命盘|命理|命格/;
 
 function hasPredictiveMetaphysicalLanguage(value) {
   return PREDICTIVE_METAPHYSICAL_PATTERN.test(String(value || ''));
+}
+
+// 传统解梦说法可以引用，但一旦写成吉凶断言就整段留空。宁可没有这一块，也
+// 不能让产品输出「主口舌」「大凶」这种对未来的判决。
+function sanitizeFortuneClaims(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return FORTUNE_CLAIM_PATTERN.test(text) ? '' : text;
 }
 
 function sanitizeMetaphysicalText(value, fallback, maxLength) {
@@ -1050,7 +1073,7 @@ function evaluateMemoryEcho(memory, dreamText, result) {
 
   // 只统计面向用户的叙述字段。visual_plan / image_prompt 里出现意象说明的是
   // 生图在画它，不代表解读点出了这处重复。
-  const spoken = ['reading_hook', 'underneath', 'possible_connections', 'mirror', 'alternative_reading', 'integration_question']
+  const spoken = ['reading_hook', 'underneath', 'possible_connections', 'mirror', 'integration_question']
     .map(function (field) {
       const value = result && result[field];
       return Array.isArray(value) ? value.join('\n') : String(value || '');
@@ -1485,7 +1508,7 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     metaphysical_basis: metaphysicalFallback.basis,
     metaphysical_reading: metaphysicalFallback.reading,
     underneath: repairDreamTerms(freeformText(raw && raw.underneath, 700), ''),
-    cultural_symbolism: repairDreamTerms(freeformText(raw && raw.cultural_symbolism, 700), ''),
+    cultural_symbolism: sanitizeFortuneClaims(repairDreamTerms(freeformText(raw && raw.cultural_symbolism, 700), '')),
     mirror: repairDreamTerms(asString(
       raw && raw.mirror,
       '',
@@ -1497,11 +1520,10 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
       });
       return candidateConnections;
     }()),
-    alternative_reading: repairDreamTerms(asString(
-      raw && raw.alternative_reading,
-      '',
-      360
-    ), safeBaseFallback('alternative_reading')),
+    // 已下线的模块。它本意是防止解读硬化成人格判决，实际输出却变成「这也许
+    // 只是大脑随机拼接」——读完前面三段再被告知这可能是噪音，等于自己拆自己
+    // 的台。字段保留只为让老梦卡的数据不丢，不再向模型索取、也不再渲染。
+    alternative_reading: repairDreamTerms(asString(raw && raw.alternative_reading, '', 360), ''),
     memory_profile: dreamMemory,
     integration_question: repairDreamTerms(asString(
       raw && raw.integration_question,
@@ -1665,7 +1687,6 @@ function validateAiSemanticPayload(raw, dreamText, baziChart) {
     'underneath',
     'possible_connections',
     'mirror',
-    'alternative_reading',
     'integration_question',
     'one_small_act',
     'image',
@@ -1956,7 +1977,17 @@ async function runMetaphysicalReading(event, profile, baziChart) {
     return { ok: false, blocked: true, reason: safety.reason, message: safety.message };
   }
   if (!baziChart || !baziChart.available) {
-    return { ok: false, reason: 'birth_profile_missing', message: '请先补充出生日期、时间和城市。' };
+    // buildBaziChart 已经分清了「日期或时间没填」和「城市认不出来」，还准备好了
+    // 对应的提示语。旧实现把这些全丢掉，一律回 birth_profile_missing，于是三样
+    // 都填过的用户被要求「先补充出生日期、时间和城市」——他填了，只是写的城市
+    // 不在识别表里。报错必须说出真正的原因，否则用户无从修起。
+    const unresolvedPlace = baziChart && baziChart.precision === 'location_unresolved';
+    return {
+      ok: false,
+      reason: unresolvedPlace ? 'birth_place_unresolved' : 'birth_profile_missing',
+      precision: (baziChart && baziChart.precision) || 'missing',
+      message: (baziChart && (baziChart.basis || baziChart.summary)) || '请先补充出生日期、时间和城市。'
+    };
   }
   if (config.provider === 'static' || config.unsupported || !config.apiKey) {
     const diagnostic = decorateProviderError(

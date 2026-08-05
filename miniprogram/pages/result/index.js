@@ -623,6 +623,9 @@ Page({
     feedbackOptions: FEEDBACK_OPTIONS,
     feedback: '',
     cloudSyncPending: false,
+    // 同步失败的原因码。横幅只说「未同步」时，用户和我都无从判断是网络、
+    // 权限还是这条记录已被删除。
+    cloudSyncReason: '',
     cloudRepairing: false,
     qualitySyncPending: false,
     interpretationError: '',
@@ -919,7 +922,8 @@ Page({
         var failure = syncFailureDetails(saveResult);
         that.setData({
           imageStatus: 'idle',
-          cloudSyncPending: true
+          cloudSyncPending: true,
+          cloudSyncReason: failure.reason
         });
         analytics.trackEvent('generated_image_sync_fail', {
           dreamId: dream.id || '', reason: failure.reason, message: failure.message
@@ -973,11 +977,16 @@ Page({
     cloudBase.metaphysicalReading(dream.dreamText, profile, baseResult, function (cloudResult) {
       if (!cloudResult || !cloudResult.ok) {
         var reason = String(cloudResult && cloudResult.reason || 'unknown').slice(0, 120);
-        var missingProfile = reason === 'birth_profile_missing';
+        // 城市认不出来和资料没填是两回事。以前都显示成「先补充出生日期、时间和
+        // 城市」，三样都填过的用户只能反复确认自己已经填了。云函数现在会把真正
+        // 的原因和可操作的提示一起带回来，直接用它。
+        var placeUnresolved = reason === 'birth_place_unresolved';
+        var missingProfile = reason === 'birth_profile_missing' || placeUnresolved;
+        var serverMessage = String(cloudResult && cloudResult.message || '').slice(0, 160);
         that.setData({
           metaphysicalReadingLoading: false,
           metaphysicalReadingError: missingProfile
-            ? '先补充出生日期、时间和城市，再换一个角度看这个梦。'
+            ? (serverMessage || '先补充出生日期、时间和城市，再换一个角度看这个梦。')
             : '这次出生节律没有生成，稍后可以再试。',
           metaphysicalProfileMissing: missingProfile
         });
@@ -1020,7 +1029,8 @@ Page({
         persistLocalDream(updatedDream);
         that.setData({
           dream: updatedDream,
-          cloudSyncPending: !synced
+          cloudSyncPending: !synced,
+          cloudSyncReason: synced ? '' : syncFailureDetails(saveResult).reason
         });
         if (synced) {
           removeDreamSync(updatedDream);
@@ -1062,7 +1072,12 @@ Page({
       that.cloudRepairing = false;
       dream.cloudSynced = ok;
       persistLocalDream(dream);
-      that.setData({ dream: dream, cloudRepairing: false, cloudSyncPending: !ok });
+      that.setData({
+        dream: dream,
+        cloudRepairing: false,
+        cloudSyncPending: !ok,
+        cloudSyncReason: ok ? '' : syncFailureDetails(saveResult).reason
+      });
       if (ok) {
         removeDreamSync(dream);
         if (getApp && getApp().flushPendingSyncTasks) getApp().flushPendingSyncTasks();

@@ -398,14 +398,24 @@ function deterministicDraft(sources) {
   const recentNote = sources.notes[0] ? text(sources.notes[0].text, 80) : '';
   const emotion = patterns.recurringEmotions[0] ? patterns.recurringEmotions[0].label : '目前还无法判断';
   const priorUserEdit = snapshotUserEdit(sources.priorPortrait);
-  // 「素材不多」只能由真实梦境数量决定。原来只看有没有生活记录，于是记了
-  // 三十个梦的用户依然被告知素材不多——那是一句用户当场就能证伪的话。
+  // 阶段画像要回答的是「你是个怎样的人」，不是「你记了多少个梦」。
+  //
+  // 这里两次走错方向：最早说「素材不多」，记了三十个梦的用户当场就能证伪；
+  // 改成「你已经记下 60 个梦」之后，假话没有了，但换成了一句数据播报——用户
+  // 打开画像看到的是自己的使用统计，不是对自己的描述。梦的条数是系统的视角，
+  // 不是这个人的样子。
+  //
+  // 兜底文案能做到的上限，是从重复的主题里说出一种「看待事情的方式」，并且
+  // 老实承认这是有限观察。真正的画像要靠 AI 生成——如果线上长期看到的是这段
+  // 兜底文字，说明 profileMemory 没有配到 provider 凭据，那是要先修的地方。
   const dreamCount = sources.dreams.length;
   const openingState = recentNote
     ? '你最近提到“' + recentNote + '”。'
-    : dreamCount >= 3
-      ? '你已经记下 ' + dreamCount + ' 个梦，' + (recurringThemes ? '它们之间开始出现可以辨认的重复。' : '但还没有出现稳定重复的线索。')
-      : '现有素材不多，你正在留下可供理解自己的线索。';
+    : recurringThemes
+      ? '你反复回到同一批画面，说明它们对你还没有过去。'
+      : dreamCount >= 3
+        ? '你的梦目前还各走各的，没有稳定重复的线索——没有模式，本身也是一种阶段状态。'
+        : '你正在开始留下可供理解自己的线索。';
   const summaryParts = ['当下的状态：' + name + '，' + openingState];
   if (priorUserEdit && priorUserEdit.summary) summaryParts[0] = '当下的状态：' + text(priorUserEdit.summary, 55);
   if (recurringThemes) summaryParts.push('反复出现的主题：' + recurringThemes + '。');

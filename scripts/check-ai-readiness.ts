@@ -250,8 +250,9 @@ for (const expected of [
   'metaphysicalReading',
   'metaphysicalAvailable',
   'reading_hook',
-  'alternative_reading',
-  'oneiro-freeform-reading-v0.6-relevance-memory',
+  'sanitizeFortuneClaims',
+  'birth_place_unresolved',
+  'oneiro-freeform-reading-v0.7-grounded-modules',
 ]) {
   assertIncludes(interpretDreamPath, expected);
 }
@@ -352,6 +353,20 @@ const qingdao = locationResolver.resolveBirthPlace('山东青岛市');
 assert.ok(qingdao);
 assert.equal(qingdao?.name, '青岛');
 assert.equal(locationResolver.resolveBirthPlace('火星'), null);
+
+// ── 出生地：认不出城市不等于用户没填 ──
+//
+// 城市表只有 49 条省会与主要地级市。用户写「山东临沭」这类地名时整个解析失败，
+// 而错误信息还在要求他「补充出生城市」——他填了。省级兜底让功能可用，并显式
+// 标注精度已降级，而不是假装拿到了精确坐标。
+const linshu = locationResolver.resolveBirthPlace('山东临沭');
+assert.ok(linshu, '省级兜底应能解析出未收录的县级地名');
+assert.equal((linshu as Record<string, any>).precision, 'province');
+assert.equal((linshu as Record<string, any>).approximatedFrom, '济南');
+// 精确匹配到的城市必须保持 city 精度，不能被兜底降级。
+assert.equal((qingdao as Record<string, any>).precision, 'city');
+// 完全无从判断的输入仍然要拒绝，不能兜底成某个省。
+assert.equal(locationResolver.resolveBirthPlace('某个不存在的地方'), null);
 const correctedQingdao = locationResolver.correctToTrueSolarTime('2000-05-22', '15:10', qingdao as Record<string, any>);
 assert.equal(correctedQingdao.ok, true);
 assert.notEqual(correctedQingdao.time, '15:10');
@@ -999,7 +1014,26 @@ assert.doesNotMatch(technicalLeakResult.reading_hook, /四柱|八字|日主|五�
 // 这个梦里没有任何人说话。兜底文案一旦预设「这段话」，就是对用户自己的梦说了
 // 假话——比留白更伤信任，也违反「只引用梦里真实出现的内容」这条红线。
 assert.doesNotMatch(technicalLeakResult.reading_hook, /这段话|一段话|听见/);
-assert.doesNotMatch(technicalLeakResult.alternative_reading, /这段话|一段话|听见/);
+
+// ── 传统解梦可以引用，吉凶判断不行 ──
+//
+// 「文化象征」改成周公解梦一脉的传统释义是产品决定；但传统文本天然带占卜口吻
+// （「主口舌」「大凶」「此乃预兆」），那撞的是这个产品自己的红线：不预测、不断
+// 吉凶。带吉凶断言的整段丢弃——宁可没有这一块。
+const fortunePayload = JSON.parse(JSON.stringify(chartModelPayload));
+fortunePayload.cultural_symbolism = '传统解梦认为梦见水主财，此乃大吉之预兆。';
+const fortuneResult = normalizeAiResult(
+  fortunePayload, '我梦见西红柿里爆出了一颗水蜜桃', {}, 15, 'AI 梦卡', null, baziChart, null
+);
+assert.equal(fortuneResult.cultural_symbolism, '');
+
+// 不带吉凶的传统说法必须原样保留，否则这个模块等于没做。
+const traditionPayload = JSON.parse(JSON.stringify(chartModelPayload));
+traditionPayload.cultural_symbolism = '传统解梦里，果实多被看作收成与生养的意象；这是传统的讲法，不是对你的判断。';
+const traditionResult = normalizeAiResult(
+  traditionPayload, '我梦见西红柿里爆出了一颗水蜜桃', {}, 16, 'AI 梦卡', null, baziChart, null
+);
+assert.ok(traditionResult.cultural_symbolism.includes('传统解梦里'));
 
 const restrictedDreamText = '我梦见别人说我的命运由八字决定。';
 const restrictedDreamPayload = JSON.parse(JSON.stringify(completeModelPayload));

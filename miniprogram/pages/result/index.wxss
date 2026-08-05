@@ -542,12 +542,12 @@
 /* 设计稿里「你记下的原梦」不再是带纸纹的卡片块，标签在外、
    只有引文本身带左侧细线缩进 */
 .original-dream {
-  margin-top: 40rpx;
+  margin-top: var(--space-group);
 }
 
 .original-copy {
   display: block;
-  margin-top: 16rpx;
+  margin-top: var(--space-tight);
   padding-left: 24rpx;
   border-left: 4rpx solid rgba(184, 134, 59, 0.4);
   color: var(--ink-70);
@@ -757,8 +757,8 @@
 }
 
 .today-act {
-  margin-top: 40rpx;
-  padding: 28rpx 0;
+  margin-top: var(--space-group);
+  padding: var(--space-group) 0 0;
   border-top: 1rpx solid rgba(33, 29, 23, 0.08);
 }
 
@@ -1028,8 +1028,8 @@
   align-items: center;
   justify-content: space-between;
   min-height: var(--tap-min);
-  margin-top: 40rpx;
-  padding-top: 24rpx;
+  margin-top: var(--space-group);
+  padding-top: var(--space-group);
   border-top: 1rpx solid rgba(33, 29, 23, 0.08);
 }
 
@@ -1045,7 +1045,7 @@
   line-height: 1;
 }
 
-.tier-full { margin-top: 8rpx; }
+.tier-full { margin-top: var(--space-tight); }
 
 /* ── 底部操作：一个主操作 + 一个次操作，其余收进「更多」 ── */
 .more-toggle {
@@ -1087,8 +1087,8 @@
   border-bottom: 0;
 }
 .dream-feedback {
-  margin-top: 28rpx;
-  padding-top: 24rpx;
+  margin-top: var(--space-group);
+  padding-top: var(--space-group);
   border-top: 1rpx solid rgba(33, 29, 23, 0.12);
 }
 
@@ -1125,12 +1125,26 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 24rpx;
+  margin-top: var(--space-group);
   padding: 18rpx 20rpx;
   border-left: 3rpx solid var(--gold-line);
   background: rgba(184, 134, 59, 0.08);
   color: var(--ink-70);
   font-size: 23rpx;
+}
+
+.cloud-sync-copy {
+  flex: 1;
+  min-width: 0;
+  padding-right: 16rpx;
+}
+
+.cloud-sync-reason {
+  display: block;
+  margin-top: 6rpx;
+  color: var(--ink-45, rgba(33, 29, 23, 0.45));
+  font-size: 20rpx;
+  word-break: break-all;
 }
 
 .dream-chat-entry.has-feedback {

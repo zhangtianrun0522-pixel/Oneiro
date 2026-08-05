@@ -165,14 +165,10 @@
         <text class="reading-copy">{{dream.result.dream_translation}}</text>
       </view>
 
-      <view wx:if="{{dream.result.alternative_reading}}" class="reading-block alternative-reading">
-        <text class="reading-label-neutral">另一种可能</text>
-        <text class="reading-copy">{{dream.result.alternative_reading}}</text>
-      </view>
-
       <view wx:if="{{dream.result.cultural_symbolism}}" class="reading-block cultural-reading">
-        <text class="reading-label-neutral">文化象征</text>
+        <text class="reading-label-neutral">传统解梦怎么说</text>
         <text class="reading-copy">{{dream.result.cultural_symbolism}}</text>
+        <text class="reading-boundary">这是传统解梦里的讲法，不是对你的判断。</text>
       </view>
     </view>
 
@@ -191,8 +187,13 @@
     </view>
   </view>
 
+  <!-- 「未同步，稍后自动重试」反复出现却不说为什么，用户只能一直看着它。
+       云函数其实每次都返回了失败原因，这里必须显示出来，否则无从排查。 -->
   <view wx:if="{{cloudSyncPending}}" class="cloud-sync-notice">
-    <text>{{cloudRepairing ? '云端同步中' : (qualitySyncPending ? '高清图待同步' : '未同步，稍后自动重试')}}</text>
+    <view class="cloud-sync-copy">
+      <text>{{cloudRepairing ? '云端同步中' : (qualitySyncPending ? '高清图待同步' : '未同步，稍后自动重试')}}</text>
+      <text wx:if="{{cloudSyncReason && !cloudRepairing}}" class="cloud-sync-reason">{{cloudSyncReason}}</text>
+    </view>
     <button wx:if="{{!cloudRepairing}}" class="image-retry" bindtap="retryCloudSync">重试同步</button>
   </view>
 

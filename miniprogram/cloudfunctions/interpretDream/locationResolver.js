@@ -56,6 +56,42 @@ const CITY_LOCATIONS = [
   });
 });
 
+// 上面 49 个城市只覆盖省会和主要地级市。用户写「山东临沭」「河南周口」这类
+// 地名时会整个解析失败，功能直接不可用——而报错还只说「请补充出生城市」。
+// 省级兜底用省会经度近似：跨省最多相差一两个经度，真太阳时误差约几分钟，
+// 只在极少数贴着时辰边界的情况下才会影响时柱。这比因为不认识地名就拒绝
+// 出具解读要诚实得多，所以兜底结果会显式标注精度已降级。
+const PROVINCE_FALLBACKS = [
+  { name: '山东', capital: '济南', aliases: ['山东'] },
+  { name: '江苏', capital: '南京', aliases: ['江苏'] },
+  { name: '浙江', capital: '杭州', aliases: ['浙江'] },
+  { name: '安徽', capital: '合肥', aliases: ['安徽'] },
+  { name: '福建', capital: '福州', aliases: ['福建'] },
+  { name: '江西', capital: '南昌', aliases: ['江西'] },
+  { name: '湖北', capital: '武汉', aliases: ['湖北'] },
+  { name: '湖南', capital: '长沙', aliases: ['湖南'] },
+  { name: '广东', capital: '广州', aliases: ['广东'] },
+  { name: '河南', capital: '郑州', aliases: ['河南'] },
+  { name: '河北', capital: '石家庄', aliases: ['河北'] },
+  { name: '山西', capital: '太原', aliases: ['山西'] },
+  { name: '辽宁', capital: '沈阳', aliases: ['辽宁'] },
+  { name: '吉林', capital: '长春', aliases: ['吉林'] },
+  { name: '黑龙江', capital: '哈尔滨', aliases: ['黑龙江'] },
+  { name: '四川', capital: '成都', aliases: ['四川'] },
+  { name: '贵州', capital: '贵阳', aliases: ['贵州'] },
+  { name: '云南', capital: '昆明', aliases: ['云南'] },
+  { name: '广西', capital: '南宁', aliases: ['广西'] },
+  { name: '海南', capital: '海口', aliases: ['海南'] },
+  { name: '陕西', capital: '西安', aliases: ['陕西'] },
+  { name: '甘肃', capital: '兰州', aliases: ['甘肃'] },
+  { name: '宁夏', capital: '银川', aliases: ['宁夏'] },
+  { name: '青海', capital: '西宁', aliases: ['青海'] },
+  { name: '新疆', capital: '乌鲁木齐', aliases: ['新疆'] },
+  { name: '内蒙古', capital: '呼和浩特', aliases: ['内蒙古', '内蒙'] },
+  { name: '西藏', capital: '拉萨', aliases: ['西藏'] },
+  { name: '台湾', capital: '台北', aliases: ['台湾'] }
+];
+
 function normalizePlace(value) {
   return String(value || '')
     .trim()
@@ -79,6 +115,28 @@ function resolveBirthPlace(value) {
         return true;
       }
       return false;
+    });
+  });
+
+  if (match) return Object.assign({}, match, { input: input, precision: 'city' });
+
+  // 城市认不出来时退到省级中心，而不是整个拒绝。
+  PROVINCE_FALLBACKS.some(function (province) {
+    return province.aliases.some(function (alias) {
+      if (normalized.indexOf(normalizePlace(alias)) < 0) return false;
+      var capital = null;
+      CITY_LOCATIONS.some(function (location) {
+        if (location.name !== province.capital) return false;
+        capital = location;
+        return true;
+      });
+      if (!capital) return false;
+      match = Object.assign({}, capital, {
+        name: province.name,
+        precision: 'province',
+        approximatedFrom: province.capital
+      });
+      return true;
     });
   });
 
