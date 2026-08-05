@@ -905,8 +905,43 @@ async function pipelineFailureStats() {
   }
 }
 
+async function distinctDreamCount(eventName) {
+  const $ = db.command.aggregate;
+  const result = await db.collection('events')
+    .aggregate()
+    .match({ eventName: eventName })
+    .group({ _id: '$metadata.dreamId' })
+    .group({ _id: null, total: $.sum(1) })
+    .end();
+  const row = (result && result.list && result.list[0]) || {};
+  return Number(row.total || 0);
+}
+
+// 展开率按「被展开过的梦」而不是事件条数计：一个人反复展开收起会刷出多条
+// result_full_reading_expand，按条数算能超过 100%。
+//
+// 这个数要反着读。折叠区改造后展开率「下降」才是成功——因为「与你有关」和
+// 「你之前提到过」已经搬到折叠外，用户不必展开就能读到正片。真正的危险信号
+// 是展开率高：那说明外面留的东西不够，用户还得自己去翻。
+async function readingDepthStats() {
+  try {
+    const viewedDreams = await distinctDreamCount('result_view');
+    const expandedDreams = await distinctDreamCount('result_full_reading_expand');
+
+    return {
+      ok: true,
+      viewedDreams: viewedDreams,
+      expandedDreams: expandedDreams,
+      expandRate: ratio(expandedDreams, viewedDreams)
+    };
+  } catch (error) {
+    return { ok: false, reason: 'reading_depth_stats_failed' };
+  }
+}
+
 async function internalStats() {
   const memoryEcho = await memoryEchoStats();
+  const readingDepth = await readingDepthStats();
   const retention = await retentionFunnel();
   const pipeline = await pipelineFailureStats();
 
@@ -914,6 +949,7 @@ async function internalStats() {
     ok: true,
     generatedAt: new Date().toISOString(),
     memoryEcho: memoryEcho,
+    readingDepth: readingDepth,
     retention: retention,
     pipeline: pipeline
   };

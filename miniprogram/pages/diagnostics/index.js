@@ -153,6 +153,7 @@ function normalizeInternalStats(result) {
   if (!result || !result.ok) return null;
 
   var echo = (result.memoryEcho && result.memoryEcho.ok) ? result.memoryEcho : null;
+  var depth = (result.readingDepth && result.readingDepth.ok) ? result.readingDepth : null;
   var retention = (result.retention && result.retention.ok) ? result.retention : null;
   var pipeline = (result.pipeline && result.pipeline.ok) ? result.pipeline : null;
   var interpretation = pipeline ? pipeline.interpretation : null;
@@ -167,6 +168,10 @@ function normalizeInternalStats(result) {
       detail: String(echo.hitReadings) + ' / ' + String(echo.offeredReadings) + ' 次带呼应的解读',
       echoUseRateText: percentText(echo.echoUseRate, echo.offeredEchoes),
       echoDetail: String(echo.usedEchoes) + ' / ' + String(echo.offeredEchoes) + ' 处呼应被写进解读'
+    } : null,
+    readingDepth: depth ? {
+      expandRateText: percentText(depth.expandRate, depth.viewedDreams),
+      detail: String(depth.expandedDreams) + ' / ' + String(depth.viewedDreams) + ' 个梦的折叠区被展开过'
     } : null,
     retention: retention ? {
       atLeast1: retention.atLeast1,

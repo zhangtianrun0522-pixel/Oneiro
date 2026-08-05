@@ -77,16 +77,37 @@
       <button class="image-retry" loading="{{retryingInterpretation}}" disabled="{{retryingInterpretation}}" bindtap="retryInterpretation">重新解读</button>
     </view>
 
-    <!-- 第二层：三个视角，设计稿里没有分组标题，三个 block 直接平铺 -->
+    <!-- 第二层按「可核对性」排序：用户能当场核对的排前面，对谁都成立的降到
+         折叠里。「你之前提到过」引的是用户自己确认过的原话，可核对性最高，
+         有就置顶；文化象征对每个做同样梦的人都一样，因此下移。
+         这里同时决定了记忆呼应能否被看见——prompt 要求它落在 underneath 或
+         possible_connections，两处现在都在折叠外，不再是抛硬币。 -->
     <block wx:if="{{!interpretationUnavailable}}">
-      <view wx:if="{{dream.result.cultural_symbolism}}" class="reading-block cultural-reading">
-        <text class="reading-label">文化象征</text>
-        <text class="reading-copy">{{dream.result.cultural_symbolism}}</text>
+      <view wx:if="{{dream.result.referenced_life_note}}" class="reading-block life-note-reading">
+        <text class="reading-label">你之前提到过</text>
+        <text class="reading-copy">"{{dream.result.referenced_life_note.text}}"</text>
+        <view class="life-note-footer" bindtap="openLifeNoteSource">
+          <text class="life-note-date">{{dream.result.referenced_life_note.sourceDate}}</text>
+          <text class="life-note-link">为什么这样理解？</text>
+        </view>
       </view>
 
       <view wx:if="{{dream.result.underneath}}" class="reading-block psychological-reading">
         <text class="reading-label">心理视角</text>
         <text class="reading-copy">{{dream.result.underneath}}</text>
+      </view>
+
+      <!-- 唯一真正碰到用户现实的模块。零关联要说得出口：主动说这次没找到，
+           比每次都硬找一个更能让人相信找到的那次。 -->
+      <view class="reading-block">
+        <text class="reading-label">与你有关</text>
+        <block wx:if="{{possibleConnections.length}}">
+          <view class="connection-list">
+            <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{item}}</text>
+          </view>
+          <text class="reading-boundary">这是一种理解角度，你可以保留、修正或否定它。</text>
+        </block>
+        <text wx:else class="reading-copy">这次没有找到和你生活的具体呼应。梦不一定每次都指向什么。</text>
       </view>
 
       <view wx:if="{{metaphysicalEntryVisible && !metaphysicalReadingReady}}" class="reading-block metaphysical-reading">
@@ -130,9 +151,11 @@
       </view>
     </block>
 
-    <!-- 第三层：完整展开，默认收起 -->
+    <!-- 第三层：可选的补充阅读，默认收起。名字必须诚实——叫「完整解读」会
+         暗示正片在里面，既贬低了外面，又保证打开后失望（里面开场是用户自己
+         刚写的梦的复述）。 -->
     <view wx:if="{{!interpretationUnavailable}}" class="tier-toggle" bindtap="toggleFullReading">
-      <text class="tier-toggle-label">完整解读</text>
+      <text class="tier-toggle-label">再多看一点</text>
       <text class="tier-toggle-icon">{{showFullReading ? '收起 ↑' : '展开 ↓'}}</text>
     </view>
 
@@ -142,26 +165,14 @@
         <text class="reading-copy">{{dream.result.dream_translation}}</text>
       </view>
 
-      <view wx:if="{{dream.result.referenced_life_note}}" class="reading-block life-note-reading">
-        <text class="reading-label-neutral">你之前提到过</text>
-        <text class="reading-copy">"{{dream.result.referenced_life_note.text}}"</text>
-        <view class="life-note-footer" bindtap="openLifeNoteSource">
-          <text class="life-note-date">{{dream.result.referenced_life_note.sourceDate}}</text>
-          <text class="life-note-link">为什么这样理解？</text>
-        </view>
-      </view>
-
-      <view class="reading-block">
-        <text class="reading-label-neutral">与你有关</text>
-        <view class="connection-list">
-          <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{item}}</text>
-        </view>
-        <text class="reading-boundary">这是一种理解角度，你可以保留、修正或否定它。</text>
-      </view>
-
-      <view wx:if="{{!interpretationUnavailable}}" class="reading-block alternative-reading">
+      <view wx:if="{{dream.result.alternative_reading}}" class="reading-block alternative-reading">
         <text class="reading-label-neutral">另一种可能</text>
         <text class="reading-copy">{{dream.result.alternative_reading}}</text>
+      </view>
+
+      <view wx:if="{{dream.result.cultural_symbolism}}" class="reading-block cultural-reading">
+        <text class="reading-label-neutral">文化象征</text>
+        <text class="reading-copy">{{dream.result.cultural_symbolism}}</text>
       </view>
     </view>
 

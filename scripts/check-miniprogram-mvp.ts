@@ -311,6 +311,7 @@ function createWxMock(): WxMock {
       ok: true,
       generatedAt: '2026-08-05T02:00:00.000Z',
       memoryEcho: { ok: true, offeredReadings: 8, hitReadings: 6, offeredEchoes: 14, usedEchoes: 7, hitRate: 75, echoUseRate: 50 },
+      readingDepth: { ok: true, viewedDreams: 40, expandedDreams: 8, expandRate: 20 },
       retention: { ok: true, atLeast1: 20, atLeast3: 9, atLeast5: 4, totalDreams: 62, rate3: 45, rate5: 20, dreamsPerUser: 3.1 },
       pipeline: {
         ok: true,
@@ -970,6 +971,10 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', '梦里发生了什么'],
   ['miniprogram/pages/result/index.wxml', '与你有关'],
   ['miniprogram/pages/result/index.wxml', '文化象征'],
+  ['miniprogram/pages/result/index.wxml', '再多看一点'],
+  ['miniprogram/pages/result/index.wxml', '这次没有找到和你生活的具体呼应'],
+  ['miniprogram/pages/diagnostics/index.wxml', '折叠区展开率'],
+  ['miniprogram/cloudfunctions/saveDream/index.js', 'readingDepthStats'],
   ['miniprogram/pages/result/index.wxml', '心理视角'],
   ['miniprogram/pages/result/index.wxml', '聊聊这个梦'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="retryCloudSync"'],
@@ -1201,6 +1206,35 @@ assert.equal(contentSafety.validateDreamText('我梦见医生给我诊断癌症'
 assert.equal(read('miniprogram/cloudfunctions/interpretDream/index.js').includes('profile.confirmedPortrait.themes'), false);
 assert.equal(read('miniprogram/cloudfunctions/interpretDream/index.js').includes('profile.confirmedPortrait.traits'), false);
 assertNotIncludes('miniprogram/pages/home/index.js', 'localDreamOracle');
+// ── 折叠边界：这次改版的全部意义就在这条线的两侧 ──
+//
+// 共鸣来自「具体到用户能当场核对」。所以能被核对的内容必须在折叠外，对谁都
+// 成立的内容才进折叠。字符串存在性检查测不出位置——三个模块搬回原处，上面
+// 那批断言依然全绿——所以这里直接比较它们在模板里的偏移量。
+//
+// 「与你有关」尤其关键：prompt 要求已核实的历史呼应落在 possible_connections
+// 或 underneath，两处都必须可见，否则记忆呼应命中率会显示很高，而用户一个字
+// 都没看到。
+// 注释里也会出现这些模块名，会让 indexOf 量到错误的位置，所以先剥掉注释，
+// 只对真正渲染的标记做位置判断。
+const resultTemplate = read('miniprogram/pages/result/index.wxml').replace(/<!--[\s\S]*?-->/g, '');
+const foldStart = resultTemplate.indexOf('class="tier-full"');
+assert.ok(foldStart > 0, '结果页应保留折叠区');
+for (const visible of ['与你有关', '你之前提到过', '心理视角', '这是一种理解角度']) {
+  const at = resultTemplate.indexOf(visible);
+  assert.ok(at > 0 && at < foldStart, `${visible} 必须在折叠区之外`);
+}
+for (const folded of ['梦里发生了什么', '另一种可能', '文化象征']) {
+  const at = resultTemplate.indexOf(folded);
+  assert.ok(at > foldStart, `${folded} 应留在折叠区内`);
+}
+
+// 兜底文案不得预设梦里有什么。「一段话」这类预设一旦在无对话的梦上触发，
+// 就是对用户自己的梦说了假话。
+assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', '梦里出现了一段让你停住的话');
+assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', '这也可能只是梦里一段需要慢慢消化的话');
+assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'person pausing before an unfinished conversation');
+
 assertNotIncludes('miniprogram/pages/home/index.js', 'buildLocalDreamResult');
 assertNotIncludes('miniprogram/pages/home/index.js', 'createLocalResult');
 assertNotIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'cloudbase-static-fallback');
@@ -2178,6 +2212,8 @@ const internalStats = (diagnosticsPage.data as Record<string, any>).internalStat
 assert.equal(internalStats.memoryEcho.hitRateText, '75%');
 assert.equal(internalStats.memoryEcho.detail, '6 / 8 次带呼应的解读');
 assert.equal(internalStats.memoryEcho.echoUseRateText, '50%');
+assert.equal(internalStats.readingDepth.expandRateText, '20%');
+assert.equal(internalStats.readingDepth.detail, '8 / 40 个梦的折叠区被展开过');
 assert.equal(internalStats.retention.rate3Text, '45%');
 assert.equal(internalStats.retention.rate5Text, '20%');
 assert.equal(internalStats.retention.dreamsPerUser, '3.1');

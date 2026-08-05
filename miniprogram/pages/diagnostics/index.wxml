@@ -58,6 +58,15 @@
       <text class="metric-note">分母只算系统确实找到了历史重复的解读。今晚的梦与历史无重合时保持沉默是正确行为，不计入。</text>
     </view>
 
+    <view wx:if="{{internalStats.readingDepth}}" class="metric-block">
+      <view class="metric-head">
+        <text class="metric-name">折叠区展开率</text>
+        <text class="metric-figure">{{internalStats.readingDepth.expandRateText}}</text>
+      </view>
+      <text class="metric-detail">{{internalStats.readingDepth.detail}}</text>
+      <text class="metric-note">这个数要反着读：正片已经搬到折叠外，展开率下降才是成功。展开率高说明外面留的东西不够，用户还得自己去翻。</text>
+    </view>
+
     <view wx:if="{{internalStats.retention}}" class="metric-block">
       <view class="metric-head">
         <text class="metric-name">留存漏斗</text>

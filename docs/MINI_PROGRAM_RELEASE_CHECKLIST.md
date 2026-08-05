@@ -171,6 +171,12 @@ Scan the preview QR on a real device and verify:
     the exact failure the hit rate exists to catch.
 14. Revisit is offered for a dream recorded overnight and still within seven days —
     not only for one recorded literally yesterday.
+15. Without expanding anything, the reading already shows 「与你有关」, 「心理视角」,
+    the boundary line 「你可以保留、修正或否定它」, and 「你之前提到过」 when a
+    life note applies. If any of these require tapping 「再多看一点」, the fold
+    boundary has regressed and the memory work is invisible to most users.
+16. A dream with no real-life overlap says so out loud
+    (「这次没有找到和你生活的具体呼应」) instead of substituting a vague summary.
 
 ## Stop Conditions
 

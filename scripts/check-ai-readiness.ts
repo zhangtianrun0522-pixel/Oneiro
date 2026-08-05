@@ -994,8 +994,12 @@ const technicalLeakResult = normalizeAiResult(
   baziChart,
   null
 );
-assert.equal(technicalLeakResult.reading_hook, '这段话让画面形成了一处需要暂缓定论的张力。');
+assert.equal(technicalLeakResult.reading_hook, '这个梦还需要你自己先看一遍，再决定它像什么。');
 assert.doesNotMatch(technicalLeakResult.reading_hook, /四柱|八字|日主|五行|十神|排盘|命盘|命理|命格/);
+// 这个梦里没有任何人说话。兜底文案一旦预设「这段话」，就是对用户自己的梦说了
+// 假话——比留白更伤信任，也违反「只引用梦里真实出现的内容」这条红线。
+assert.doesNotMatch(technicalLeakResult.reading_hook, /这段话|一段话|听见/);
+assert.doesNotMatch(technicalLeakResult.alternative_reading, /这段话|一段话|听见/);
 
 const restrictedDreamText = '我梦见别人说我的命运由八字决定。';
 const restrictedDreamPayload = JSON.parse(JSON.stringify(completeModelPayload));

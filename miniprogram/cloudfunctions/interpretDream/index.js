@@ -313,20 +313,26 @@ function repairDreamTerms(value) {
   return '';
 }
 
+// 兜底文案不得预设梦里有什么。旧版本一律预设梦里有人说过话，一旦在「沙漠里
+// 下暴雨」这类梦上触发，就是对用户自己的梦说了假话。别的泛还能忍，说错我的梦
+// 我立刻知道你在编，这是最伤信任的一类错，也直接违反红线一（只引用梦里真实
+// 出现的内容）。兜底的正确形式是留白或如实说明，不是补一句对谁都成立的话。
 function safeBaseFallback(field) {
   const fallbacks = {
     emotional_weather: '这个梦留下了一点需要慢慢辨认的感受。',
     oracle: '先停在画面与感受上，不急着为它下结论。',
-    card_insight: '这个梦把一句让人停住的话放到了画面中央。',
-    dream_translation: '梦里出现了一段让你停住的话，画面停在你听见它的那一刻。',
-    reading_hook: '这段话让画面形成了一处需要暂缓定论的张力。',
-    mirror: '一句话在梦里留下了停顿。',
-    alternative_reading: '这也可能只是梦里一段需要慢慢消化的话。',
-    integration_question: '这段话让你最在意的感受是什么？',
-    one_small_act: '记下这段话带来的感受',
-    image: '一个安静的梦中场景，人物停在一句话前。',
-    image_prompt: 'A quiet dream scene with a person pausing before an unfinished conversation.',
-    echo: '先看看这段话留下的感受。',
+    card_insight: '这个梦留下了一个还没被命名的画面。',
+    dream_translation: '这次没能生成复述，你记下的原梦完整保留在上方。',
+    reading_hook: '这个梦还需要你自己先看一遍，再决定它像什么。',
+    // mirror 不是必填字段：留空后「与你有关」会如实显示「这次没有找到」，
+    // 而不是拿一句总结去顶替不存在的关联。
+    mirror: '',
+    alternative_reading: '也可以先不急着给这个梦一个解释。',
+    integration_question: '这个梦里，你最想再看一眼的是哪一处？',
+    one_small_act: '记下这个梦留下的感受',
+    image: '一个安静的梦中场景。',
+    image_prompt: 'A quiet, minimal dream scene with soft light and open space.',
+    echo: '先把这个梦放着，不急着收拢它。',
     visual_text: '梦中一个安静的片段',
     visual_event: '梦中一个停留的画面',
     visual_setting: '梦中场景'
