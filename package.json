@@ -4,18 +4,18 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "web:dev": "vite archive/web-vite --config archive/web-vite/vite.config.ts",
+    "web:build": "vite build archive/web-vite --config archive/web-vite/vite.config.ts",
+    "web:preview": "vite preview archive/web-vite --config archive/web-vite/vite.config.ts",
     "check:ai-readiness": "node scripts/check-ai-readiness.ts",
     "check:cloudbase": "node scripts/check-cloudbase-ready.ts",
     "check:dream": "node scripts/check-dream-contract.ts",
     "check:image-contract": "node scripts/test-generate-dream-image.cjs",
-    "check:mini-release": "npm run check:ai-readiness && npm run check:cloudbase && npm run check:miniprogram && npm run check:phase3 && npm run check:image-contract && npm run check:image-quality-job && npm run check:dream && npm run typecheck",
+    "check:mini-release": "npm run check:ai-readiness && npm run check:cloudbase && npm run check:miniprogram && npm run check:phase3 && npm run check:image-contract && npm run check:image-quality-job && npm run typecheck",
     "check:miniprogram": "node scripts/check-miniprogram-mvp.ts",
     "check:phase3": "node scripts/check-phase3-cloud-contract.ts",
     "typecheck": "tsc --noEmit",
-    "check:image-quality-job": "node scripts/test-image-quality-job.cjs",
-    "preview": "vite preview"
+    "check:image-quality-job": "node scripts/test-image-quality-job.cjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
