@@ -46,84 +46,20 @@
     </block>
   </view>
 
-  <view class="portrait-block">
-    <view class="section-row">
-      <text class="section-label">阶段画像{{memoryState.current ? ' · V' + memoryState.current.version : ''}}</text>
-      <text class="portrait-focus-label {{portraitMigrationState === 'failed' ? 'is-paused' : portraitMigrationState ? 'is-waiting' : memoryState.current ? (memoryState.current.useInFutureReadings === false ? 'is-paused' : 'is-active') : 'is-waiting'}}">{{portraitMigrationState === 'migrating' ? '画像迁移中' : portraitMigrationState === 'failed' ? '画像迁移失败' : memoryState.current ? (memoryState.current.useInFutureReadings === false ? '已暂停解读' : '用于解读中') : (!memoryLoaded ? '读取中' : (portraitLoading ? '正在梳理' : (portraitLoadError || portraitGenerateFailed ? '暂时不可用' : '等待形成')))}}</text>
-    </view>
-
-    <!-- 内容优先：只要当前画像有值就展示，不受异步读取状态影响。 -->
-    <view wx:if="{{memoryState.current}}" class="portrait-body">
-      <textarea
-        wx:if="{{portraitEditing}}"
-        class="portrait-editor"
-        value="{{portraitEditSummary}}"
-        maxlength="500"
-        auto-height
-        bindinput="onPortraitSummaryInput"
-      />
-      <text wx:else class="portrait-summary">{{memoryState.current.summary}}</text>
-      <view wx:if="{{portraitEditing}}" class="portrait-actions">
-        <button class="portrait-primary" disabled="{{portraitSaving || portraitLoading}}" loading="{{portraitSaving}}" bindtap="savePortraitEdit">保存修改</button>
-        <button class="portrait-secondary" bindtap="cancelPortraitEdit">取消</button>
+  <!-- 阶段画像的完整面板已经搬到「梦册」顶部。这一页是一整页表单——出生日期、
+       性别、保存资料、隐私说明——把产品里最有辨识度的产出摆在表单上方，它会
+       被读成一个用户自己填的字段，而不是系统产出的东西。这里只留一个入口：
+       老用户仍然能从熟悉的位置找到它，但不再有两份可编辑的画像 UI。 -->
+  <view class="portrait-entry" bindtap="openPortrait">
+    <view class="portrait-entry-copy">
+      <view class="portrait-entry-head">
+        <text class="section-label">阶段画像{{portraitVersionLabel ? ' · ' + portraitVersionLabel : ''}}</text>
+        <text wx:if="{{portraitHasUpdate}}" class="portrait-entry-badge">已更新</text>
       </view>
-      <!-- 「暂停用于解读」是低频但必要的控制项。放在编辑态里，默认视图就只
-           剩两个动作；用户已经在主动管理这段文字时，才需要看到它。 -->
-      <text
-        wx:if="{{portraitEditing && memoryState.current.useInFutureReadings !== false}}"
-        class="portrait-pause-link"
-        bindtap="togglePortraitUse"
-      >暂停用于解读</text>
+      <text class="portrait-entry-preview">{{memoryState.current ? memoryState.current.summary : (memoryLoaded ? '还在为你梳理，记下更多梦后它会成形。' : '正在读取 Oneiro 对你的理解…')}}</text>
+      <text class="portrait-entry-status">{{portraitStatusLabel}}</text>
     </view>
-
-    <!-- 首次进入、云端还没返回：明确的加载态，不是空态 -->
-    <view wx:elif="{{!memoryLoaded}}" class="portrait-loading-card">
-      <text class="portrait-loading-copy">正在读取 Oneiro 对你的理解…</text>
-      <view class="portrait-loading-bars">
-        <view class="portrait-loading-bar"></view>
-        <view class="portrait-loading-bar"></view>
-        <view class="portrait-loading-bar is-short"></view>
-      </view>
-    </view>
-
-    <!-- 加载失败或自动生成失败：明确告诉用户可以重试，不把失败误判成无画像 -->
-    <view wx:elif="{{portraitLoadError}}" class="portrait-empty-card">
-      <text class="portrait-empty-title">暂时没连上，点击重试</text>
-      <text class="portrait-empty-copy">你的资料不会受影响，连上后我会继续为你梳理。</text>
-      <text class="portrait-empty-retry" bindtap="retryPortrait">重试</text>
-    </view>
-
-    <!-- 无画像时自动生成，避免让用户先理解并选择一堆操作 -->
-    <view wx:elif="{{portraitLoading}}" class="portrait-empty-card">
-      <text class="portrait-empty-title">正在为你梳理</text>
-      <text class="portrait-empty-copy">我会从你留下的资料、梦和生活片段开始，先整理一版简短的当下观察。</text>
-    </view>
-
-    <view wx:elif="{{portraitGenerateFailed}}" class="portrait-empty-card">
-      <text class="portrait-empty-title">暂时没连上，点击重试</text>
-      <text class="portrait-empty-copy">你的资料不会受影响，连上后我会继续为你梳理。</text>
-      <text class="portrait-empty-retry" bindtap="retryPortrait">重试</text>
-    </view>
-
-    <!-- 生成尚未开始的短暂空态会立即触发 ensurePortraitGenerated；这里仅作兜底 -->
-    <view wx:else class="portrait-empty-card">
-      <text class="portrait-empty-title">正在为你梳理</text>
-      <text class="portrait-empty-copy">我会从你留下的真实线索开始。</text>
-    </view>
-
-    <!-- 默认视图固定只有两个动作。画像被暂停是异常状态，此时第二个动作换成
-         「恢复用于解读」，保证一步就能退出，而不是把三个动作长期摆在这里。 -->
-    <view wx:if="{{!portraitEditing && memoryState.current}}" class="portrait-links-row">
-      <button class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="startPortraitEdit">修改这段理解</button>
-      <button wx:if="{{memoryState.current.useInFutureReadings === false}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="togglePortraitUse">恢复用于解读</button>
-      <button wx:else class="portrait-link-btn" disabled="{{portraitLoading}}" loading="{{portraitLoading}}" bindtap="refreshPortrait">重新梳理</button>
-    </view>
-
-    <view wx:if="{{memoryState.current && portraitGenerateFailed}}" class="portrait-links-row">
-      <text class="portrait-empty-retry" bindtap="refreshPortrait">重新梳理失败，点击重试</text>
-    </view>
-
-    <text wx:if="{{memoryState.current && insights.dreamCount < 3}}" class="portrait-growth-hint">随着你记录更多梦，这份画像会越来越具体</text>
+    <text class="portrait-entry-arrow">在梦册查看 ›</text>
   </view>
 
   <view class="recent-clues-block section-divider">

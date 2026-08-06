@@ -140,9 +140,13 @@
 }
 .drag-label--cancel { color: var(--cinnabar-ink); }
 
-/* 下滑确认区是「下滑提交」这个手势唯一有实体感的落点，虚线描边 = 待命，
-   旧金描边 = 已进入感应范围，墨色反色 = 已越过阈值松手即提交，和圆环
-   is-drag-submit 的视觉语言呼应，不做花哨的营销动效。
+/* 圆环下方这块有两个身份，共用同一块几何空间但视觉语言完全不同：
+   · is-actionable（有草稿、未录音）＝ 页面此刻唯一的主动作，深墨实心块，
+     和全站 .primary-button 同一套语言（2rpx 直角、墨底纸字、800 字重）。
+     胶囊圆角在这套纸墨排版里是异物——那是上一版读起来「像个没做完的标签」
+     的主要原因。
+   · is-target（录音中）＝ 下滑落点，虚线描边 = 待命，旧金 = 进入感应范围，
+     墨色实线 = 越过阈值松手即提交。
    始终占位、只切换 opacity：条件渲染会在手势进行到一半时插入整块高度，
    把下方文字顶走，页面自己跳一下。 */
 .confirm-target {
@@ -150,29 +154,59 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 216rpx;
-  height: 72rpx;
+  width: 400rpx;
+  height: 96rpx;
   /* 圆环向下跟手上限 40px（= DRAG_SUBMIT_THRESHOLD）。128rpx(64px) 静止净空
      → 跟到底时仍留 24px，两者不会读成相接的一个整体。 */
   margin: 128rpx auto 0;
+  padding: 0;
   border: 2rpx dashed rgba(33, 29, 23, 0.28);
-  border-radius: 36rpx;
+  border-radius: 2rpx;
+  background: transparent;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
 }
+.confirm-target::after { border: 0; }
 
-/* 有草稿或正在录音：低调显形，让「往哪滑」在动手之前就是已知的。 */
-.confirm-target.is-visible { opacity: 0.62; }
+/* 录音中：低调显形，让「往哪滑」在动手之前就是已知的。 */
+.confirm-target.is-target { opacity: 0.62; }
 .confirm-target.is-near,
-.confirm-target.is-armed,
-.confirm-target.is-bounce { opacity: 1; }
+.confirm-target.is-armed { opacity: 1; }
+
+/* 有草稿、未录音：这是页面此刻唯一的主动作，必须读起来就是一个按钮。 */
+.confirm-target.is-actionable {
+  opacity: 1;
+  pointer-events: auto;
+  border: 1rpx solid var(--ink);
+  background: var(--ink);
+  box-shadow: 0 10rpx 24rpx rgba(33, 29, 23, 0.14);
+}
+.confirm-target.is-actionable .confirm-target-label {
+  color: var(--paper);
+  font-size: var(--fs-aux);
+  font-weight: 800;
+}
+.confirm-target.is-actionable:active {
+  transform: translateY(2rpx);
+  box-shadow: 0 4rpx 12rpx rgba(33, 29, 23, 0.16);
+}
+/* 微信内置的 button[disabled] 会把底色刷成 #f7f7f7、文字刷成浅灰，选择器
+   权重比 .confirm-target 高。这里只中和它的配色，可见度仍然由上面的
+   is-target / is-armed 等状态类决定——录音中的落点是 disabled 的，但必须
+   看得见。 */
+.confirm-target[disabled] {
+  background: transparent;
+  color: inherit;
+}
+.confirm-target.is-armed[disabled] { background: var(--paper-raised); }
 
 .confirm-target-label {
   color: rgba(33, 29, 23, 0.5);
   font-size: var(--fs-label);
   font-weight: 700;
-  letter-spacing: 1rpx;
+  letter-spacing: 2rpx;
+  line-height: 1.2;
 }
 
 /* 靠近但未过阈值：描边转旧金，提示「已经在感应范围内」 */
@@ -184,7 +218,7 @@
 }
 
 /* 越过阈值：实线深墨描边 + 浅纸底，读作「已就绪，松手即提交」。
-   这里刻意不做成深墨实心——圆环在 submit 态本身就是深墨填充，
+   这里刻意不做成深墨实心——录音中的圆环本身就是深墨填充，
    两个同色实心块靠近时会读成一个整体形状。 */
 .confirm-target.is-armed {
   border-style: solid;
@@ -194,16 +228,6 @@
 }
 .confirm-target.is-armed .confirm-target-label {
   color: var(--ink);
-}
-
-/* 拖了但没到阈值就松手：一次轻微的横向回弹，提示「差一点」而不是报错抖动 */
-.confirm-target.is-bounce {
-  animation: confirm-target-bounce 0.32s ease;
-}
-@keyframes confirm-target-bounce {
-  0%, 100% { transform: translateX(0); }
-  30% { transform: translateX(-6rpx); }
-  60% { transform: translateX(6rpx); }
 }
 
 /* 正圆语音按钮，全页画面主角。width 必须带 !important，否则会被微信
@@ -253,18 +277,34 @@
 .voice-button.has-draft { border-color: rgba(184, 134, 59, 0.55); }
 .voice-button.has-draft .voice-dot { background: var(--gold-ink); }
 
-/* 录音中：只变描边和圆心点的颜色，不再整圆反色，呼吸动画让位给真实的
-   录音状态，避免两种动效互相打架 */
-.voice-button.is-recording { animation: none; border-color: var(--cinnabar-ink); }
-.voice-button.is-recording .voice-dot { background: var(--cinnabar); }
+/* 录音中：整圆变黑。这是「已经进入语音输入」唯一的、不依赖文字的信号，
+   而且必须在整个拖拽过程中保持不变——录音不会因为手指移动而中断，圆环
+   也就不该在拖动时退回未录音的样子。呼吸动画让位给真实的录音状态。 */
+.voice-button.is-recording {
+  animation: none;
+  border-color: var(--ink);
+  background: var(--ink);
+}
+.voice-button.is-recording .voice-dot { background: var(--paper); }
 
-/* 拖拽进入「提交区」：整圆反色，纸色圆心点，视觉上等同「已经确认」 */
-.voice-button.is-drag-submit { animation: none; border-color: var(--ink); background: var(--ink); }
-.voice-button.is-drag-submit .voice-dot { background: var(--paper); }
+/* 拖拽进入「提交区」：底色已经是黑的，靠一圈旧金光环区分「松手即解读」，
+   不再靠改填充色——那样会和「录音中」抢同一个信号。 */
+.voice-button.is-drag-submit {
+  animation: none;
+  border-color: var(--gold-line);
+  background: var(--ink);
+  box-shadow: 0 0 0 8rpx rgba(184, 134, 59, 0.28);
+}
+.voice-button.is-drag-submit .voice-dot { background: var(--gold-line); }
 
-/* 拖拽进入「取消区」：朱砂弱化描边，提示「松手即作废」但不过度警告 */
-.voice-button.is-drag-cancel { animation: none; border-color: rgba(193, 68, 59, 0.45); }
-.voice-button.is-drag-cancel .voice-dot { background: rgba(193, 68, 59, 0.5); }
+/* 拖拽进入「取消区」：转朱砂实心，读作「松手即作废」。 */
+.voice-button.is-drag-cancel {
+  animation: none;
+  border-color: var(--cinnabar-ink);
+  background: var(--cinnabar-ink);
+  box-shadow: none;
+}
+.voice-button.is-drag-cancel .voice-dot { background: var(--paper); }
 
 /* 编辑态：圆环缩小，提示「这只是次要动作，主焦点在打字」，但触摸区域
    仍然是同一个 button，长按说话在编辑中依然可用 */

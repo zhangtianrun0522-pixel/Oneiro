@@ -545,6 +545,20 @@
   margin-top: var(--space-group);
 }
 
+.original-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.original-toggle {
+  flex: 0 0 auto;
+  padding-left: 16rpx;
+  color: var(--gold-ink);
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
 .original-copy {
   display: block;
   margin-top: var(--space-tight);
@@ -553,6 +567,15 @@
   color: var(--ink-70);
   font-size: 26rpx;
   line-height: 1.8;
+}
+
+/* 折叠态只留第一行。-webkit-line-clamp 需要配合 -webkit-box 才生效；
+   边框和内边距是元素自身的盒模型属性，换 display 不影响，左侧竖线保持不变。 */
+.original-copy.is-collapsed {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
 }
 
 .connection-list {

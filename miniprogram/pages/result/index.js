@@ -16,6 +16,9 @@ var FEEDBACK_OPTIONS = [
 var CARD_WIDTH = 900;
 var CARD_HEIGHT = 1200;
 var READING_CARD_HEIGHT = 2300;
+// 微信转发缩略图按 5:4 显示，给它 5:4 的原图就不会再被裁。
+var SHARE_THUMB_WIDTH = 1000;
+var SHARE_THUMB_HEIGHT = 800;
 var QUALITY_POLL_INTERVAL_MS = 3000;
 var QUALITY_POLL_MAX_ATTEMPTS = 60;
 var themePalettes = {
@@ -556,6 +559,43 @@ function drawCard(ctx, dream, displayTimestamp, imagePath) {
   ctx.restore();
 }
 
+// 微信会话里的转发缩略图固定按 5:4 显示。原来直接把 900×1200 的竖版梦卡
+// 交给 imageUrl，微信只能居中裁一条横带出来——梦卡的构图（顶部编号、居中
+// 画面）在那条横带里全都被切坏，这就是「缩略图截成横的了」。缩略图必须按
+// 5:4 单独构图，而不是让平台去猜该保留哪一部分。
+function drawShareThumb(ctx, dream, displayTimestamp, imagePath) {
+  var result = dream.result || acceptanceDreamResult;
+  var artRect = { x: 0, y: 0, width: SHARE_THUMB_WIDTH, height: SHARE_THUMB_HEIGHT, radius: 0 };
+  var overlay;
+  var headerHeight = Math.round(SHARE_THUMB_HEIGHT * 0.22);
+
+  ctx.clearRect(0, 0, SHARE_THUMB_WIDTH, SHARE_THUMB_HEIGHT);
+  ctx.fillStyle = '#0a0c10';
+  ctx.fillRect(0, 0, SHARE_THUMB_WIDTH, SHARE_THUMB_HEIGHT);
+
+  drawDreamArt(ctx, result.card_theme || 'mist', imagePath, artRect);
+
+  overlay = ctx.createLinearGradient(0, 0, 0, headerHeight);
+  overlay.addColorStop(0, 'rgba(5, 6, 9, 0.42)');
+  overlay.addColorStop(1, 'rgba(5, 6, 9, 0)');
+  ctx.fillStyle = overlay;
+  ctx.fillRect(0, 0, SHARE_THUMB_WIDTH, headerHeight);
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(5, 6, 9, 0.52)';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.font = '800 30px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('ONEIRO', 56, 70);
+
+  ctx.textAlign = 'right';
+  ctx.fillText(result.card_no || 'NO. 001', SHARE_THUMB_WIDTH - 56, 66);
+  ctx.font = '600 24px sans-serif';
+  ctx.fillText(displayTimestamp, SHARE_THUMB_WIDTH - 56, 106);
+  ctx.restore();
+}
+
 function drawReadingPanel(ctx, label, text, x, y, width, maxLines) {
   var panelHeight = 120 + (maxLines || 3) * 42;
   var bottomY;
@@ -612,6 +652,15 @@ function drawFullReadingCard(ctx, dream, displayTimestamp, imagePath) {
   ctx.fillText('Oneiro · ' + displayTimestamp, CARD_WIDTH / 2, READING_CARD_HEIGHT - 56);
 }
 
+// 一行大约放得下 24 个汉字（26rpx 字号、左侧留了 24rpx 缩进）。带换行的、
+// 或者明显超过一行的才值得折叠；两三句话的短梦折起来只会多一次点击。
+var DREAM_TEXT_COLLAPSE_CHARS = 26;
+
+function isDreamTextCollapsible(dreamText) {
+  var text = String(dreamText || '');
+  return text.indexOf('\n') >= 0 || text.length > DREAM_TEXT_COLLAPSE_CHARS;
+}
+
 function cardBackInsight(result) {
   if (!result) return '';
   if (result.reflection_answer && result.card_insight) return result.card_insight;
@@ -639,6 +688,8 @@ Page({
     cardSaved: false,
     showFullReading: false,
     showMoreActions: false,
+    dreamTextCollapsible: false,
+    dreamTextExpanded: false,
     possibleConnections: [],
     feedbackOptions: FEEDBACK_OPTIONS,
     feedback: '',
@@ -764,6 +815,8 @@ Page({
       metaphysicalReadingError: '',
       metaphysicalProfileMissing: false,
       interpretationUnavailable: interpretationUnavailable,
+      dreamTextCollapsible: isDreamTextCollapsible(dream.dreamText),
+      dreamTextExpanded: false,
       entryReady: true
     });
     if (!interpretationUnavailable && !this.entryIsFixture && dream.cloudSynced !== true) {
@@ -787,6 +840,7 @@ Page({
     if (this.data.interpretationUnavailable) return;
 
     setTimeout(function () {
+      that.imagePipelineStarted = true;
       that.requestDreamImage(function () {
         that.renderShareCard({ silent: true });
       });
@@ -1082,7 +1136,7 @@ Page({
     });
   },
 
-  repairCloudDream: function (dream) {
+  repairCloudDream: function (dream, done) {
     var that = this;
     if (!dream || !dream.id || this.cloudRepairing) return;
     this.cloudRepairing = true;
@@ -1106,11 +1160,45 @@ Page({
         queueDreamSync(dream);
         analytics.trackEvent('dream_cloud_repair_failed', { dreamId: dream.id, reason: saveResult && saveResult.reason || 'unknown' });
       }
+      if (done) done(ok);
     });
   },
 
   onUnload: function () {
     this.stopDreamImageQualityPolling();
+    this.clearDreamImageRetry();
+  },
+
+  // 离开页面再回来是用户在「没出画面」时最自然的一次自救动作，之前它什么也
+  // 不做。这里补一次补偿：解读已就绪、却既没有画面也没有正在进行的生成时，
+  // 重新发起一次。自动重试的一次性标记同时清掉，让这次回访真的能跑。
+  onShow: function () {
+    var dream = this.data.dream;
+    var result = dream && dream.result ? dream.result : null;
+    var hasSavedImage;
+    // 首次进入时 onShow 排在 onReady 之前，这时补偿会和 onReady 里的首次请求
+    // 撞在一起、生成两张图。只有 onReady 已经跑过（= 真的是「离开后又回来」）
+    // 才需要补偿。
+    if (!this.imagePipelineStarted) return;
+    if (!this.data.entryReady || this.data.interpretationUnavailable || !result) return;
+    if (this.data.aiImageLocalPath) return;
+    if (this.data.imageStatus === 'generating' || this.data.imageStatus === 'loading') return;
+
+    this.imageAutoRetryDone = false;
+    this.clearDreamImageRetry();
+
+    // 云端已经有图、只是本地这次没取下来：要重取，不能走生图。requestDreamImage
+    // 在这种情况下会直接 early-return，imageStatus 会永远停在 'generating'，
+    // 页面顶着一条永不消失的「完整画面生成中」。
+    hasSavedImage = !!(result.imageUrl || result.image_file_id || result.imageFileId ||
+      result.fileID || result.fileId);
+    if (hasSavedImage) {
+      this.restoreSavedDreamImage(dream);
+      return;
+    }
+    if (!result.image_prompt && !result.image && !result.visual_plan) return;
+    this.setData({ imageStatus: 'generating', imageErrorMessage: '', imageLoadError: '' });
+    this.requestDreamImage();
   },
 
   toggleDreamCard: function () {
@@ -1258,6 +1346,7 @@ Page({
           provider: failure.provider
         });
         wx.showToast({ title: failure.displayMessage, icon: 'none' });
+        that.scheduleDreamImageRetry('generation');
         if (done) {
           done();
         }
@@ -1279,10 +1368,17 @@ Page({
         }
         var failure = syncFailureDetails(saveResult);
         queueDreamSync(dream);
+        // 这里以前把状态设回 'idle'。'idle' 在 WXML 里既不显示提示、也不显示
+        // 「重新生成画面」按钮，于是生图从来没有开始过这件事对用户是完全静默
+        // 的——他只看到一张永远停在底色渐变上的卡，也没有任何可以点的东西。
+        // 这就是「个别人梦卡出不来」。失败必须是可见且可操作的。
         that.setData({
-          imageStatus: 'idle',
+          imageStatus: 'failed',
           imageSyncPending: false,
-          cloudSyncPending: true
+          cloudSyncPending: true,
+          cloudSyncReason: failure.reason,
+          imageErrorMessage: '这个梦还没存上云端，画面稍后自动重试',
+          imageLoadError: 'presync:' + failure.reason
         });
         analytics.trackEvent('generated_image_fail', {
           dreamId: dream.id || '',
@@ -1290,13 +1386,38 @@ Page({
           message: failure.message,
           failureType: 'sync'
         });
-        wx.showToast({ title: '云端同步未完成，稍后自动重试', icon: 'none' });
+        that.scheduleDreamImageRetry('presync');
         if (done) done();
       });
       return;
     }
 
     startGeneration();
+  },
+
+  // 弱网下第一次生图失败几乎都是一次性的，但用户不知道该等还是该点。自动重试
+  // 一次（只一次，避免在真的坏掉时反复烧供应商额度），失败后仍然留着手动按钮。
+  scheduleDreamImageRetry: function (source) {
+    var that = this;
+    if (this.imageAutoRetryDone || this.imageAutoRetryTimer) return;
+    this.imageAutoRetryTimer = setTimeout(function () {
+      that.imageAutoRetryTimer = null;
+      that.imageAutoRetryDone = true;
+      if (that.data.imageStatus !== 'failed' || that.data.aiImageLocalPath) return;
+      analytics.trackEvent('generated_image_auto_retry', {
+        dreamId: that.data.dream && that.data.dream.id || '',
+        source: source || ''
+      });
+      that.setData({ imageStatus: 'generating', imageErrorMessage: '', imageLoadError: '' });
+      that.requestDreamImage();
+    }, 4000);
+  },
+
+  clearDreamImageRetry: function () {
+    if (this.imageAutoRetryTimer) {
+      clearTimeout(this.imageAutoRetryTimer);
+      this.imageAutoRetryTimer = null;
+    }
   },
 
   startDreamImageQuality: function (fastImage, visualResult) {
@@ -1550,7 +1671,15 @@ Page({
   },
 
   retryCloudSync: function () {
-    this.repairCloudDream(this.data.dream);
+    var that = this;
+    this.repairCloudDream(this.data.dream, function (ok) {
+      // 同步是生图的前置条件。同步补上了却不接着生图，用户得自己再想起来点
+      // 一次「重新生成画面」——大部分人不会，卡就一直停在底色上。
+      if (!ok || that.data.aiImageLocalPath || that.data.imageStatus === 'generating') return;
+      that.imageAutoRetryDone = false;
+      that.setData({ imageStatus: 'generating', imageErrorMessage: '', imageLoadError: '' });
+      that.requestDreamImage();
+    });
   },
 
   chooseDreamFeedback: function (event) {
@@ -1603,6 +1732,19 @@ Page({
 
   toggleMoreActions: function () {
     this.setData({ showMoreActions: !this.data.showMoreActions });
+  },
+
+  // 原梦长文默认只留第一行。展开是为了核对，不是为了阅读，所以不上报收起。
+  toggleOriginalDream: function () {
+    var next = !this.data.dreamTextExpanded;
+    if (!this.data.dreamTextCollapsible) return;
+    this.setData({ dreamTextExpanded: next });
+    if (next) {
+      analytics.trackEvent('result_original_dream_expand', {
+        dreamId: this.data.dream && this.data.dream.id ? this.data.dream.id : '',
+        length: String(this.data.dream && this.data.dream.dreamText || '').length
+      });
+    }
   },
 
   openLifeNoteSource: function () {
@@ -1739,10 +1881,14 @@ Page({
   renderShareCard: function (options) {
     var that = this;
     var config = options || {};
-    var canvasWidth = CARD_WIDTH;
-    var canvasHeight = config.fullReading ? READING_CARD_HEIGHT : CARD_HEIGHT;
+    // 三种产物三种尺寸：相册梦卡 3:4、解读长图 900×2300、微信转发缩略图 5:4。
+    // 后者以前复用了 3:4 的梦卡，交给微信自己去裁，裁出来的构图不受控制。
+    var canvasWidth = config.publicShare ? SHARE_THUMB_WIDTH : CARD_WIDTH;
+    var canvasHeight = config.publicShare
+      ? SHARE_THUMB_HEIGHT
+      : (config.fullReading ? READING_CARD_HEIGHT : CARD_HEIGHT);
 
-    if (!config.fullReading && !config.force && this.data.shareImagePath) {
+    if (!config.fullReading && !config.publicShare && !config.force && this.data.shareImagePath) {
       if (config.success) {
         config.success(this.data.shareImagePath);
       }
@@ -1814,7 +1960,7 @@ Page({
                 analytics.trackEvent('image_success', {
                   dreamId: that.data.dream.id || '',
                   silent: !!config.silent,
-                  type: config.fullReading ? 'full_reading' : 'collection_card'
+                  type: config.publicShare ? 'share_thumb' : (config.fullReading ? 'full_reading' : 'collection_card')
                 });
                 if (!config.silent) {
                   wx.hideLoading();
@@ -1839,32 +1985,24 @@ Page({
         };
         var imagePath = that.data.aiImageLocalPath;
 
-        if (imagePath && canvas.createImage) {
-          var aiImage = canvas.createImage();
-          aiImage.onload = function () {
-            if (config.fullReading) {
-              drawFullReadingCard(ctx, that.data.dream, that.data.displayTimestamp, aiImage);
-            } else {
-              drawCard(ctx, that.data.dream, that.data.displayTimestamp, aiImage);
-            }
-            exportCard();
-          };
-          aiImage.onerror = function () {
-            if (config.fullReading) {
-              drawFullReadingCard(ctx, that.data.dream, that.data.displayTimestamp);
-            } else {
-              drawCard(ctx, that.data.dream, that.data.displayTimestamp, null);
-            }
-            exportCard();
-          };
-          aiImage.src = imagePath;
-        } else {
-          if (config.fullReading) {
-            drawFullReadingCard(ctx, that.data.dream, that.data.displayTimestamp);
+        var paint = function (loadedImage) {
+          if (config.publicShare) {
+            drawShareThumb(ctx, that.data.dream, that.data.displayTimestamp, loadedImage || null);
+          } else if (config.fullReading) {
+            drawFullReadingCard(ctx, that.data.dream, that.data.displayTimestamp, loadedImage || undefined);
           } else {
-            drawCard(ctx, that.data.dream, that.data.displayTimestamp, null);
+            drawCard(ctx, that.data.dream, that.data.displayTimestamp, loadedImage || null);
           }
           exportCard();
+        };
+
+        if (imagePath && canvas.createImage) {
+          var aiImage = canvas.createImage();
+          aiImage.onload = function () { paint(aiImage); };
+          aiImage.onerror = function () { paint(null); };
+          aiImage.src = imagePath;
+        } else {
+          paint(null);
         }
       });
   },

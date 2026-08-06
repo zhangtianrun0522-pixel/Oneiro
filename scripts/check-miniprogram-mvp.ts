@@ -207,6 +207,9 @@ type WxMock = {
   blockNextInterpret: boolean;
   failNextInterpret: boolean;
   failNextDreamSave: boolean;
+  // 一次性的 failNextDreamSave 只能模拟「重试就好」；验证「自动重试只跑一次」
+  // 需要一个持续失败的开关。
+  failEveryDreamSave: boolean;
   failNextReadyDreamSave: boolean;
   failDreamSaveIds: string[];
   failDreamSaveTitles: string[];
@@ -215,9 +218,14 @@ type WxMock = {
   recorderStopListener?: (result: Record<string, any>) => void;
   recorderErrorListener?: (error: Record<string, any>) => void;
   recorderStopCalls: number;
+  recorderStartCalls: number;
   failNextPortraitToggle: boolean;
   failNextPortraitSave: boolean;
   failNextPortraitGenerate: boolean;
+  nextPortraitUnchanged: boolean;
+  portraitUnchangedVersion: number;
+  portraitUnchangedId: string;
+  lastPortraitGenerateForced: boolean;
   adminStatsResult: boolean;
   feedbackStatsResult: Record<string, any>;
   internalStatsResult: Record<string, any>;
@@ -235,6 +243,7 @@ type WxMock = {
   hideLoading: () => void;
   createSelectorQuery: () => any;
   canvasToTempFilePath: (options: Record<string, any>) => void;
+  canvasExports: Array<{ width: number; height: number }>;
   getImageInfo: (options: Record<string, any>) => void;
   saveImageToPhotosAlbum: (options: Record<string, any>) => void;
   openSetting: () => void;
@@ -289,13 +298,19 @@ function createWxMock(): WxMock {
     blockNextInterpret: false,
     failNextInterpret: false,
     failNextDreamSave: false,
+    failEveryDreamSave: false,
     failNextReadyDreamSave: false,
     failDreamSaveIds: [],
     failDreamSaveTitles: [],
     recorderStopCalls: 0,
+    recorderStartCalls: 0,
     failNextPortraitToggle: false,
     failNextPortraitSave: false,
     failNextPortraitGenerate: false,
+    nextPortraitUnchanged: false,
+    portraitUnchangedVersion: 1,
+    portraitUnchangedId: '',
+    lastPortraitGenerateForced: false,
     // 默认不是管理员：内测观测面板必须对普通测试者完全不存在。
     adminStatsResult: false,
     feedbackStatsResult: {
@@ -321,6 +336,7 @@ function createWxMock(): WxMock {
     },
     profilePortraitSummary: '近期梦境反复出现学校、追逐与期限感。',
     canvasTexts: [],
+    canvasExports: [],
     getStorageSync(key) {
       return this.storage[key];
     },
@@ -328,7 +344,7 @@ function createWxMock(): WxMock {
       return {
         onStop(callback: (result: Record<string, any>) => void) { wx.recorderStopListener = callback; },
         onError(callback: (error: Record<string, any>) => void) { wx.recorderErrorListener = callback; },
-        start() {},
+        start() { wx.recorderStartCalls += 1; },
         stop() { wx.recorderStopCalls += 1; },
       };
     },
@@ -411,6 +427,9 @@ function createWxMock(): WxMock {
       };
     },
     canvasToTempFilePath(options) {
+      // 导出尺寸是「转发缩略图有没有被微信裁坏」的唯一可断言信号：微信按 5:4
+      // 显示，给它竖版就只能居中裁一条横带出来。
+      this.canvasExports.push({ width: options.width, height: options.height });
       options.success({ tempFilePath: '/tmp/oneiro-card.png' });
     },
     getImageInfo(options) {
@@ -448,6 +467,10 @@ function createWxMock(): WxMock {
       }
       if (options.name === 'saveDream' && options.data?.action === 'internalStats') {
         options.success({ result: wx.adminStatsResult ? wx.internalStatsResult : { ok: false, reason: 'not_admin' } });
+        return;
+      }
+      if (options.name === 'saveDream' && wx.failEveryDreamSave) {
+        options.success({ result: { ok: false, reason: 'mock_save_failed' } });
         return;
       }
       if (options.name === 'saveDream' && wx.failNextDreamSave) {
@@ -658,9 +681,34 @@ function createWxMock(): WxMock {
       if (options.name === 'profileMemory') {
         if (options.data?.action === 'generate') {
           if (wx.beforePortraitGenerate) wx.beforePortraitGenerate();
+          wx.lastPortraitGenerateForced = options.data?.force === true;
           if (wx.failNextPortraitGenerate) {
             wx.failNextPortraitGenerate = false;
             options.success({ result: { ok: false, reason: 'mock_generate_failed' } });
+            return;
+          }
+          // 云端判定这次没有实质变化时不发新版本，返回 unchanged + 当前快照。
+          // 这是正常结果，不是失败——客户端必须原样保留画像，不进失败态，
+          // 也不显示「已更新」。
+          if (wx.nextPortraitUnchanged) {
+            wx.nextPortraitUnchanged = false;
+            options.success({
+              result: {
+                ok: true,
+                unchanged: true,
+                unchangedReason: 'evidence_unchanged',
+                // unchanged 的语义是「当前这一版原样返回」，所以版本号必须
+                // 就是它已有的版本号。编一个更大的数字会让客户端误判成有新版本
+                // ——那正是这条闸要消灭的东西。
+                snapshot: {
+                  _id: wx.portraitUnchangedId,
+                  version: wx.portraitUnchangedVersion,
+                  status: 'confirmed',
+                  summary: wx.profilePortraitSummary,
+                  useInFutureReadings: true,
+                },
+              },
+            });
             return;
           }
           options.success({
@@ -952,14 +1000,11 @@ for (const path of [
 }
 
 for (const [path, expected] of [
-  // 首页从「输入框 + 保存按钮」改造成手势采集区（方向代号 1a）后，'保存并
-  // 解读' 按钮已经真的从 UI 里去掉了，不是换皮——原按钮断言换成三条验证
-  // 新交互结构确实存在的断言：下滑提交的手势提示文案、touchmove 手势绑定
-  // （证明拖拽状态机接了线，不只是 touchstart/touchend 两端）、点文字进入
-  // 编辑态的绑定。generateDreamCard 本身仍然是核心提交入口，只是不再挂在
-  // 一个可点击的 <button bindtap> 上，而是被手势状态机在代码里直接调用
-  // （见下方 homePage.generateDreamCard() 的直接调用断言）。
-  ['miniprogram/pages/home/index.wxml', '下滑进入解读'],
+  // 首页是手势采集区（方向代号 1a）：验证拖拽状态机确实接了线（touchmove
+  // 绑定，而不只是 touchstart/touchend 两端）、点文字进入编辑态的绑定，
+  // 以及录音中那一行必须一次说全三条出路——落点条只讲了下滑，上滑取消和
+  // 「直接松手就转文字」没有别的地方会说。
+  ['miniprogram/pages/home/index.wxml', '上滑取消 · 下滑直接解读 · 松手转成文字'],
   ['miniprogram/pages/home/index.wxml', 'catchtouchmove="onVoiceTouchMove"'],
   ['miniprogram/pages/home/index.wxml', 'bindtap="onDreamTextTap"'],
   ['miniprogram/pages/home/index.wxml', 'bindtouchstart="onVoiceTouchStart"'],
@@ -998,16 +1043,36 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', 'bindtap="openArchive"'],
   ['miniprogram/pages/result/index.wxml', 'bindtap="deleteDream"'],
   ['miniprogram/pages/result/index.wxml', 'id="shareCanvas"'],
+  // 长梦的原文默认只留第一行：用户打开解读页想看的是解读，不是自己刚写完的
+  // 那段话被顶在最前面。
+  ['miniprogram/pages/result/index.wxml', 'bindtap="toggleOriginalDream"'],
+  ['miniprogram/pages/result/index.wxml', 'is-collapsed'],
+  ['miniprogram/pages/result/index.wxss', '-webkit-line-clamp: 1'],
+  // 手势之外必须有一条不需要被教会的提交路径。
+  ['miniprogram/pages/home/index.wxml', 'bindtap="onSubmitTap"'],
+  ['miniprogram/pages/home/index.wxml', '解读这个梦'],
   ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="sendMessage"'],
   ['miniprogram/pages/dream-chat/index.wxml', '{{turnCount}} / {{maxTurns}}'],
+  // 轮次用尽后必须解释原因并给出出口，不能只是三个变灰的控件。
+  ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="backToReading"'],
+  ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="startNewDream"'],
   ['miniprogram/pages/profile/index.wxml', 'bindtap="saveProfile"'],
   ['miniprogram/pages/profile/index.wxml', '可随时修改或清空'],
-  // 设计稿 3c 把栏目标题从「我的阶段画像」缩短成「阶段画像 · V{n}」
-  // （不再有「我的」前缀，且版本号是动态拼接的），断言改为不带前缀的
-  // 「阶段画像」，仍然精确对应 profile-block 里的 section-label 文本节点。
+  // 阶段画像的完整面板已经搬到「梦册」顶部：「我」是一整页表单，把产品里最有
+  // 辨识度的产出摆在表单上方，它会被读成一个用户自己填的字段。这一页只留
+  // 入口，编辑/重新梳理/溯源/历史版本都在梦册。
   ['miniprogram/pages/profile/index.wxml', '阶段画像'],
+  ['miniprogram/pages/profile/index.wxml', 'bindtap="openPortrait"'],
+  ['miniprogram/pages/profile/index.wxml', '在梦册查看'],
   ['miniprogram/pages/profile/index.wxml', '系统提取的现实线索'],
-  ['miniprogram/pages/profile/index.wxml', '修改这段理解'],
+  ['miniprogram/pages/archive/index.wxml', '阶段画像'],
+  ['miniprogram/pages/archive/index.wxml', '修改这段理解'],
+  ['miniprogram/pages/archive/index.wxml', 'bindtap="refreshPortrait"'],
+  // 画像从「好看」变成「可信」的全部差别：判断能指回具体哪几个梦，以及能看到
+  // 自己以前的样子。这两样的数据一直存在 profile_snapshots 里，此前从未渲染。
+  ['miniprogram/pages/archive/index.wxml', 'bindtap="openPortraitSource"'],
+  ['miniprogram/pages/archive/index.wxml', 'bindtap="togglePortraitHistory"'],
+  ['miniprogram/pages/archive/index.wxml', '你以前的样子'],
   ['miniprogram/pages/share/index.wxml', '记下我的梦'],
   ['miniprogram/pages/share/index.wxml', 'theme-{{payload.cardTheme}}'],
   ['miniprogram/pages/diagnostics/index.wxml', '运行诊断'],
@@ -1151,9 +1216,15 @@ for (const [path, expected] of [
   ['miniprogram/pages/dream-chat/index.js', "MAX_USER_TURNS"],
   ['miniprogram/pages/dream-chat/index.js', "chatAboutDream"],
   ['miniprogram/pages/profile/index.js', "cloudBase.saveProfile"],
-  ['miniprogram/pages/profile/index.js', "saveProfilePortrait"],
   ['miniprogram/pages/profile/index.js', "refreshPortraitInBackground"],
   ['miniprogram/pages/profile/index.js', "deleteLifeNote"],
+  // 画像的编排只有一份实现（utils/stagePortrait），梦册和「我」两页都用它。
+  // 两页各自实现会立刻分叉：同一个快照在两处显示出不同的版本号或状态。
+  ['miniprogram/utils/stagePortrait.js', "saveProfilePortrait"],
+  ['miniprogram/utils/stagePortrait.js', "generateProfilePortrait"],
+  ['miniprogram/utils/stagePortrait.js', "toggleProfilePortrait"],
+  ['miniprogram/pages/archive/index.js', "stagePortrait.createController"],
+  ['miniprogram/pages/profile/index.js', "stagePortrait.createController"],
   ['miniprogram/cloudfunctions/profileMemory/index.js', "profile_snapshots"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "INTERPRET_PROVIDER"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "DEEPSEEK_API_KEY"],
@@ -1290,6 +1361,11 @@ const analytics = loadCommonJS<AnalyticsModule>(
   { wx },
   { './cloudBase': cloudBase }
 );
+const stagePortrait = loadCommonJS<Record<string, any>>(
+  'miniprogram/utils/stagePortrait.js',
+  { wx, setTimeout, clearTimeout },
+  { './analytics': analytics, './syncQueue': mainSyncQueue }
+);
 analytics.clearEvents();
 assert.equal(analytics.STORAGE_KEY, 'oneiro:events');
 assert.equal(cloudBase.CLOUD_STATUS_KEY, 'oneiro:cloudStatus');
@@ -1343,6 +1419,7 @@ const pageModules = {
   '../../utils/tabNav': tabNav,
   '../../utils/syncQueue': mainSyncQueue,
   '../../utils/recorderRouter': recorderRouter,
+  '../../utils/stagePortrait': stagePortrait,
 };
 
 const homePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);
@@ -1387,13 +1464,22 @@ function startVoiceGesture(page: MiniProgramPage): void {
   page.voiceLongPressStarted = false;
   page.voiceDragZone = 'none';
   page.lastDragZone = 'none';
-  page.dragBounceTimer = null;
-  page.voiceSwipeIntent = false;
+  page.voiceMoved = false;
   page.voiceStartTimer = null;
   page.data.recording = false;
   page.data.recognizing = false;
   page.data.editingDream = false;
   page.data.dreamText = '已经写下的梦';
+}
+
+// 已经进入录音的手势：拖到哪都还在录，松手的位置决定收尾方式。
+function startVoiceRecordingGesture(page: MiniProgramPage): void {
+  startVoiceGesture(page);
+  page.voiceLongPressStarted = true;
+  page.voiceCancelled = false;
+  page.voiceSubmitAfterRecognition = false;
+  page.data.recording = true;
+  page.recordingStartedAt = Date.now() - 3000;
 }
 
 function touchAt(y: number): Record<string, unknown> {
@@ -1437,8 +1523,8 @@ assert.equal(homePage.data.dragDy, 40);
 homePage.onVoiceTouchEnd(touchEndAt(140));
 assert.equal(gestureSubmitCount, 3);
 
-// 划了但没到位：给出「差一点」的提示，且绝不能同时把文字编辑态打开。
-// 两个互相矛盾的反馈叠在一起是原来最容易让人误会的一处。
+// 划了但没到位：什么都不做，且绝不能把文字编辑态打开——用户刚做的是一个
+// 滑动手势，突然弹出输入法是完全无关的反馈。
 startVoiceGesture(homePage);
 homePage.onVoiceTouchMove(touchAt(125));
 assert.equal(homePage.voiceDragZone, 'attempt');
@@ -1446,13 +1532,15 @@ homePage.onVoiceTouchEnd(touchEndAt(125));
 assert.equal(gestureSubmitCount, 3);
 assert.equal(homePage.data.editingDream, false);
 
-// 越过 slop 就锁定为「划」，撤掉还没触发的长按计时器：有草稿的用户下滑提交
-// 时不该在半路误起一次录音。
+// 拖拽绝不中断录音的启动。之前有一个「越过 slop 就判定为划、撤掉长按计时器」
+// 的分支，结果是按下后马上开始拖的人根本录不上音——按住说话在他手里就是坏的。
+// 现在唯一决定录不录的是按住时长，touchmove 不得碰长按计时器。
 startVoiceGesture(homePage);
 homePage.voiceStartTimer = 1;
 homePage.onVoiceTouchMove(touchAt(120));
-assert.equal(homePage.voiceSwipeIntent, true);
-assert.equal(homePage.voiceStartTimer, null);
+assert.equal(homePage.voiceStartTimer, 1);
+assert.equal(homePage.voiceMoved, true);
+homePage.voiceStartTimer = null;
 homePage.onVoiceTouchEnd(touchEndAt(141));
 assert.equal(gestureSubmitCount, 4);
 assert.equal(homePage.data.editingDream, false);
@@ -1462,6 +1550,42 @@ startVoiceGesture(homePage);
 homePage.onVoiceTouchEnd(touchEndAt(100));
 assert.equal(gestureSubmitCount, 4);
 assert.equal(homePage.data.editingDream, true);
+
+// ── 已进入录音后，松手位置决定收尾方式（三条出路，见 home/index.js 顶部的
+// 状态机注释）。录音期间圆环变黑，拖到任何位置都仍在录。 ──
+
+// 上方松手 = 取消：整段丢弃，不转文字。
+startVoiceRecordingGesture(homePage);
+homePage.onVoiceTouchMove(touchAt(40));
+assert.equal(homePage.voiceDragZone, 'cancel');
+homePage.onVoiceTouchEnd(touchEndAt(40));
+assert.equal(homePage.voiceCancelled, true);
+assert.equal(homePage.voiceSubmitAfterRecognition, false);
+assert.equal(gestureSubmitCount, 4);
+
+// 下方松手 = 转文字后直接进入解读。
+startVoiceRecordingGesture(homePage);
+homePage.onVoiceTouchEnd(touchEndAt(160));
+assert.equal(homePage.voiceSubmitAfterRecognition, true);
+assert.equal(homePage.voiceCancelled, false);
+
+// 其余任何位置松手 = 只转成文字。拖了但没到位也走这条路：录音已经正常收下，
+// 此时提示「没划到位」会让人以为刚说的话丢了。
+startVoiceRecordingGesture(homePage);
+homePage.onVoiceTouchMove(touchAt(125));
+assert.equal(homePage.voiceDragZone, 'attempt');
+const toastsBeforeAttemptRelease = wx.toasts.length;
+homePage.onVoiceTouchEnd(touchEndAt(125));
+assert.equal(homePage.voiceCancelled, false);
+assert.equal(homePage.voiceSubmitAfterRecognition, false);
+assert.equal(wx.toasts.length, toastsBeforeAttemptRelease);
+
+// 原地松手同样只转文字，且不得打开文字编辑态（手里刚说完话，弹键盘是打断）。
+startVoiceRecordingGesture(homePage);
+homePage.onVoiceTouchEnd(touchEndAt(100));
+assert.equal(homePage.voiceCancelled, false);
+assert.equal(homePage.voiceSubmitAfterRecognition, false);
+assert.equal(homePage.data.editingDream, false);
 
 // Simulate delayed setData. The synchronously stored zone and changedTouches
 // still submit, proving rendering state is not used as business state.
@@ -1473,8 +1597,69 @@ assert.equal(homePage.voiceDragZone, 'submit');
 homePage.onVoiceTouchEnd(touchEndAt(149));
 assert.equal(gestureSubmitCount, 5);
 homePage.setData = immediateSetData;
+
+// 手势之外必须有一条不需要被教会的路径。内测反馈里最集中的一条就是
+// 「不知道要按着圆圈下滑」——一个只能靠手势触发的主流程，对第一次用的人
+// 等于没有入口。按钮和手势走同一个 generateDreamCard。
+startVoiceGesture(homePage);
+homePage.onSubmitTap();
+assert.equal(gestureSubmitCount, 6);
+
+// 空草稿点按钮不提交，也不能是静默的（用户手势/点击做对了却什么都没发生，
+// 只会被理解成功能坏了）。
+homePage.data.dreamText = '';
+const toastsBeforeEmptySubmit = wx.toasts.length;
+homePage.onSubmitTap();
+assert.equal(gestureSubmitCount, 6);
+assert.ok(wx.toasts.length > toastsBeforeEmptySubmit);
+
+// 录音中这块区域是下滑落点，不是提交按钮，点击不能越过录音直接提交。
+homePage.data.dreamText = '已经写下的梦';
+homePage.data.recording = true;
+homePage.onSubmitTap();
+assert.equal(gestureSubmitCount, 6);
+homePage.data.recording = false;
+
 homePage.generateDreamCard = originalGenerateDreamCard;
 homePage.data.dreamText = '';
+
+// 第一次用语音时，授权弹窗返回得比手指抬起晚。以前的做法是照常 start 再立刻
+// stop，录到 0 长度文件，用户读到的是「语音识别暂不可用」——一次成功的授权被
+// 显示成功能坏掉。现在不启动录音，只提示权限已拿到。
+const recorderStartsBeforeAuthorizeRace = wx.recorderStartCalls;
+homePage.voiceStopAfterAuthorization = true;
+homePage.voiceCancelled = false;
+homePage.voiceSubmitAfterRecognition = false;
+homePage.startRecorder();
+assert.equal(homePage.data.recording, false);
+assert.equal(wx.recorderStartCalls, recorderStartsBeforeAuthorizeRace);
+assert.equal(homePage.voiceStopAfterAuthorization, false);
+
+// 同一场景下如果用户已经有草稿并且做的是「下滑提交」，提交意图不能因为中间
+// 插了一次授权就丢掉。
+let authorizeRaceSubmits = 0;
+homePage.generateDreamCard = function () { authorizeRaceSubmits += 1; };
+homePage.data.dreamText = '授权前就写好的梦';
+homePage.voiceStopAfterAuthorization = true;
+homePage.voiceSubmitAfterRecognition = true;
+homePage.startRecorder();
+assert.equal(authorizeRaceSubmits, 1);
+assert.equal(homePage.data.recording, false);
+homePage.generateDreamCard = originalGenerateDreamCard;
+homePage.data.dreamText = '';
+
+// 过短的片段送到 ASR 只会拿回 empty_result，用户读到的是「没有听清」，会以为
+// 是识别不准而反复重试同样短的一下。客户端直接拦下，且不发起云调用。
+const speechCallsBeforeShortClip = wx.cloudCalls.filter((call) => call.name === 'speechRecognize').length;
+homePage.data.recording = true;
+homePage.recordingStartedAt = Date.now();
+homePage.onRecorderStop({ tempFilePath: '/tmp/short.mp3', duration: 400 });
+assert.equal(homePage.data.recording, false);
+assert.equal(homePage.data.recognizing, false);
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'speechRecognize').length,
+  speechCallsBeforeShortClip
+);
 const profilePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
 profilePage.onLoad();
 profilePage.onInput({ currentTarget: { dataset: { key: 'nickname' } }, detail: { value: ' Runtu ' } });
@@ -1488,30 +1673,57 @@ assert.equal(wx.storage['oneiro:lastProfile'].birthPlace, 'Shanghai');
 assert.equal(wx.storage['oneiro:lastProfile'].gender, 'male');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveProfile'));
 assert.equal(profilePage.data.memoryState.current.version, 1);
-const originalPortraitSummary = profilePage.data.memoryState.current.summary;
-profilePage.startPortraitEdit();
-profilePage.onPortraitSummaryInput({ detail: { value: '这是我确认过措辞的阶段画像。' } });
+
+// 「我」页只剩一个只读入口：完整面板在「梦册」顶部。这一页是一整页表单，把
+// 产品里最有辨识度的产出摆在表单上方，它会被读成一个用户自己填的字段。入口
+// 仍然要显示版本与状态，否则老用户在熟悉的位置什么都看不到。
+assert.equal(profilePage.data.portraitVersionLabel, 'V1');
+assert.ok(profilePage.data.portraitStatusLabel.length > 0);
+assert.equal(typeof profilePage.startPortraitEdit, 'undefined');
+profilePage.openPortrait();
+assert.equal(last(wx.navigations), '/pages/archive/index');
+
+// 画像的编辑/重新梳理/溯源/历史版本全部在梦册。下面这些用例跟着 UI 一起搬到
+// archive 页，编排逻辑本身由 utils/stagePortrait 共享，两页不会分叉。
+function loadPortraitPage(): MiniProgramPage {
+  const page = loadPage('miniprogram/pages/archive/index.js', pageModules, wx, app);
+  page.onLoad({});
+  page.portrait.load();
+  return page;
+}
+
+const portraitPage = loadPortraitPage();
+const originalPortraitSummary = portraitPage.data.memoryState.current.summary;
+portraitPage.startPortraitEdit();
+portraitPage.onPortraitSummaryInput({ detail: { value: '这是我确认过措辞的阶段画像。' } });
 wx.failNextPortraitSave = true;
-profilePage.savePortraitEdit();
-assert.equal(profilePage.data.memoryState.current.summary, originalPortraitSummary);
-assert.equal(profilePage.data.portraitEditing, true);
-assert.equal(profilePage.data.portraitEditSummary, '这是我确认过措辞的阶段画像。');
-profilePage.savePortraitEdit();
-assert.equal(profilePage.data.memoryState.current.summary, '这是我确认过措辞的阶段画像。');
-assert.equal(profilePage.data.portraitEditing, false);
-assert.equal(profilePage.data.memoryState.current.status, 'confirmed');
-assert.equal(profilePage.data.memoryState.current.version, 2);
-assert.equal(profilePage.data.memoryState.pastHistory.some((item: Record<string, any>) => item.version === 1 && item.status === 'superseded'), true);
-assert.equal(profilePage.data.memoryState.current.summary, '这是我确认过措辞的阶段画像。');
+portraitPage.savePortraitEdit();
+assert.equal(portraitPage.data.memoryState.current.summary, originalPortraitSummary);
+assert.equal(portraitPage.data.portraitEditing, true);
+assert.equal(portraitPage.data.portraitEditSummary, '这是我确认过措辞的阶段画像。');
+portraitPage.savePortraitEdit();
+assert.equal(portraitPage.data.memoryState.current.summary, '这是我确认过措辞的阶段画像。');
+assert.equal(portraitPage.data.portraitEditing, false);
+assert.equal(portraitPage.data.memoryState.current.status, 'confirmed');
+assert.equal(portraitPage.data.memoryState.current.version, 2);
+assert.equal(portraitPage.data.memoryState.pastHistory.some((item: Record<string, any>) => item.version === 1 && item.status === 'superseded'), true);
 assert.ok(wx.cloudCalls.some((call) => call.name === 'profileMemory' && call.data.action === 'save'));
+
+// 历史版本一直存在 profile_snapshots 里，此前界面只显示当前这一版。
+// 「三个月前你是这样，现在你是这样」是画像唯一能做、而单次解读永远做不到的事。
+assert.ok(portraitPage.data.portraitHistory.length >= 1);
+assert.equal(portraitPage.data.portraitHistory[0].versionLabel, 'V1');
+assert.ok(portraitPage.data.portraitHistory[0].summary.length > 0);
+assert.equal(portraitPage.data.showPortraitHistory, false);
+portraitPage.togglePortraitHistory();
+assert.equal(portraitPage.data.showPortraitHistory, true);
 
 // A usable cached current portrait must not generate again merely because the
 // get request has no newer state. Legacy template text does trigger exactly
 // one replacement, and the explicit refresh remains available afterwards.
 const generatePortraitCalls = () => wx.cloudCalls.filter((call) => call.name === 'profileMemory' && call.data.action === 'generate').length;
 const validPortraitGenerateCount = generatePortraitCalls();
-const validPortraitPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
-validPortraitPage.onLoad();
+loadPortraitPage();
 assert.equal(generatePortraitCalls(), validPortraitGenerateCount);
 const userEditedMetaState = wx.storage['oneiro:profileMemory'] as Record<string, any>;
 userEditedMetaState.current = Object.assign({}, userEditedMetaState.current, {
@@ -1520,8 +1732,7 @@ userEditedMetaState.current = Object.assign({}, userEditedMetaState.current, {
   userEdited: true,
 });
 wx.storage['oneiro:profileMemory'] = userEditedMetaState;
-const userEditedMetaPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
-userEditedMetaPage.onLoad();
+loadPortraitPage();
 assert.equal(generatePortraitCalls(), validPortraitGenerateCount);
 const legacyState = wx.storage['oneiro:profileMemory'] as Record<string, any>;
 legacyState.current = Object.assign({}, legacyState.current, {
@@ -1531,8 +1742,7 @@ legacyState.current = Object.assign({}, legacyState.current, {
   userEditedOriginal: null,
 });
 wx.storage['oneiro:profileMemory'] = legacyState;
-const legacyPortraitPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
-legacyPortraitPage.onLoad();
+const legacyPortraitPage = loadPortraitPage();
 assert.equal(generatePortraitCalls(), validPortraitGenerateCount + 1);
 assert.equal(legacyPortraitPage.data.memoryState.current.summary, wx.profilePortraitSummary);
 assert.equal(legacyPortraitPage.data.memoryState.history.filter((item: Record<string, any>) => item.isCurrent === true).length, 1);
@@ -1546,8 +1756,7 @@ profileTextOnlyState.current = Object.assign({}, profileTextOnlyState.current, {
 });
 wx.storage['oneiro:profileMemory'] = profileTextOnlyState;
 wx.failNextPortraitGenerate = true;
-const profileTextOnlyPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
-profileTextOnlyPage.onLoad();
+const profileTextOnlyPage = loadPortraitPage();
 assert.equal(profileTextOnlyPage.data.memoryState.current.summary, '只存在 profileText 的旧阶段画像');
 assert.equal(profileTextOnlyPage.data.memoryState.current.profileText, '只存在 profileText 的旧阶段画像');
 profileTextOnlyPage.refreshPortrait();
@@ -1556,6 +1765,32 @@ assert.equal(profileTextOnlyPage.data.memoryState.current.summary, '只存在 pr
 profileTextOnlyPage.refreshPortrait();
 assert.equal(profileTextOnlyPage.data.portraitGenerateFailed, false);
 assert.equal(profileTextOnlyPage.data.memoryState.current.summary, wx.profilePortraitSummary);
+
+// 用户主动点「重新梳理」要带 force：云端据此区分「后台刷新，证据没变就整个
+// 跳过」和「用户明确要一次新解读，即使证据没变也真的跑一次生成」。
+assert.equal(wx.lastPortraitGenerateForced, true);
+
+// 云端判定没有实质变化时不发新版本。这是正常结果，不是失败：画像原样保留、
+// 不进失败态、不出现「已更新」。以前每记一个梦都重生成并发一版，V2 和 V3
+// 常常只是换了说法——版本号一通胀，历史时间轴和「画像更新了」这条召回提示
+// 就同时退化成噪音，而这两个功能的价值全建立在「版本变了 = 真的变了」上。
+const unchangedPage = loadPortraitPage();
+const summaryBeforeUnchanged = unchangedPage.data.memoryState.current.summary;
+const versionBeforeUnchanged = unchangedPage.data.memoryState.current.version;
+const historyBeforeUnchanged = unchangedPage.data.portraitHistory.length;
+wx.nextPortraitUnchanged = true;
+wx.portraitUnchangedVersion = versionBeforeUnchanged;
+wx.portraitUnchangedId = unchangedPage.data.memoryState.current._id;
+unchangedPage.refreshPortrait();
+assert.equal(unchangedPage.data.portraitGenerateFailed, false);
+assert.equal(unchangedPage.data.portraitLoading, false);
+assert.equal(unchangedPage.data.memoryState.current.summary, summaryBeforeUnchanged);
+assert.equal(unchangedPage.data.portraitHasUpdate, false);
+// 没有实质变化就不该往历史里塞一版。
+assert.equal(unchangedPage.data.portraitHistory.length, historyBeforeUnchanged);
+assert.notEqual(versionBeforeUnchanged, undefined);
+// 用户点了按钮却什么都不说，按钮转一圈回来像是坏了，所以要有一句回执。
+assert.ok(last(wx.toasts).includes('没有实质变化'));
 // home 与 new-dream 已合并：首页本身就是采集页，不再有二次跳转
 const newDreamPage = homePage;
 newDreamPage.generateDreamCard();
@@ -1656,6 +1891,18 @@ const resultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx
 resultPage.onLoad({ id: archiveAfterDream[0].id });
 assert.equal(resultPage.data.dream.id, archiveAfterDream[0].id);
 assert.equal(resultPage.data.entryReady, true);
+// 梦越长，把原文顶在解读前面越是把真正的结果推下屏幕。长文默认折叠、可展开；
+// 短梦不折叠，多一个「展开」只是噪音。
+assert.equal(resultPage.data.dreamTextExpanded, false);
+assert.equal(
+  resultPage.data.dreamTextCollapsible,
+  resultPage.data.dream.dreamText.length > 26 || resultPage.data.dream.dreamText.includes('\n')
+);
+const collapsibleBeforeToggle = resultPage.data.dreamTextCollapsible;
+resultPage.toggleOriginalDream();
+assert.equal(resultPage.data.dreamTextExpanded, collapsibleBeforeToggle);
+resultPage.toggleOriginalDream();
+assert.equal(resultPage.data.dreamTextExpanded, false);
 resultPage.requestDreamImage();
 assert.equal(resultPage.data.imageStatus, 'ready');
 assert.equal(resultPage.data.metaphysicalEntryVisible, false);
@@ -1923,19 +2170,75 @@ const syncRetryPage = loadPage('miniprogram/pages/result/index.js', pageModules,
 syncRetryPage.onLoad({ id: syncRetryDream.id });
 syncRetryPage.data.dream.cloudSynced = false;
 const imageCallsBeforeSyncRetry = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length;
+const savesBeforeSyncRetry = wx.cloudCalls.filter((call) => call.name === 'saveDream').length;
 wx.failNextDreamSave = true;
+// 预同步失败后必须自动再试一次。以前这里把 imageStatus 设回 'idle'——'idle'
+// 在 WXML 里既不显示提示也不显示「重新生成画面」按钮，用户只会看到一张永远
+// 停在底色渐变上的卡，且没有任何可点的东西（内测反馈：「梦卡出不来」）。
+// 沙箱的 setTimeout 是同步的，所以这一行之内自动重试已经跑完。
 syncRetryPage.requestDreamImage();
-assert.equal(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length, imageCallsBeforeSyncRetry);
+// 「先存后生图」的顺序不变：第一次保存失败时不能生图，必须等重试保存成功。
+// 因此这次总共至少发生了两次 saveDream（失败的那次 + 自动重试那次）。
+assert.ok(wx.cloudCalls.filter((call) => call.name === 'saveDream').length >= savesBeforeSyncRetry + 2);
+assert.ok(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length > imageCallsBeforeSyncRetry);
 assert.equal(syncRetryPage.data.dream.status, 'ready');
-assert.equal(syncRetryPage.data.dream.cloudSynced, false);
-assert.equal(syncRetryPage.data.imageStatus, 'idle');
-assert.equal(syncRetryPage.data.imageErrorMessage, '');
+assert.equal(syncRetryPage.data.dream.cloudSynced, true);
 assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((dream) => dream.id === syncRetryDream.id)?.cloudSynced,
-  false
+  true
 );
+
+// 自动重试只走一次。真的坏掉时不能反复烧供应商额度，剩下的交给可见的失败态
+// 和用户手动点「重新生成画面」。
+// syncRetryDream.result 是共享引用，刚才那次成功生成已经把 imageUrl 写了回去。
+// 这里必须给它一份清空过的 result，否则 requestDreamImage 会走「已有图」分支，
+// 根本到不了预同步失败这条路径。
+const stuckDream = Object.assign({}, syncRetryDream, {
+  id: 'sync-stuck-dream',
+  result: Object.assign({}, syncRetryDream.result, {
+    imageUrl: '',
+    image_file_id: '',
+    imageFileId: '',
+    fileID: '',
+    fileId: '',
+  }),
+});
+wx.storage['oneiro:dreamArchive'] = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).concat([stuckDream]);
+const stuckPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+stuckPage.onLoad({ id: stuckDream.id });
+stuckPage.data.dream.cloudSynced = false;
+wx.failEveryDreamSave = true;
+const imageCallsBeforeStuck = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length;
+stuckPage.requestDreamImage();
+wx.failEveryDreamSave = false;
+assert.equal(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length, imageCallsBeforeStuck);
+// 失败必须说得出口、点得动：状态是 failed（WXML 据此渲染提示 + 重试按钮），
+// 且提示文案非空。
+assert.equal(stuckPage.data.imageStatus, 'failed');
+assert.ok(stuckPage.data.imageErrorMessage.length > 0);
+assert.equal(stuckPage.data.cloudSyncPending, true);
+
+// 离开页面再回来是用户在「没出画面」时最自然的一次自救动作，之前它什么也不做。
+// 云端已有图、只是本地没取下来时必须走重取而不是生图——requestDreamImage 在
+// 这种情况下会直接 early-return，imageStatus 会永远停在 'generating'，页面顶着
+// 一条永不消失的「完整画面生成中」。
+const revisitPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+revisitPage.onLoad({ id: syncRetryDream.id });
+revisitPage.imagePipelineStarted = true;
+revisitPage.data.aiImageLocalPath = '';
+revisitPage.data.imageStatus = 'failed';
+const imageCallsBeforeRevisit = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length;
+revisitPage.onShow();
+assert.equal(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length, imageCallsBeforeRevisit);
+assert.equal(revisitPage.data.imageStatus, 'ready');
+assert.equal(revisitPage.data.aiImageLocalPath, '/tmp/oneiro-ai-image.png');
+// 首次进入时 onShow 排在 onReady 之前，补偿不能和首次请求撞在一起生成两张图。
+const firstEnterPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+firstEnterPage.onLoad({ id: syncRetryDream.id });
+const imageCallsBeforeFirstShow = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length;
+firstEnterPage.onShow();
+assert.equal(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length, imageCallsBeforeFirstShow);
 syncRetryPage.retryDreamImage();
-assert.ok(wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length > imageCallsBeforeSyncRetry);
 assert.equal(syncRetryPage.data.dream.cloudSynced, true);
 const sharePayload = resultPage.onShareAppMessage();
 assert.equal(sharePayload.path, '/pages/home/index?fromShare=1');
@@ -1955,9 +2258,22 @@ assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('ONEIR
 assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('NO. 001'), true);
 assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('2026.'), true);
 assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('云影'), false);
+// 相册梦卡是 3:4 竖版。
+assert.deepEqual(last(wx.canvasExports), { width: 900, height: 1200 });
 resultPage.prepareShareCard();
 assert.equal(resultPage.data.sharePath, '/pages/share/index?id=card-mock');
 assert.equal(resultPage.data.publicShareImagePath, '/tmp/oneiro-card.png');
+// 微信会话里的转发缩略图固定按 5:4 显示。以前直接把 900×1200 的竖版梦卡交给
+// imageUrl，微信只能居中裁一条横带出来，梦卡的构图全被切坏（内测反馈：
+// 「分享的卡片缩略图截成横的了」）。缩略图必须按 5:4 单独构图。
+assert.deepEqual(last(wx.canvasExports), { width: 1000, height: 800 });
+assert.equal(
+  (last(wx.canvasExports).width / last(wx.canvasExports).height).toFixed(2),
+  (5 / 4).toFixed(2)
+);
+// 缩略图仍然带品牌与编号，不是一张裸图。
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('ONEIRO'), true);
+assert.equal(wx.canvasTexts[wx.canvasTexts.length - 1].join(' ').includes('NO. 001'), true);
 const readySharePayload = resultPage.onShareAppMessage();
 assert.equal(readySharePayload.path, '/pages/share/index?id=card-mock');
 assert.equal(readySharePayload.imageUrl, '/tmp/oneiro-card.png');
@@ -2007,6 +2323,23 @@ assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((item) => item.id === archiveAfterDream[0].id)?.chatMessages.length,
   3
 );
+// 聊满轮次上限后，输入框/语音/发送三个控件同时变灰，页面上却没有任何一句话
+// 解释发生了什么——用户读到的就是「卡死了、发不出去」（内测反馈：「根据梦再
+// 聊一聊那块卡死无法发送」）。上限本身是刻意的，但它必须自己说出口并给出口。
+dreamChatPage.data.turnCount = dreamChatPage.data.maxTurns;
+const chatToastsBeforeLimit = wx.toasts.length;
+const chatMessagesAtLimit = dreamChatPage.data.messages.length;
+dreamChatPage.onInput({ detail: { value: '还想再说一句' } });
+dreamChatPage.sendMessage();
+assert.equal(dreamChatPage.data.messages.length, chatMessagesAtLimit);
+assert.ok(wx.toasts.length > chatToastsBeforeLimit);
+assert.ok(last(wx.toasts).includes(String(dreamChatPage.data.maxTurns)));
+// 结束态必须有出口。一个不能再输入、又走不出去的界面和卡死没有区别。
+assert.equal(typeof dreamChatPage.backToReading, 'function');
+assert.equal(typeof dreamChatPage.startNewDream, 'function');
+dreamChatPage.startNewDream();
+assert.equal(last(wx.navigations), '/pages/home/index');
+
 resultPage.newDream();
 assert.equal(last(wx.navigations), '/pages/home/index');
 resultPage.openArchive();
@@ -2263,7 +2596,15 @@ assert.equal(diagnosticsPage.data.smokeTest.provider, 'mock-cloud');
 assert.equal(diagnosticsPage.data.smokeTest.reason, 'provider_error');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.smokeTest));
 
-const eventNames = analytics.getEvents().map((event) => event.name);
+// 本地事件缓冲区上限 120 条（analytics.MAX_EVENTS），一次完整验收跑出的事件
+// 早就超过了这个数，最早的 app_start 会被正常挤出去——那是生产行为，不是
+// 缺陷。所以这里合并每条事件当时发出的 trackEvent 云调用，它不设上限，
+// 断言的是「这些事件确实被埋过」，而不是「它们还留在缓冲区里」。
+const eventNames = analytics.getEvents().map((event) => event.name).concat(
+  wx.cloudCalls
+    .filter((call) => call.name === 'trackEvent' && call.data?.event?.name)
+    .map((call) => String(call.data.event.name))
+);
 for (const expected of [
   'app_start',
   'share_landing_view',

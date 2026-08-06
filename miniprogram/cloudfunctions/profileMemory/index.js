@@ -274,6 +274,122 @@ function sameManifest(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+// ── 只在发生实质变化时才发新版本 ─────────────────────────────────────────
+//
+// 画像此前每记一个梦就重生成并发一版，于是 V2 和 V3 常常只是换了说法，版本号
+// 一路通胀。代价不只是难看：历史版本时间轴（「三个月前你是这样」）和「画像更新
+// 了」这条召回提示，价值全部建立在「版本变化 = 真的变了」这个前提上。前提一垮，
+// 两个功能同时退化成噪音。
+//
+// 两道闸，顺序不能反：
+//   ① 证据指纹（确定性）——喂给画像的东西（资料、梦、生活记录）一个字没变，
+//      就不该有新版本，也不该再花一次供应商调用。这道闸覆盖绝大多数后台刷新。
+//   ② 文本近似（兜底）——证据变了（比如多了一个梦），但模型写出来的画像几乎
+//      是同一段话。阈值取得很保守：宁可多发一版，也不要把真正的变化吞掉——
+//      漏掉一次真实变化，用户会觉得画像根本不长进，比多一个版本号严重得多。
+
+// 指纹只覆盖「证据」，不含 portrait 那一段——后者每发一版都会变（版本号、
+// 快照 id、updatedAt），带上它指纹就永远不会相等，这道闸等于没有。
+function evidenceFingerprint(manifest) {
+  const payload = JSON.stringify({
+    profile: manifest && manifest.profile,
+    dreams: manifest && manifest.dreams,
+    notes: manifest && manifest.notes
+  });
+  // FNV-1a：够稳定、够短，且不引入依赖。这里只做「变没变」的判断，不用于安全。
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < payload.length; i += 1) {
+    hash ^= payload.charCodeAt(i);
+    hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+  }
+  return String(hash) + '-' + String(payload.length);
+}
+
+function comparableText(value) {
+  return String(value || '')
+    .replace(/\s+/g, '')
+    .replace(/[，。、；：！？…—～·「」『』“”‘’（）()《》,.!?;:~"']/g, '');
+}
+
+// 汉字没有空格分词，按字符二元组做 Dice 系数是最省事又足够准的近似度。
+function textSimilarity(left, right) {
+  const a = comparableText(left);
+  const b = comparableText(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return a === b ? 1 : 0;
+
+  const counts = Object.create(null);
+  for (let i = 0; i < a.length - 1; i += 1) {
+    const gram = a.slice(i, i + 2);
+    counts[gram] = (counts[gram] || 0) + 1;
+  }
+  let shared = 0;
+  for (let i = 0; i < b.length - 1; i += 1) {
+    const gram = b.slice(i, i + 2);
+    if (counts[gram] > 0) {
+      counts[gram] -= 1;
+      shared += 1;
+    }
+  }
+  return (2 * shared) / ((a.length - 1) + (b.length - 1));
+}
+
+// 0.9 只用来抓「几乎逐字相同」，而且只在旧快照根本没有结构化断言时才用得上。
+//
+// 散文相似度不能单独作数，有两个方向都会出错：中文实测里，同一判断换一遍措辞
+// 只有 0.33、完全不同的判断是 0.08——两者根本分不开；反过来，用户手改过画像
+// 之后系统会原样保留他的文字，相似度恒为 1，可这时图景完全可能已经变了
+// （比如梦里出现了一批新意象）。「文字没变」和「说的还是同一件事」是两回事。
+const PORTRAIT_SAME_TEXT_SIMILARITY = 0.9;
+
+// 结构化断言（traits / themes / realLifeContext）比散文稳得多，是判断「模型这次
+// 说的还是不是同一件事」更可靠的信号：多一个梦但图景没变时三者完全相同，
+// 出现新主题时立刻掉到 0.67，图景整体转向时归零。
+//
+// 这里只在完全相同（1.0）时才抑制，不设中间阈值。理由是失败代价不对称：多发
+// 一个版本号只是难看，而把一次真实变化吞掉，用户会觉得画像根本不长进——那正好
+// 摧毁了历史时间轴和「画像更新了」这两个功能的全部价值。判不准就发版。
+function claimSet(observation) {
+  return []
+    .concat(observation && observation.traits || [])
+    .concat(observation && observation.themes || [])
+    .concat(observation && observation.realLifeContext || [])
+    .map(comparableText)
+    .filter(Boolean)
+    .sort();
+}
+
+function sameClaims(left, right) {
+  const a = claimSet(left);
+  const b = claimSet(right);
+  // 两边都没有结构化断言时不能算「相同」——那只说明这一版没产出它们，
+  // 据此抑制会把所有兜底画像都冻在第一版。
+  if (!a.length || !b.length) return false;
+  return a.length === b.length && a.every(function (item, index) { return item === b[index]; });
+}
+
+// 判定「这次生成有没有说出新东西」。
+//
+// 主判据是结构化断言逐条相同：它是模型自己给出的、可比较的结论，比散文稳得多。
+// 只有旧快照压根没有这些字段（很早的版本）时，才退回到字面相似度。
+//
+// 只在完全相同时才抑制，不设中间阈值：失败代价不对称——多发一个版本号只是难看，
+// 而把一次真实变化吞掉，用户会觉得画像根本不长进，那正好摧毁了历史时间轴和
+// 「画像更新了」这两个功能的全部价值。判不准就发版。
+function portraitIsUnchanged(observation, prior) {
+  if (!prior) return { unchanged: false, reason: '' };
+  if (claimSet(prior).length) {
+    return sameClaims(observation, prior)
+      ? { unchanged: true, reason: 'claims_unchanged' }
+      : { unchanged: false, reason: '' };
+  }
+  const similarity = textSimilarity(observation && observation.summary, prior.summary || prior.profileText);
+  return similarity >= PORTRAIT_SAME_TEXT_SIMILARITY
+    ? { unchanged: true, reason: 'text_unchanged' }
+    : { unchanged: false, reason: '' };
+}
+
 async function sourcesStillCurrent(openid, expected) {
   // All collection queries run outside the transaction. CloudBase only allows
   // doc operations in a transaction; the state-document revision below is the
@@ -564,6 +680,21 @@ async function sourceAvailability(openid, refs) {
   }));
 }
 
+// 游离的旧草稿必须归入历史，否则 getState 会一直把它当作待确认版本报出来。
+// 这件事和「这次发不发新版本」无关：抑制版本时也要清，否则草稿会一直挂着。
+// 刻意放在关键事务之外——它不参与当前版本的裁决，状态文档才是那把锁，而
+// CloudBase 事务只允许 doc 操作。
+async function supersedeOrphanDrafts(portraitHistory, supersededByVersion, now) {
+  return Promise.all((portraitHistory || []).filter(function (item) {
+    return item && item.status === 'draft';
+  }).map(function (item) {
+    return db.collection('profile_snapshots').doc(item._id).update({ data: {
+      status: 'superseded', isCurrent: false, supersededAt: now,
+      supersededByVersion: supersededByVersion, updatedAt: now
+    } }).catch(function () { return null; });
+  }));
+}
+
 async function decorateSnapshot(openid, snapshot) {
   const copy = snapshotForClient(snapshot);
   if (copy) copy.sourceRefs = await sourceAvailability(openid, copy.sourceRefs);
@@ -627,6 +758,28 @@ exports.main = async function (event) {
       await ensureMemoryState(openid);
       const sources = await loadSources(openid);
       const expectedSources = sourceManifest(sources);
+      const fingerprint = evidenceFingerprint(expectedSources);
+      // 用户在界面上主动点了「重新梳理」。他明确要一次新的解读，所以即使证据
+      // 没变也照常调用供应商——模型不是确定性的，可能真的写出不一样的东西。
+      // 但结果仍然要过闸②：跑一次不等于必须发一版。
+      const forced = event && event.force === true;
+      const prior = sources.priorPortrait;
+      // 旧版本的模板文案（V7 及更早）必须被替换掉，这条路径不参与任何抑制。
+      const priorIsLegacy = !!prior && isMetaSummary(prior.summary || prior.profileText);
+      const priorFingerprint = text(prior && prior.sourceFingerprint, 80);
+
+      // 闸①：喂给画像的东西一个字没变，就既不该发新版本，也不该再花一次
+      // 供应商调用。这条路径覆盖绝大多数后台刷新（每记一个梦都会触发一次）。
+      if (!forced && !priorIsLegacy && prior && priorFingerprint && priorFingerprint === fingerprint) {
+        await supersedeOrphanDrafts(sources.portraitHistory, Number(prior.version || 0), new Date());
+        return {
+          ok: true,
+          snapshot: await decorateSnapshot(openid, prior),
+          unchanged: true,
+          unchangedReason: 'evidence_unchanged'
+        };
+      }
+
       const generated = await generateObservation(sources);
       const now = new Date();
       const observation = generated.observation;
@@ -634,6 +787,32 @@ exports.main = async function (event) {
       const requestedReason = text(event && event.changeReason, 220);
       const checkedSources = await sourcesStillCurrent(openid, expectedSources);
       if (!checkedSources) return { ok: false, reason: 'sources_changed', retryable: true };
+
+      // 闸②：证据变了（比如多了一个梦），但这一版说的还是同一件事。就地把证据
+      // 指纹和溯源刷新掉——后续解读要用最新的 sourceRefs——但不动版本号。
+      const sameness = prior && !priorIsLegacy
+        ? portraitIsUnchanged(observation, prior)
+        : { unchanged: false, reason: '' };
+      if (sameness.unchanged) {
+        await supersedeOrphanDrafts(checkedSources.portraitHistory, Number(prior.version || 0), now);
+        await db.collection('profile_snapshots').doc(prior._id).update({ data: {
+          sourceRefs: observation.sourceRefs,
+          sourceCounts: observation.sourceCounts,
+          baseProfile: observation.baseProfile,
+          sourceFingerprint: fingerprint,
+          updatedAt: now
+        } }).catch(function () { return null; });
+        const refreshed = await findOwned(openid, prior._id);
+        return {
+          ok: true,
+          snapshot: await decorateSnapshot(openid, refreshed || prior),
+          unchanged: true,
+          unchangedReason: sameness.reason,
+          provider: generated.provider,
+          fallback: generated.fallback
+        };
+      }
+
       const snapshotId = newSnapshotId();
       const created = await runAtomic(async function (transaction) {
         const expectedState = checkedSources.memoryState;
@@ -666,6 +845,9 @@ exports.main = async function (event) {
           summary: observation.summary, profileText: observation.summary, traits: observation.traits, themes: observation.themes,
           realLifeContext: observation.realLifeContext, recentContext: observation.realLifeContext, sourceRefs: observation.sourceRefs,
           baseProfile: observation.baseProfile, sourceCounts: observation.sourceCounts,
+          // 下一次生成据此判断「证据变没变」。缺这个字段的旧快照会走正常生成，
+          // 不会被误判成无变化。
+          sourceFingerprint: fingerprint,
           changeReason: requestedReason || observation.changeReason, aiOriginal: Object.assign({}, observation, { provider: generated.provider, model: generated.model || '', fallback: generated.fallback }),
           // 延续编辑原文，保证后续生成仍以用户表达为高权重输入。
           userEdited: priorUserEdit ? true : null, userEditedOriginal: priorUserEdit,
@@ -682,17 +864,7 @@ exports.main = async function (event) {
       if (created && created.sourceChanged) {
         return { ok: false, reason: 'sources_changed', retryable: true };
       }
-      // Draft cleanup is deliberately outside the critical transaction: it
-      // does not decide the current version and CloudBase transactions only
-      // permit doc operations. The state document above remains the lock.
-      await Promise.all(checkedSources.portraitHistory.filter(function (item) {
-        return item.status === 'draft';
-      }).map(function (item) {
-        return db.collection('profile_snapshots').doc(item._id).update({ data: {
-          status: 'superseded', isCurrent: false, supersededAt: now,
-          supersededByVersion: created.version, updatedAt: now
-        } }).catch(function () { return null; });
-      }));
+      await supersedeOrphanDrafts(checkedSources.portraitHistory, created.version, now);
       const snapshot = await findOwned(openid, created._id);
       return { ok: true, snapshot: await decorateSnapshot(openid, snapshot), provider: generated.provider, fallback: generated.fallback, providerError: generated.error || '' };
     }

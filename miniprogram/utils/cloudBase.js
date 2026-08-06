@@ -204,8 +204,14 @@ function getProfileMemory(callback) {
   return profileMemory('get', {}, callback);
 }
 
-function generateProfilePortrait(changeReason, callback) {
-  return profileMemory('generate', { changeReason: changeReason || '' }, callback);
+// force 只由用户在界面上主动点「重新梳理」时传。云端据此区分两件事：后台刷新
+// 在证据没变时直接跳过（连供应商调用都省掉），而用户明确要一次新解读时照常
+// 生成——但生成不等于一定发新版本，仍要过实质变化的判断。
+function generateProfilePortrait(changeReason, callback, options) {
+  return profileMemory('generate', {
+    changeReason: changeReason || '',
+    force: !!(options && options.force)
+  }, callback);
 }
 
 function saveProfilePortrait(snapshotId, snapshot, callback) {
@@ -509,13 +515,48 @@ function metaphysicalReading(dreamText, profile, baseResult, callback) {
   }, callback, { timeoutMs: 40000 });
 }
 
+// 语音识别在真机上失败最多的两类原因都是一次性的：弱网下 callFunction 直接
+// fail，或小程序短暂切后台导致结果过期。这两种情况重试一次几乎必定成功，而
+// 让用户自己重录一遍代价高得多（要重新组织一遍语言）。识别失败本身
+// （empty_result / not_configured / too_long）不重试——重试改变不了结果。
+var SPEECH_RETRYABLE_REASONS = {
+  cloud_call_failed: true,
+  cloud_result_expired: true,
+  client_timeout: true,
+  cloud_unavailable: true,
+  recognize_timeout: true
+};
+// 云函数侧 Tencent ASR 通常 1-3 秒返回，弱网上传一段 60 秒 mp3 的 base64
+// 才是耗时大头。30 秒对 4G 边缘信号偏紧。
+var SPEECH_CLIENT_TIMEOUT_MS = 45000;
+
 function speechRecognize(audioBase64, duration, callback) {
-  return callCloudFunction('speechRecognize', {
+  var payload = {
     audioBase64: audioBase64 || '',
     format: 'mp3',
     duration: Number(duration) || 0
-  }, callback);
+  };
+  var attempted = false;
+
+  function attempt() {
+    return callCloudFunction('speechRecognize', payload, function (result) {
+      var reason = result && result.reason ? String(result.reason) : '';
+      if (!attempted && (!result || result.ok !== true) && SPEECH_RETRYABLE_REASONS[reason]) {
+        attempted = true;
+        setTimeout(attempt, 600);
+        return;
+      }
+      if (callback) callback(result);
+    }, { timeoutMs: SPEECH_CLIENT_TIMEOUT_MS });
+  }
+
+  return attempt();
 }
+
+// 梦后对话走的是 interpretDream 这个云函数，于是继承了它 70 秒的客户端上限。
+// 但一轮聊天回复和一次完整解读不是一回事：真的等满 70 秒，用户早就认定
+// 「卡死了」并反复点发送。回复本身通常几秒返回，35 秒已经足够宽裕。
+var CHAT_CLIENT_TIMEOUT_MS = 35000;
 
 function chatAboutDream(dreamText, dreamResult, messages, userMessage, callback, feedback) {
   return callCloudFunction('interpretDream', {
@@ -525,7 +566,7 @@ function chatAboutDream(dreamText, dreamResult, messages, userMessage, callback,
     messages: messages || [],
     userMessage: userMessage || '',
     feedback: feedback || ''
-  }, callback);
+  }, callback, { timeoutMs: CHAT_CLIENT_TIMEOUT_MS });
 }
 
 function refineDream(dreamText, dreamResult, answer, callback) {

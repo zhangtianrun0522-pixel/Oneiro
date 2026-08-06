@@ -49,6 +49,325 @@
   line-height: 1.8;
 }
 
+/* ── 阶段画像 ──────────────────────────────────────────────
+   从「我」页搬来。它排在本月观察/重复线索/阶段原型之前，是这一段自我叙事的
+   统领：那三个讲的是「你的梦里有什么」，画像讲的是「你是怎样的人」。
+   版式刻意比下面的牌组克制——不上底卡、不做厚度，只用一条旧金细线起头，
+   免得两个视觉重量相当的块在同一屏里互相抢。 */
+.portrait-block {
+  margin-top: 40rpx;
+  padding-top: 28rpx;
+  border-top: 2rpx solid rgba(184, 134, 59, 0.4);
+}
+
+.portrait-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.portrait-kicker {
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  font-weight: 800;
+  letter-spacing: 2rpx;
+}
+
+/* 「用于解读中」= 强调态用 --gold-ink（4.85:1）；
+   「已暂停解读」= 非关键弱化态用 --ink-55；
+   「等待形成 / 正在梳理」= 中性默认态用 --ink-70（6.10:1） */
+.portrait-status {
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+.portrait-status.is-paused { color: var(--ink-55); }
+.portrait-status.is-waiting { color: var(--ink-70); }
+
+/* 新版本提示。后台每记一个梦就刷新一次画像，此前从不告知任何人——这是这个
+   产品唯一一个「有新东西可看」的信号，值得一条能点的横幅，而不是一个角标。 */
+.portrait-update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-top: var(--space-tight);
+  padding: 18rpx 22rpx;
+  background: rgba(184, 134, 59, 0.1);
+  border-left: 4rpx solid var(--gold-line);
+}
+
+.portrait-update-copy {
+  color: var(--ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.portrait-update-link {
+  flex: 0 0 auto;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+.portrait-summary {
+  display: block;
+  margin-top: var(--space-tight);
+  font-family: var(--font-serif);
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  line-height: 1.75;
+}
+
+.portrait-editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 180rpx;
+  margin-top: var(--space-tight);
+  padding: 18rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.2);
+  border-radius: 0;
+  background: #fdfaf2;
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  line-height: 1.7;
+}
+
+/* 这一版为什么和上一版不同。字号压到最小、颜色最弱——它是脚注，不是正文。 */
+.portrait-reason {
+  display: block;
+  margin-top: 18rpx;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  line-height: 1.6;
+}
+
+/* 溯源与历史两块共用一套折叠头样式：一行标签 + 右侧展开/收起。 */
+.portrait-sources,
+.portrait-history {
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.08);
+}
+
+.portrait-sources-toggle,
+.portrait-history-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 60rpx;
+}
+
+.portrait-sources-label,
+.portrait-history-label {
+  color: var(--ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+.portrait-sources-icon,
+.portrait-history-icon {
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+.portrait-source-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8rpx;
+}
+
+.portrait-source-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  min-height: var(--tap-min);
+  padding-left: 20rpx;
+  border-left: 3rpx solid rgba(184, 134, 59, 0.4);
+}
+
+.portrait-source-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 24rpx;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.portrait-source-meta {
+  flex: 0 0 auto;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+/* 源梦已被删除：仍然列出来（画像确实是从它长出来的），但不再假装可以点开。 */
+.portrait-source-item.is-gone .portrait-source-title { color: var(--ink-55); }
+
+.portrait-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  margin-top: var(--space-tight);
+}
+
+.portrait-history-item {
+  padding: 20rpx 24rpx;
+  background: rgba(33, 29, 23, 0.03);
+  border-left: 4rpx solid rgba(184, 134, 59, 0.35);
+}
+
+.portrait-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.portrait-history-version {
+  color: var(--ink);
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.portrait-history-date {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.portrait-history-copy {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--ink-70);
+  font-size: 24rpx;
+  line-height: 1.7;
+}
+
+/* ── 画像的加载 / 空 / 失败态 ── */
+.portrait-loading-card,
+.portrait-empty-card {
+  margin-top: var(--space-tight);
+}
+
+.portrait-loading-copy,
+.portrait-empty-copy {
+  display: block;
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  line-height: 1.7;
+}
+
+.portrait-empty-copy { margin-top: var(--space-tight); }
+
+.portrait-empty-title {
+  display: block;
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+}
+
+.portrait-loading-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  margin-top: 20rpx;
+}
+
+.portrait-loading-bar {
+  height: 22rpx;
+  border-radius: 2rpx;
+  background: rgba(33, 29, 23, 0.08);
+  animation: portrait-loading-pulse 1.2s ease-in-out infinite;
+}
+
+.portrait-loading-bar.is-short { width: 60%; }
+
+@keyframes portrait-loading-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.portrait-empty-retry {
+  display: inline-block;
+  min-height: var(--tap-min);
+  margin-top: var(--space-tight);
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
+}
+
+/* ── 画像的动作 ── */
+.portrait-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: var(--space-tight);
+}
+
+.portrait-primary,
+.portrait-secondary {
+  width: auto !important;
+  min-height: var(--tap-min);
+  margin: 0 !important;
+  padding: 0 26rpx;
+  border-radius: 2rpx;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
+}
+
+.portrait-primary { border: 1rpx solid var(--ink); background: var(--ink); color: var(--paper); }
+.portrait-secondary { border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
+
+.portrait-primary::after,
+.portrait-secondary::after { border: 0; }
+
+/* 默认视图固定两个文字链：「修改这段理解」+「重新梳理」，画像被暂停时第二个
+   换成「恢复用于解读」。第三个动作（暂停）移到编辑态，见 .portrait-pause-link
+   ——默认视图不该同时摆三个低频选择。 */
+.portrait-links-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 32rpx;
+  margin-top: 12rpx;
+}
+
+.portrait-link-btn {
+  margin: 0 !important;
+  min-height: var(--tap-min);
+  padding: 0;
+  background: transparent;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: var(--tap-min);
+}
+
+.portrait-link-btn::after { border: 0; }
+
+.portrait-pause-link {
+  display: block;
+  min-height: var(--tap-min);
+  margin-top: 4rpx;
+  color: var(--ink-70);
+  font-size: 23rpx;
+  line-height: var(--tap-min);
+}
+
+.portrait-growth-hint {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  line-height: 1.6;
+}
+
 /* ── 本月观察牌组 ──────────────────────────────────────────
    .month-observation-deck 是定位容器，背后两层 .deck-shadow（纸色、旋转
    偏移）垫出「一叠牌」的厚度，.month-observation 是叠在最上面那张深墨卡。

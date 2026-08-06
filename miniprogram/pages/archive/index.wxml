@@ -11,6 +11,130 @@
     <text class="filter-clear" bindtap="clearFilter">清除筛选</text>
   </view>
 
+  <!-- ── 阶段画像：从「我」页第三屏搬到这里 ──
+       「我」是一页表单，把产品里最有辨识度的产出摆在表单上方，它会被读成一个
+       用户自己填的字段，而不是系统产出的东西。梦册已经有本月观察、重复线索、
+       阶段原型三个同类物件，画像是其中最强的一个，四者合起来才是一段连续的
+       「你的梦加起来说明了什么」，所以画像放在最前面统领它们。 -->
+  <view class="portrait-block">
+    <view class="portrait-head">
+      <text class="portrait-kicker">阶段画像{{portraitVersionLabel ? ' · ' + portraitVersionLabel : ''}}</text>
+      <text class="portrait-status {{portraitPaused ? 'is-paused' : ''}} {{portraitLoading ? 'is-waiting' : ''}}">{{portraitStatusLabel}}</text>
+    </view>
+
+    <!-- 内容优先：只要当前画像有值就展示，不受异步读取状态影响。 -->
+    <block wx:if="{{memoryState.current}}">
+      <!-- 后台每记一个梦就刷新一次画像，却从来没有人被告知过。新版本是这个
+           产品最好的召回事件，之前产生零通知。 -->
+      <view wx:if="{{portraitHasUpdate}}" class="portrait-update" bindtap="togglePortraitHistory">
+        <text class="portrait-update-copy">画像更新到 {{portraitVersionLabel}}{{portraitUpdatedLabel ? ' · ' + portraitUpdatedLabel : ''}}</text>
+        <text class="portrait-update-link">看看变了什么 ›</text>
+      </view>
+
+      <textarea
+        wx:if="{{portraitEditing}}"
+        class="portrait-editor"
+        value="{{portraitEditSummary}}"
+        maxlength="500"
+        auto-height
+        bindinput="onPortraitSummaryInput"
+      />
+      <text wx:else class="portrait-summary">{{memoryState.current.summary}}</text>
+
+      <view wx:if="{{portraitEditing}}" class="portrait-actions">
+        <button class="portrait-primary" disabled="{{portraitSaving || portraitLoading}}" loading="{{portraitSaving}}" bindtap="savePortraitEdit">保存修改</button>
+        <button class="portrait-secondary" bindtap="cancelPortraitEdit">取消</button>
+      </view>
+      <!-- 「暂停用于解读」是低频但必要的控制项。放在编辑态里，默认视图就只
+           剩两个动作；用户已经在主动管理这段文字时，才需要看到它。 -->
+      <text
+        wx:if="{{portraitEditing && !portraitPaused}}"
+        class="portrait-pause-link"
+        bindtap="togglePortraitUse"
+      >暂停用于解读</text>
+
+      <block wx:if="{{!portraitEditing}}">
+        <!-- 这一版为什么和上一版不同。changeReason 每一版都存了，从没显示过。 -->
+        <text wx:if="{{portraitChangeReason}}" class="portrait-reason">{{portraitChangeReason}}</text>
+
+        <!-- 「这段来自哪几个梦」。prompt 要求画像的判断能指回具体是哪个梦的
+             哪一处，但界面此前不给核对入口——一个无法核对的判断会退化成星座
+             运势，正是那份 prompt 一直在对抗的失败模式。 -->
+        <view wx:if="{{portraitSources.length}}" class="portrait-sources">
+          <view class="portrait-sources-toggle" bindtap="togglePortraitSources">
+            <text class="portrait-sources-label">这段来自你的 {{portraitSources.length}} 个梦</text>
+            <text class="portrait-sources-icon">{{showPortraitSources ? '收起 ↑' : '查看 ↓'}}</text>
+          </view>
+          <view wx:if="{{showPortraitSources}}" class="portrait-source-list">
+            <view
+              wx:for="{{portraitSources}}"
+              wx:key="dreamId"
+              class="portrait-source-item {{item.openable ? '' : 'is-gone'}}"
+              data-dream-id="{{item.openable ? item.dreamId : ''}}"
+              bindtap="openPortraitSource"
+            >
+              <text class="portrait-source-title">{{item.title}}</text>
+              <text class="portrait-source-meta">{{item.dateLabel}}{{item.openable ? ' ›' : ' · 已删除'}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 「三个月前你是这样，现在你是这样」是画像唯一能做、而单次解读永远
+             做不到的事。历史版本一直存在 profile_snapshots 里，此前只显示当前
+             这一版。 -->
+        <view wx:if="{{portraitHistory.length}}" class="portrait-history">
+          <view class="portrait-history-toggle" bindtap="togglePortraitHistory">
+            <text class="portrait-history-label">你以前的样子（{{portraitHistory.length}} 版）</text>
+            <text class="portrait-history-icon">{{showPortraitHistory ? '收起 ↑' : '展开 ↓'}}</text>
+          </view>
+          <view wx:if="{{showPortraitHistory}}" class="portrait-history-list">
+            <view wx:for="{{portraitHistory}}" wx:key="clientId" class="portrait-history-item">
+              <view class="portrait-history-head">
+                <text class="portrait-history-version">{{item.versionLabel}}</text>
+                <text class="portrait-history-date">{{item.dateLabel}}</text>
+              </view>
+              <text class="portrait-history-copy">{{item.summary}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="portrait-links-row">
+          <button class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="startPortraitEdit">修改这段理解</button>
+          <button wx:if="{{portraitPaused}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="togglePortraitUse">恢复用于解读</button>
+          <button wx:else class="portrait-link-btn" disabled="{{portraitLoading}}" loading="{{portraitLoading}}" bindtap="refreshPortrait">重新梳理</button>
+        </view>
+
+        <view wx:if="{{portraitGenerateFailed}}" class="portrait-links-row">
+          <text class="portrait-empty-retry" bindtap="refreshPortrait">重新梳理失败，点击重试</text>
+        </view>
+        <text wx:if="{{insights.dreamCount < 3}}" class="portrait-growth-hint">随着你记录更多梦，这份画像会越来越具体</text>
+      </block>
+    </block>
+
+    <!-- 首次进入、云端还没返回：明确的加载态，不是空态 -->
+    <view wx:elif="{{!memoryLoaded}}" class="portrait-loading-card">
+      <text class="portrait-loading-copy">正在读取 Oneiro 对你的理解…</text>
+      <view class="portrait-loading-bars">
+        <view class="portrait-loading-bar"></view>
+        <view class="portrait-loading-bar"></view>
+        <view class="portrait-loading-bar is-short"></view>
+      </view>
+    </view>
+
+    <!-- 加载失败或自动生成失败：明确告诉用户可以重试，不把失败误判成无画像 -->
+    <view wx:elif="{{portraitLoadError || portraitGenerateFailed}}" class="portrait-empty-card">
+      <text class="portrait-empty-title">暂时没连上，点击重试</text>
+      <text class="portrait-empty-copy">你的资料不会受影响，连上后我会继续为你梳理。</text>
+      <text class="portrait-empty-retry" bindtap="retryPortrait">重试</text>
+    </view>
+
+    <!-- 无画像时自动生成，避免让用户先理解并选择一堆操作 -->
+    <view wx:else class="portrait-empty-card">
+      <text class="portrait-empty-title">正在为你梳理</text>
+      <text class="portrait-empty-copy">我会从你留下的资料、梦和生活片段开始，先整理一版简短的当下观察。</text>
+    </view>
+  </view>
+
   <!-- 阶段观察 / 本月主牌 / 阶段原型合并为一张「本月观察」，
        让梦境时间轴尽早出现，而不是被三张卡连续推到屏幕外。
        外层 .month-observation-deck 用两层旋转偏移的纸色底卡（.deck-shadow）

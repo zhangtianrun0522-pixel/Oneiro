@@ -305,14 +305,48 @@ assert.equal(confirmed.snapshot.isCurrent, true);
 const paused = await profileMain({ action: 'toggleUse', snapshotId: edited.snapshot._id, useInFutureReadings: false });
 assert.equal(paused.snapshot.useInFutureReadings, false);
 
-const secondDraft = await profileMain({ action: 'generate', changeReason: '新增现实片段' });
-assert.equal(secondDraft.snapshot.version, 3);
-assert.equal(secondDraft.snapshot.status, 'confirmed');
-assert.equal(secondDraft.snapshot.isCurrent, true);
-const thirdDraft = await profileMain({ action: 'generate', changeReason: '重新提炼整体摘要' });
-assert.equal(thirdDraft.snapshot.version, 4);
+// 只在发生实质变化时才发新版本。以前每次 generate 都无条件发一版，于是每记一个
+// 梦画像就 +1，V2 和 V3 常常只是换了说法——版本号一通胀，「你以前的样子」时间轴
+// 和「画像更新了」这条召回提示的价值就同时归零，因为它们全都建立在
+// 「版本变了 = 真的变了」这个前提上。
+const snapshotsBeforeNoOpGenerate = database.rows.profile_snapshots.length;
+const noOpGenerate = await profileMain({ action: 'generate', changeReason: '新增现实片段' });
+assert.equal(noOpGenerate.ok, true);
+assert.equal(noOpGenerate.unchanged, true);
+// 证据和结构化断言都没动，不该多出一条快照，版本号也不该往前走。
+assert.equal(database.rows.profile_snapshots.length, snapshotsBeforeNoOpGenerate);
+assert.equal(noOpGenerate.snapshot.version, edited.snapshot.version);
+assert.equal(noOpGenerate.snapshot._id, edited.snapshot._id);
+assert.equal(noOpGenerate.snapshot.isCurrent, true);
+// 抑制版本的同时必须把溯源刷新到最新：后续解读要用它。
+assert.ok(database.rows.profile_snapshots.find((item: Row) => item._id === edited.snapshot._id)?.sourceFingerprint);
+
+// 证据变了、图景也真的变了（出现新意象）：必须照常发新版本。判不准就发版——
+// 把一次真实变化吞掉，用户会觉得画像根本不长进，比多一个版本号严重得多。
+database.rows.dream_entries.push({
+  _id: 'dream-cloud-4', openid: 'user-a', localId: 'dream-4',
+  dreamText: '水一直漫上来，我却一点也不慌', status: 'ready',
+  symbols: ['水', '涨潮'], emotionalWeather: '平静', chatMessages: [], revisitAnswer: '',
+  result: { title: '梦4', symbols: ['水', '涨潮'], emotional_weather: '平静' },
+  createdAt: new Date(now.getTime() + 1000),
+});
+const thirdDraft = await profileMain({ action: 'generate', changeReason: '出现了新的意象' });
+assert.equal(thirdDraft.unchanged, undefined);
+assert.equal(thirdDraft.snapshot.version, edited.snapshot.version + 1);
 assert.equal(thirdDraft.snapshot.status, 'confirmed');
-assert.equal(database.rows.profile_snapshots.find((item: Row) => item._id === secondDraft.snapshot._id)?.isCurrent, false);
+assert.equal(thirdDraft.snapshot.isCurrent, true);
+assert.ok(thirdDraft.snapshot.themes.indexOf('水') >= 0);
+assert.equal(database.rows.profile_snapshots.find((item: Row) => item._id === edited.snapshot._id)?.isCurrent, false);
+
+// 新版本写下了自己的证据指纹；下一次同样证据的后台刷新会在调用供应商之前
+// 就被挡掉，连一次生成都不该花。
+const fingerprintAfterPublish = database.rows.profile_snapshots.find((item: Row) => item._id === thirdDraft.snapshot._id)?.sourceFingerprint;
+assert.ok(fingerprintAfterPublish);
+const fingerprintGate = await profileMain({ action: 'generate', changeReason: '后台自动刷新' });
+assert.equal(fingerprintGate.unchanged, true);
+assert.equal(fingerprintGate.unchangedReason, 'evidence_unchanged');
+assert.equal(fingerprintGate.snapshot._id, thirdDraft.snapshot._id);
+
 const draftState = await profileMain({ action: 'get' });
 assert.equal(draftState.latestDraft, null);
 assert.equal(draftState.current._id, thirdDraft.snapshot._id);
@@ -338,6 +372,9 @@ database.rows.profile_snapshots.push({
 const legacyState = await profileMain({ action: 'get' });
 assert.equal(legacyState.latestDraft?._id, 'legacy-draft');
 assert.equal(legacyState.history.find((item: Row) => item._id === 'legacy-draft')?.status, 'draft');
+// 游离旧草稿必须归入历史。这件事和「这次发不发新版本」无关：证据没变时这次
+// generate 会被抑制，草稿清理仍然要跑，否则它会一直被 getState 当成待确认版本
+// 报出来。
 const migrated = await profileMain({ action: 'generate', changeReason: '迁移旧草稿' });
 assert.equal(migrated.snapshot.status, 'confirmed');
 assert.equal(migrated.snapshot.isCurrent, true);
@@ -348,7 +385,9 @@ const restored = await profileMain({ action: 'restore', snapshotId: firstDraft.s
 assert.equal(restored.ok, true);
 assert.equal(restored.snapshot.status, 'confirmed');
 assert.equal(restored.snapshot.isCurrent, true);
-assert.equal(restored.snapshot.version, 6);
+// 版本号改为相对断言：写死数字会把「这一步发不发版」的契约藏进一个常量里，
+// 而这正是这轮改动的重点。
+assert.equal(restored.snapshot.version, migrated.snapshot.version + 1);
 assert.equal(restored.snapshot.derivedFromSnapshotId, firstDraft.snapshot._id);
 assert.equal(restored.snapshot.changeReason, '从 V1 回溯');
 assert.equal(database.rows.profile_snapshots.find((item: Row) => item._id === migrated.snapshot._id)?.isCurrent, false);
@@ -380,7 +419,7 @@ assert.equal(database.rows.profile_snapshots.length, portraitsBeforeConcurrentEd
 assert.equal(database.rows.profile_memory_state[0].currentSnapshotId, 'portrait-concurrent-user-edit');
 
 currentOpenId = 'user-b';
-const crossUser = await profileMain({ action: 'save', snapshotId: secondDraft.snapshot._id, snapshot: { summary: '越权' } });
+const crossUser = await profileMain({ action: 'save', snapshotId: thirdDraft.snapshot._id, snapshot: { summary: '越权' } });
 assert.equal(crossUser.reason, 'snapshot_not_found');
 currentOpenId = 'user-a';
 
@@ -714,7 +753,9 @@ assert.equal(storedReadyDream.result.image_file_id, 'cloud://refreshed-fast-imag
 assert.equal(storedReadyDream.result.image_quality, 'fast');
 
 database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => ![
-  'dream-pending-contract', 'dream-direct-null', 'dream-blocked-null', 'dream-concurrent-null'
+  'dream-pending-contract', 'dream-direct-null', 'dream-blocked-null', 'dream-concurrent-null',
+  // 只为「图景真的变了要发新版本」那一段而加的梦，不属于归档列表的基线。
+  'dream-4'
 ].includes(item.localId));
 const archiveList = await saveDreamMain({ action: 'list' });
 assert.equal(archiveList.ok, true);

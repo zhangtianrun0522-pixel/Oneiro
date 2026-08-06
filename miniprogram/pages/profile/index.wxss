@@ -176,265 +176,68 @@
   border-top: 1rpx solid rgba(33, 29, 23, 0.08);
 }
 
-/* ── 阶段画像：设计稿里本页最重要的结论，不再挂卡片盒 ── */
-.portrait-block {
+/* ── 阶段画像入口 ──
+   完整面板已搬到「梦册」顶部（见 pages/archive/index.wxss）。这一页只留一个
+   只读入口：老用户仍能从熟悉的位置找到它，但不再有两份可编辑的画像 UI，
+   也不会让这页表单看起来像是画像的归属地。 */
+.portrait-entry {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
   margin-top: 44rpx;
-}
-
-/* 「用于解读中」= 强调态用 --gold-ink（4.85:1）；
-   「已暂停解读」= 非关键弱化态用 --ink-55（3.95:1，仅限此类次要状态）；
-   「等待形成」= 中性默认态用 --ink-70（6.10:1） */
-.portrait-focus-label {
-  font-size: var(--fs-label);
-  font-weight: 700;
-}
-
-.portrait-focus-label.is-active { color: var(--gold-ink); }
-.portrait-focus-label.is-paused { color: var(--ink-55); }
-.portrait-focus-label.is-waiting { color: var(--ink-70); }
-
-.portrait-summary {
-  display: block;
-  margin-top: var(--space-tight);
-  font-family: var(--font-serif);
-  color: var(--ink);
-  font-size: var(--fs-aux);
-  line-height: 1.75;
-}
-
-.portrait-editor {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 180rpx;
-  margin-top: var(--space-tight);
-  padding: 18rpx;
-  border: 1rpx solid rgba(33, 29, 23, 0.2);
-  border-radius: 0;
-  background: #fdfaf2;
-  color: var(--ink);
-  font-size: var(--fs-aux);
-  line-height: 1.7;
-}
-
-/* ── 首次加载态：文字 + 骨架条，取代之前「异步返回前先渲染空态」的
-   闪烁。骨架条是纯装饰（不承载文字信息），用已有的 rgba(ink,0.08)
-   量级，呼吸动画只改 opacity，不引入新颜色 token ── */
-.portrait-loading-card {
-  margin-top: var(--space-tight);
-}
-
-.portrait-loading-copy {
-  display: block;
-  color: var(--ink-70);
-  font-size: var(--fs-aux);
-  line-height: 1.7;
-}
-
-.portrait-loading-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-  margin-top: 20rpx;
-}
-
-.portrait-loading-bar {
-  height: 22rpx;
-  border-radius: 2rpx;
-  background: rgba(33, 29, 23, 0.08);
-  animation: portrait-loading-pulse 1.2s ease-in-out infinite;
-}
-
-.portrait-loading-bar.is-short {
-  width: 60%;
-}
-
-@keyframes portrait-loading-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-.portrait-empty-card {
-  margin-top: var(--space-tight);
-}
-
-.portrait-empty-title {
-  display: block;
-  color: var(--ink);
-  font-size: var(--fs-aux);
-  font-weight: 600;
-}
-
-.portrait-empty-copy {
-  display: block;
-  margin-top: var(--space-tight);
-  color: var(--ink-70);
-  font-size: var(--fs-aux);
-  line-height: 1.7;
-}
-
-/* 加载失败态的重试入口：与 .clear-field 同规格的下划线文字链，
-   --ink-70 on --paper = 6.10:1 */
-.portrait-empty-retry {
-  display: inline-block;
-  margin-top: var(--space-tight);
-  min-height: var(--tap-min);
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  line-height: var(--tap-min);
-  text-decoration: underline;
-  text-underline-offset: 6rpx;
-}
-
-/* 云端生成失败但本机草稿仍展示：用 --cinnabar-ink（4.69–5.03:1，
-   与 .fact-delete 同一校准值）标出失败说明，重试仍是 --ink-70 文字链 */
-.portrait-generate-error {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16rpx;
-  margin-top: var(--space-tight);
-}
-
-.portrait-generate-error-copy {
-  color: var(--cinnabar-ink);
-  font-size: var(--fs-label);
-  line-height: 1.6;
-}
-
-.portrait-generate-error-retry {
-  min-height: var(--tap-min);
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  line-height: var(--tap-min);
-  text-decoration: underline;
-  text-underline-offset: 6rpx;
-}
-
-.portrait-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-  margin-top: var(--space-tight);
-}
-
-.portrait-primary,
-.portrait-secondary {
-  width: auto !important;
-  min-height: var(--tap-min);
-  margin: 0 !important;
-  padding: 0 26rpx;
-  border-radius: 2rpx;
-  font-size: var(--fs-label);
-  font-weight: 700;
-  line-height: var(--tap-min);
-}
-
-.portrait-primary { border: 1rpx solid var(--ink); background: var(--ink); color: var(--paper); }
-.portrait-secondary { border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
-
-.portrait-primary::after,
-.portrait-secondary::after {
-  border: 0;
-}
-
-/* 默认视图固定两个文字链：「修改这段理解」+「重新梳理」，画像被暂停时
-   第二个换成「恢复用于解读」。第三个动作（暂停）移到编辑态，见
-   .portrait-pause-link——默认视图不该同时摆三个低频选择。 */
-.portrait-links-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 32rpx;
-  margin-top: 20rpx;
-}
-
-.portrait-link-btn {
-  margin: 0 !important;
-  min-height: var(--tap-min);
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  line-height: var(--tap-min);
-}
-
-.portrait-link-btn::after {
-  border: 0;
-}
-
-/* 只在编辑态出现。用最轻的文字链权重，不与「保存修改 / 取消」争夺注意力。 */
-.portrait-pause-link {
-  display: block;
-  min-height: var(--tap-min);
-  margin-top: 4rpx;
-  color: var(--ink-70);
-  font-size: 23rpx;
-  line-height: var(--tap-min);
-}
-
-/* ── 历史版本：唯一保留的浅色底块，从从属子列表变成设计稿的
-   独立小盒子，但保留原有折叠/展开交互（设计稿本身没有画折叠态，
-   产品要求这条功能分支必须保留，因此头部本身仍是 bindtap 开关）。
-   背景 rgba(33,29,23,0.03) 叠加在 --paper 上做文字核算：
-     --ink       on 该底色 = 13.48:1
-     --ink-70    on 该底色 = 5.93:1
-   左边线 --gold-line 0.35 属于纯点缀，不做 3:1 强制（见文件头注释）。 */
-.portrait-history-box {
-  margin-top: 28rpx;
-  padding: 24rpx 28rpx;
+  padding: 26rpx 28rpx;
   background: rgba(33, 29, 23, 0.03);
-  border-left: 4rpx solid rgba(184, 134, 59, 0.35);
+  border-left: 4rpx solid rgba(184, 134, 59, 0.5);
 }
 
-.portrait-history-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: var(--tap-min);
-}
-
-.portrait-history-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-tight);
-  margin-top: var(--space-tight);
-}
-
-.history-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-}
-
-.history-copy {
-  display: flex;
-  align-items: center;
-  gap: var(--space-tight);
+.portrait-entry-copy {
+  flex: 1;
   min-width: 0;
 }
 
-.history-version {
-  color: var(--ink);
-  font-size: 24rpx;
+.portrait-entry-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14rpx;
 }
 
-.history-edited-flag {
-  flex-shrink: 0;
-  color: var(--gold-ink);
-  font-size: 20rpx;
-}
-
-.history-restore {
+.portrait-entry-badge {
   flex: 0 0 auto;
-  min-height: var(--tap-min);
+  padding: 2rpx 12rpx;
+  background: var(--gold-line);
+  color: var(--paper);
+  font-size: 19rpx;
+  font-weight: 700;
+}
+
+/* 预览只留两行：这里是入口不是正文，全文在梦册。 */
+.portrait-entry-preview {
+  display: -webkit-box;
+  margin-top: 12rpx;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  color: var(--ink-70);
+  font-size: 24rpx;
+  line-height: 1.7;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.portrait-entry-status {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--gold-ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+
+.portrait-entry-arrow {
+  flex: 0 0 auto;
+  align-self: center;
   color: var(--ink-70);
   font-size: var(--fs-label);
-  line-height: var(--tap-min);
-}
-
-.history-restore::after {
-  border: 0;
+  font-weight: 700;
 }
 
 /* ── 最近的线索：真实数据是 dreamCount + stageSummary 一段摘要文字，

@@ -176,6 +176,54 @@
 .composer-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12rpx; }
 .voice-note { color: var(--ink-70); font-size: var(--fs-label); }
 
+/* 聊满轮次上限后的收束态。这里刻意不是一条灰色提示，而是一个有出口的
+   结束卡片——一个不能再输入的界面必须自己说清为什么，并把用户送到下一步，
+   否则读起来就是发不出去。 */
+.chat-ended {
+  padding: 28rpx 8rpx 4rpx;
+}
+.chat-ended-title {
+  display: block;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+.chat-ended-copy {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+}
+.chat-ended-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+.chat-ended-primary,
+.chat-ended-secondary {
+  flex: 1;
+  min-height: var(--tap-min);
+  margin: 0;
+  padding: 0 16rpx;
+  border-radius: 40rpx;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
+}
+.chat-ended-primary::after,
+.chat-ended-secondary::after { border: 0; }
+.chat-ended-primary {
+  border: 1rpx solid rgba(33, 29, 23, 0.72);
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+.chat-ended-secondary {
+  border: 1rpx solid rgba(184, 134, 59, 0.5);
+  background: transparent;
+  color: var(--ink-70);
+}
+
 @keyframes voice-breathing {
   0% { box-shadow: 0 0 0 0 rgba(178, 58, 50, 0.24); }
   70% { box-shadow: 0 0 0 16rpx rgba(178, 58, 50, 0); }

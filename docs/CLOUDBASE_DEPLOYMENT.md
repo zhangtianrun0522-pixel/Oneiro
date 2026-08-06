@@ -188,6 +188,20 @@ The quality route is disabled unless `QUALITY_IMAGE_ENABLED=1`. The quality job 
 
 Rehdasu's `/v1/images/generations` endpoint is synchronous and historically takes longer than the Mini Program request budget. `generateDreamImage` therefore returns `quality_sync_endpoint_unsupported` before making a paid request when that endpoint is configured. This limitation applies only to the optional quality channel; the verified Seedream 5.0 Lite synchronous path is the current production image channel.
 
+### 语音识别（speechRecognize）
+
+`speechRecognize` 调用腾讯云 ASR `SentenceRecognition`，需要 `TENCENT_ASR_SECRET_ID` /
+`TENCENT_ASR_SECRET_KEY`。函数自己在 `ASR_REQUEST_TIMEOUT_MS`（15 秒）收口并返回
+`recognize_timeout`，**控制台里这个函数的平台超时必须高于 15 秒**（建议 20 秒）；
+低于它时函数会被平台直接掐断，客户端只能拿到一个没有原因的 `cloud_call_failed`，
+线上就无法区分「ASR 慢」和「网络断」。部署或改动控制台配置后请复核该值。
+
+客户端对 `cloud_call_failed` / `cloud_result_expired` / `client_timeout` /
+`cloud_unavailable` / `recognize_timeout` 自动重试一次；识别类失败
+（`empty_result` / `not_configured` / `too_long`）不重试。腾讯 ASR 的 `code`
+会以 `providerErrorCode` 原样带回并进入 `voice_recognize_failed` 事件——
+这是区分「音频有问题」和「账号/额度有问题」的唯一信号。
+
 ### AI 阶段画像
 
 `profileMemory` 使用 `profile_snapshots` 保存自动发布的阶段画像、用户编辑、历史回溯和停用状态。它会复用 `INTERPRET_PROVIDER` / `DEEPSEEK_API_KEY` 等服务端配置；未配置或调用失败时生成朋友式确定性画像。生成成功的版本直接成为当前画像；只有 `status: confirmed`、`isCurrent: true` 且 `useInFutureReadings: true` 的画像会进入后续解读上下文。
@@ -259,3 +273,30 @@ Then list deployed functions:
 - Live non-cached image generation passed after the ownership/race fix with `nano-banana-fast` (811,786-byte JPG, 17.2-second provider latency), followed by successful source-dream and owned-asset cleanup. A nonexistent dream id was rejected before provider work, and deletion blocked subsequent life-note writes. Physical-device rendering and album-save permission still require QR acceptance.
 - Content safety is currently a basic local/server regex gate. Production should add WeChat content security and provider-side moderation before wider launch.
 - `generated_assets` is verified through `cloudHealth` and is used only for owner-scoped generated dream artwork. Share-card Canvas files stay local; `share_pages` stores only the server-built card-only payload and never stores a client-provided image file id.
+
+### 阶段画像的版本闸（profileMemory generate）
+
+`generate` 不再无条件发新版本。两道闸，命中任一即返回
+`{ ok: true, unchanged: true, unchangedReason, snapshot }`——这是**正常结果，不是失败**，
+客户端据此原样保留画像、不进失败态、不显示「已更新」。
+
+1. **证据指纹**（`evidenceFingerprint`，存在快照的 `sourceFingerprint` 字段）：
+   喂给画像的东西（基础资料、梦、生活记录）一个字没变时直接返回，**连供应商调用
+   都不发起**。缺这个字段的历史快照会走正常生成，不会被误判成无变化。
+   `unchangedReason: 'evidence_unchanged'`。
+2. **结构化断言**（`traits` + `themes` + `realLifeContext` 逐条相同）：证据变了但
+   模型说的还是同一件事时，就地刷新溯源与指纹，不动版本号。
+   `unchangedReason: 'claims_unchanged'`。旧快照没有这些字段时才退回到正文字面
+   相似度（`PORTRAIT_SAME_TEXT_SIMILARITY = 0.9`，`unchangedReason: 'text_unchanged'`）。
+
+只在**完全相同**时才抑制，不设中间阈值：失败代价不对称——多一个版本号只是难看，
+把一次真实变化吞掉会让用户觉得画像根本不长进，那正好摧毁历史时间轴和「画像更新
+了」这两个功能的全部价值。判不准就发版。
+
+客户端点「重新梳理」会传 `force: true`：跳过闸①（用户明确要一次新解读，即使证据
+没变也真的跑一次生成），但仍要过闸②。旧模板文案（`isMetaSummary`）的迁移路径不受
+任何抑制。游离旧草稿的归档在三条路径上都会执行，与发不发版本无关。
+
+线上观测：客户端每次被抑制都会上报 `profile_portrait_unchanged`，带
+`reason` 与 `forced`。**上线后先看这个事件的分布**——如果 `claims_unchanged` 长期占
+绝大多数且用户版本号几乎不动，说明闸②过紧，要放宽而不是收紧。

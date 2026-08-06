@@ -57,24 +57,34 @@
         <view class="voice-dot"></view>
       </button>
 
-      <!-- 下滑确认区是「下滑提交」唯一有实体感的落点。它必须始终占位：原来用
-           wx:if 条件渲染，一旦拖过 16px 就凭空插入一个 176rpx 高的块，把下面
-           的提示文字整体顶下去——手势进行到一半页面自己跳一下，这是「不流畅」
-           最直接的来源。现在改为常驻占位、只切换可见度：有草稿或录音中时低
-           调显形（告诉用户往哪滑），否则透明但仍占住高度。 -->
-      <view
-        class="confirm-target {{(recording || dreamText) ? 'is-visible' : ''}} {{dragZone === 'submit' ? 'is-armed' : ''}} {{dragZone === 'attempt' ? 'is-near' : ''}} {{dragBounce ? 'is-bounce' : ''}}"
+      <!-- 圆环下方这块既是「下滑提交」的落点，也是可以直接点的提交按钮。
+           内测反馈里最集中的一条就是「不知道要按着圆圈下滑」——一个只能靠
+           手势触发的主流程，对第一次用的人等于没有入口。所以这里改成真正的
+           button：有草稿时它就是一个写着「解读这个梦」的实体按钮，点一下即可；
+           下滑仍然有效，作为已经学会的人的快捷方式，两条路通向同一个方法。
+
+           它必须始终占位：原来用 wx:if 条件渲染，一旦拖过 16px 就凭空插入一个
+           176rpx 高的块，把下面的提示文字整体顶下去——手势进行到一半页面自己
+           跳一下。现在常驻占位、只切换可见度与可点性。 -->
+      <!-- 箭头写在同一个 text 节点里：拆成两个节点时它们各自按自身字体算基线，
+           中文和箭头会差半个像素地错开，正是「这个按钮处理得太丑」里最刺眼的
+           那一处。 -->
+      <button
+        class="confirm-target {{recording ? 'is-target' : ''}} {{!recording && dreamText ? 'is-actionable' : ''}} {{dragZone === 'submit' ? 'is-armed' : ''}} {{dragZone === 'attempt' ? 'is-near' : ''}}"
+        disabled="{{recording || recognizing || !dreamText}}"
+        bindtap="onSubmitTap"
       >
-        <text class="confirm-target-label">{{dragZone === 'submit' ? '松开 · 进入解读' : '下滑进入解读'}}</text>
-      </view>
+        <text class="confirm-target-label">{{dragZone === 'submit' ? '松开 · 进入解读' : recording ? '下滑到这里 · 直接解读' : '解读这个梦 →'}}</text>
+      </button>
     </view>
 
     <text class="capture-hint">
-      <block wx:if="{{editingDream}}">轻触圆环外收起 · 仍可按住说</block>
-      <!-- 录音中不再重复「下滑进入解读」：圆环下方的确认条已经写着这句，
-           两处相隔 20px 出现同一句话读起来像渲染重复 -->
-      <block wx:elif="{{recording}}">上滑取消这次录音</block>
-      <block wx:elif="{{dreamText}}">按住可继续说 · 下滑进入解读</block>
+      <block wx:if="{{editingDream}}">写完点上方「解读这个梦」· 仍可按住圆环说</block>
+      <!-- 录音中这一行是整个手势唯一的说明书，三条出路必须一次说全：落点条
+           只讲了下滑，上滑取消和「直接松手就转文字」没有别的地方会说。 -->
+      <block wx:elif="{{recording}}">上滑取消 · 下滑直接解读 · 松手转成文字</block>
+      <!-- 有草稿时不再只写手势。点击是主路径，下滑降级成「也可以」。 -->
+      <block wx:elif="{{dreamText}}">按住圆环可继续说 · 也可按住下滑</block>
       <block wx:else>按住说 · 或轻触文字输入</block>
     </text>
   </view>

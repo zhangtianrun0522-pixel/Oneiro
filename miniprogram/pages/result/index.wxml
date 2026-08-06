@@ -64,9 +64,15 @@
     <text class="section-title">这个梦的观察</text>
     <text wx:if="{{!interpretationUnavailable}}" class="core-observation">{{dream.result.reading_hook}}</text>
 
+    <!-- 原梦是用户自己刚写完的东西，不是他打开这一页想读的内容。梦写得越长，
+         把全文顶在解读前面越是把真正的结果推下屏幕。所以长文默认只留第一行，
+         需要核对时再展开——短梦（一行以内）不折叠，多一个「展开」反而是噪音。 -->
     <view class="original-dream">
-      <text class="reading-label-neutral">你记下的原梦</text>
-      <text class="original-copy">{{dream.dreamText}}</text>
+      <view class="original-head" bindtap="toggleOriginalDream">
+        <text class="reading-label-neutral">你记下的原梦</text>
+        <text wx:if="{{dreamTextCollapsible}}" class="original-toggle">{{dreamTextExpanded ? '收起 ↑' : '展开全文 ↓'}}</text>
+      </view>
+      <text class="original-copy {{dreamTextCollapsible && !dreamTextExpanded ? 'is-collapsed' : ''}}">{{dream.dreamText}}</text>
     </view>
 
     <!-- 未生成解读时直接说明，不藏在折叠里 -->

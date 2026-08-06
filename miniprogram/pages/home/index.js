@@ -13,10 +13,21 @@ var ANALYSIS_STAGES = [
   { title: '收束成完整解读', detail: '把梦境、个人关联和不同视角整理成一份结果' }
 ];
 
-// 拖拽阈值：下滑超过 SUBMIT 才判「提交」，上滑超过 CANCEL（绝对值）才判
-// 「取消」。ATTEMPT_MIN 是「有效拖拽意图」的下界——低于它视为误触/静止，
-// 不给任何反馈；介于 ATTEMPT_MIN 和 SUBMIT 之间视为「拖了但没到位」，
-// 松手时要给用户一个明确的信号，而不是像 zone==='none' 一样悄无声息。
+// 语音的完整状态机（这是唯一的权威描述，改动前先读完）：
+//
+//   按住圆环 240ms → 进入语音输入，圆环变黑，开始录音
+//   之后手指往哪拖都保持录音，直到松手：
+//     · 松手时在上方区域（越过 CANCEL 阈值）→ 取消，整段丢弃
+//     · 松手时在下方区域（越过 SUBMIT 阈值）→ 转文字后直接进入解读
+//     · 其余任何位置松手               → 只转成文字，留在输入区
+//
+// 关键点：拖拽绝不中断录音。之前有一个「越过 slop 就判定为划、撤掉长按」的
+// 分支，结果是按下后马上开始拖的人根本录不上音——按住说话这件事在他手里
+// 就是坏的。现在唯一决定录不录的是「按住有没有超过 240ms」，唯一决定拖拽
+// 结果的是「松手那一刻手指在哪」。
+//
+// ATTEMPT_MIN 只用于视觉反馈（落点条提前亮起来告诉用户方向对了），不参与
+// 任何业务判定。
 //
 // 阈值必须等于圆环的跟手上限。原来阈值 48px 而跟手只到 28px：手指走完
 // 后 42% 的行程时圆环完全不动，手感上就是「拖不动了、没反应」，用户会以为
@@ -24,9 +35,9 @@ var ANALYSIS_STAGES = [
 var DRAG_SUBMIT_THRESHOLD = 40;
 var DRAG_CANCEL_THRESHOLD = 40;
 var DRAG_ATTEMPT_MIN = 14;
-// 手指在长按计时器触发前移动超过这个距离，说明这一下是「划」不是「按住」，
-// 不能起录音。
-var DRAG_SWIPE_INTENT_SLOP = 12;
+// 超过这个位移就不再把这一下算作「原地轻触」，松手时不弹键盘。它只影响没有
+// 起录音的那条快速滑动路径，不影响长按判定。
+var DRAG_TAP_SLOP = 12;
 
 // Keep this decision independent from Page#setData: touch events can arrive
 // faster than rendering updates, while submission must follow the real finger
@@ -62,15 +73,27 @@ function triggerVibrate(type) {
   }
 }
 
+// 一次录音要真的能被识别出内容，实际下限大约在 1 秒。低于这个值送到 ASR
+// 只会拿回 empty_result，用户看到的是「没有听清」——听上去像识别不准，其实
+// 是根本没录到东西。所以在客户端就拦下来，并说清楚是「太短」。
+var MIN_RECORD_MS = 1000;
+// 录音器 start 之后需要一点时间真正开始采集。长按 240ms 触发、用户紧接着
+// 松手的场景下，start 和 stop 可能落在同一帧里，产出 0 字节文件或直接报错。
+// 这时把 stop 推迟到这个下限之后再执行，用户说的那半句话才不会凭空消失。
+var MIN_RECORD_LIFETIME_MS = 600;
+
 function voiceFailureMessage(result) {
   var reason = result && result.reason ? String(result.reason) : '';
   if (reason === 'not_configured') return '语音服务未配置，请先用文字记录';
+  if (reason === 'client_timeout' || reason === 'recognize_timeout') return '识别等待超时，请检查网络后重试';
   if (reason === 'cloud_unavailable' || reason === 'cloud_call_failed' || reason === 'cloud_result_expired') {
     return '语音服务暂不可用，请检查网络或先用文字记录';
   }
   if (reason === 'empty_result') return '没有听清，再试一次或直接输入文字';
+  if (reason === 'too_short') return '说得太短了，按住多说一会儿';
   if (reason === 'too_long') return '这段语音太长，请控制在 60 秒内';
   if (reason === 'record_permission_denied') return '未获得麦克风权限，请在设置中开启';
+  if (reason === 'invalid_audio') return '这段录音没保存成，再按住说一次';
   return '语音识别暂不可用，请先用文字记录';
 }
 
@@ -207,7 +230,6 @@ Page({
     dragDx: 0,
     dragDy: 0,
     dragZone: 'none',
-    dragBounce: false,
     voicePressed: false,
     heroCardNo: '',
     heroDate: '',
@@ -260,10 +282,6 @@ Page({
     this.submitting = false;
     this.stopAnalysisProgress();
     this.clearVoiceStartTimer();
-    if (this.dragBounceTimer) {
-      clearTimeout(this.dragBounceTimer);
-      this.dragBounceTimer = null;
-    }
     this.voiceTouching = false;
     this.stopRecorderForExit();
     recorderRouter.unregister(this);
@@ -356,6 +374,28 @@ Page({
 
   startRecorder: function () {
     var self = this;
+
+    // 手指已经离开了，才等到授权弹窗返回——第一次使用的用户几乎必然走到这里。
+    // 原来的做法是照常 start 再立刻 stop，录到的是一个 0 长度的文件，用户看到
+    // 的是「语音识别暂不可用」，把一次成功的授权读成了功能坏掉。现在不启动
+    // 录音，只告诉他权限已经拿到、再按一次即可。
+    if (this.voiceStopAfterAuthorization) {
+      this.voiceStopAfterAuthorization = false;
+      var cancelled = this.voiceCancelled;
+      var wantedSubmit = this.voiceSubmitAfterRecognition;
+      this.voiceCancelled = false;
+      this.voiceSubmitAfterRecognition = false;
+      analytics.trackEvent('voice_record_skipped_after_authorize', { cancelled: !!cancelled });
+      if (cancelled) return;
+      // 下滑提交的意图不能因为中间插了一次授权就丢掉：已经有草稿就照常提交。
+      if (wantedSubmit && String(this.data.dreamText || '').trim()) {
+        this.generateDreamCard();
+        return;
+      }
+      wx.showToast({ title: '麦克风已开启，再按住圆环说一次', icon: 'none', duration: 2400 });
+      return;
+    }
+
     this.recordingStartedAt = Date.now();
     this.setData({
       recording: true,
@@ -363,13 +403,6 @@ Page({
     });
     this.startRecordingTimer();
     analytics.trackEvent('voice_record_start', { mode: this.voiceStartMode || 'tap' });
-
-    if (this.voiceStopAfterAuthorization) {
-      this.voiceStopAfterAuthorization = false;
-      setTimeout(function () {
-        self.stopRecorder();
-      }, 0);
-    }
 
     try {
       recorderRouter.start({
@@ -390,7 +423,23 @@ Page({
   },
 
   stopRecorder: function () {
-    if (!this.data.recording) {
+    var self = this;
+    var elapsed;
+
+    if (!this.data.recording || this.stopScheduled) {
+      return;
+    }
+
+    // 录音器刚 start 就 stop 会拿到 0 字节文件。把 stop 推迟到采集真正开始
+    // 之后再执行，用户那半句话才录得进去；这段时间里 recording 仍为 true，
+    // 波形继续动，用户不会以为按钮没反应。
+    elapsed = Date.now() - (this.recordingStartedAt || 0);
+    if (elapsed < MIN_RECORD_LIFETIME_MS) {
+      this.stopScheduled = true;
+      setTimeout(function () {
+        self.stopScheduled = false;
+        self.stopRecorder();
+      }, MIN_RECORD_LIFETIME_MS - elapsed);
       return;
     }
 
@@ -407,6 +456,7 @@ Page({
   },
 
   stopRecorderForExit: function () {
+    this.stopScheduled = false;
     if (!this.data.recording) return;
     this.stopRecordingTimer();
     this.setData({ recording: false, recordingSeconds: 0 });
@@ -421,7 +471,7 @@ Page({
   },
 
   resetDragState: function () {
-    this.setData({ dragDx: 0, dragDy: 0, dragZone: 'none', dragBounce: false, voicePressed: false });
+    this.setData({ dragDx: 0, dragDy: 0, dragZone: 'none', voicePressed: false });
   },
 
   enterEditingMode: function () {
@@ -431,6 +481,18 @@ Page({
   onDreamTextTap: function () {
     if (this.data.recording || this.data.recognizing) return;
     this.enterEditingMode();
+  },
+
+  // 圆环下方按钮的点击入口。和「按住下滑」走同一个 generateDreamCard，
+  // 只是把提交这件事从一个需要被教会的手势，变成一个看得见的按钮。
+  onSubmitTap: function () {
+    if (this.data.recording || this.data.recognizing) return;
+    if (!String(this.data.dreamText || '').trim()) {
+      wx.showToast({ title: '还没有内容，按住圆环说一句', icon: 'none' });
+      return;
+    }
+    analytics.trackEvent('dream_submit_gesture', { via: 'tap' });
+    this.generateDreamCard();
   },
 
   onDreamTextBlur: function () {
@@ -454,28 +516,22 @@ Page({
     this.voiceStartY = touch ? touch.clientY : 0;
     this.lastDragZone = 'none';
     this.voiceDragZone = 'none';
-    this.voiceSwipeIntent = false;
-    if (this.dragBounceTimer) {
-      clearTimeout(this.dragBounceTimer);
-      this.dragBounceTimer = null;
-    }
+    this.voiceMoved = false;
     this.resetDragState();
     // 按下的那一刻就要有反馈。长按判定需要等 240ms，这段时间里如果圆环一动
     // 不动，控件读起来是「死的」。
     this.setData({ voicePressed: true });
 
-    // A second touch while recording still acts as the explicit stop control.
+    // 正常流程下录音只在手指按住期间存在，所以走不到这里。真的走到了（录音器
+    // 因为某种原因还挂着），这一次按下就作为兜底的停止控制：不再起新的长按
+    // 计时器，松手时由下面的 wasRecording 分支收尾。
     if (this.data.recording) return;
 
-    // Delay the start very slightly so a quick tap can still mean "edit the
-    // text" while a held press becomes the primary voice-capture flow.
+    // 按住超过 240ms 就是「按住说」，此后拖拽只决定松手时怎么处理，不再影响
+    // 录不录。低于 240ms 松手才算轻触。
     this.voiceStartTimer = setTimeout(function () {
       self.voiceStartTimer = null;
       if (!self.voiceTouching || self.data.recording || self.data.recognizing) return;
-      // 已经划出去了就不是「按住说」。没有这道判断，有草稿的用户下滑提交时
-      // 会在半路误起一次录音，松手后还要等一段几乎无声的音频识别完，把识别
-      // 结果拼到草稿后面再提交。
-      if (self.voiceSwipeIntent) return;
       self.voiceLongPressStarted = true;
       self.beginRecording('long_press');
     }, 240);
@@ -489,12 +545,10 @@ Page({
     var dy = touch.clientY - this.voiceStartY;
     var zone = dragZoneForDelta(dx, dy);
 
-    // 越过 slop 就锁定为「划」，并撤掉还没触发的长按计时器。
-    if (Math.abs(dx) > DRAG_SWIPE_INTENT_SLOP || Math.abs(dy) > DRAG_SWIPE_INTENT_SLOP) {
-      if (this.voiceStartTimer && !this.data.recording) {
-        this.voiceSwipeIntent = true;
-        this.clearVoiceStartTimer();
-      }
+    // 只用来区分「原地轻触」和「滑了一下」，决定松手时要不要弹键盘。绝不能
+    // 用它去撤销长按计时器：按下就开始拖的人本来就是要说话的。
+    if (Math.abs(dx) > DRAG_TAP_SLOP || Math.abs(dy) > DRAG_TAP_SLOP) {
+      this.voiceMoved = true;
     }
 
     // Haptics fire once per edge crossing, never on every touchmove tick —
@@ -519,22 +573,6 @@ Page({
     });
   },
 
-  // Called only when the user dragged down past ATTEMPT_MIN but let go
-  // before reaching SUBMIT_THRESHOLD — an "almost" release must never be
-  // silent like a plain tap-release is.
-  showDragAttemptFeedback: function () {
-    wx.showToast({ title: '再往下滑一点，进入解读', icon: 'none', duration: 1400 });
-    this.setData({ dragBounce: true });
-    var self = this;
-    if (this.dragBounceTimer) {
-      clearTimeout(this.dragBounceTimer);
-    }
-    this.dragBounceTimer = setTimeout(function () {
-      self.dragBounceTimer = null;
-      self.setData({ dragBounce: false });
-    }, 320);
-  },
-
   onVoiceTouchEnd: function (event) {
     var touch = event && event.changedTouches && event.changedTouches[0];
     // The final point can differ from the last touchmove (especially on a
@@ -546,7 +584,8 @@ Page({
     // Long-press fired but recorder hasn't actually started yet — the
     // authorize() dialog can still be resolving asynchronously.
     var pendingRecording = this.voiceLongPressStarted && !wasRecording;
-    var wasSwipe = !!this.voiceSwipeIntent;
+    var wasVoiceGesture = wasRecording || pendingRecording;
+    var hadMoved = !!this.voiceMoved;
 
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
@@ -554,60 +593,40 @@ Page({
     this.voiceDragZone = 'none';
     this.resetDragState();
     this.voiceLongPressStarted = false;
-    this.voiceSwipeIntent = false;
+    this.voiceMoved = false;
 
-    if (zone === 'cancel') {
-      if (wasRecording) {
-        // True cancel: discard the clip, no toast, no text appended.
+    // ── 这一下是「按住说话」：录音一直在跑，松手的位置决定怎么收尾 ──
+    if (wasVoiceGesture) {
+      if (zone === 'cancel') {
+        // 整段丢弃，不转文字、不提示——用户要的就是当它没发生过。
         this.voiceCancelled = true;
-        this.stopRecorder();
-      } else if (pendingRecording) {
-        this.voiceCancelled = true;
-        this.voiceStopAfterAuthorization = true;
+      } else if (zone === 'submit') {
+        // 越过阈值松手的那一刻就给确认反馈，不等异步的识别和解读。
+        triggerVibrate('medium');
+        // 手势和按钮上报同一个事件、只区分 via，这样「有多少人真的学会了下滑」
+        // 是一个可以直接查的数字，而不是靠猜。
+        analytics.trackEvent('dream_submit_gesture', { via: 'swipe' });
+        this.voiceSubmitAfterRecognition = true;
       }
+      // 其余位置（含拖了但没到位）一律只转成文字。这里刻意不再弹「再往下滑
+      // 一点」——录音已经正常收下并开始识别，此时提示「没划到位」会让人以为
+      // 刚说的话丢了；而且现在圆环下面就有一个可以直接点的解读按钮。
+      if (wasRecording) this.stopRecorder();
+      else this.voiceStopAfterAuthorization = true;
       return;
     }
 
-    if (zone === 'submit') {
-      // Instant confirmation right when the threshold-crossing release
-      // happens — do not wait on async recognition/interpretation for it.
+    // ── 这一下没到长按时长，不是语音 ──
+    if (zone === 'submit' && this.data.dreamText.trim()) {
       triggerVibrate('medium');
-      if (wasRecording) {
-        this.voiceSubmitAfterRecognition = true;
-        this.stopRecorder();
-      } else if (pendingRecording) {
-        this.voiceSubmitAfterRecognition = true;
-        this.voiceStopAfterAuthorization = true;
-      } else if (this.data.dreamText.trim()) {
-        // Already had a draft and swiped down before the long-press
-        // threshold even fired: submit the existing draft directly.
-        this.generateDreamCard();
-      } else {
-        // 空手下滑过去是完全静默的：手势明明做对了却什么也没发生，用户只能
-        // 理解成「这个功能坏了」。
-        wx.showToast({ title: '还没有内容，按住圆环说一句', icon: 'none', duration: 1600 });
-      }
+      analytics.trackEvent('dream_submit_gesture', { via: 'swipe' });
+      this.generateDreamCard();
       return;
     }
-
-    if (wasRecording) {
-      if (zone === 'attempt') this.showDragAttemptFeedback();
-      this.stopRecorder();
-      return;
-    }
-    if (pendingRecording) {
-      if (zone === 'attempt') this.showDragAttemptFeedback();
-      this.voiceStopAfterAuthorization = true;
-      return;
-    }
-    if (zone === 'attempt' || wasSwipe) {
-      // 划了但没到位。原来这里在给出「再往下滑一点」的提示之后还会继续往下
-      // 走进 enterEditingMode()，于是一次没划到位的下滑会同时弹出提示和键盘，
-      // 两个互相矛盾的反馈叠在一起。
-      if (zone === 'attempt') this.showDragAttemptFeedback();
-      return;
-    }
-    // Quick tap on the circle (never entered recording): open text editing.
+    // 滑了一下但没构成任何动作：安静收场。绝不能在这里弹键盘——用户刚做的是
+    // 一个滑动手势，突然弹出输入法是完全无关的反馈。
+    if (hadMoved || zone !== 'none') return;
+    // 原地轻触圆环：打开文字输入。
     this.enterEditingMode();
   },
 
@@ -621,7 +640,7 @@ Page({
     this.voiceDragZone = 'none';
     this.resetDragState();
     this.voiceLongPressStarted = false;
-    this.voiceSwipeIntent = false;
+    this.voiceMoved = false;
 
     // A system interruption (incoming call, notification shade, etc.) is
     // treated the same as an explicit cancel — never leave a recording
@@ -647,6 +666,7 @@ Page({
 
     this.voiceCancelled = false;
     this.voiceSubmitAfterRecognition = false;
+    this.stopScheduled = false;
 
     this.stopRecordingTimer();
     this.setData({
@@ -665,6 +685,15 @@ Page({
       return;
     }
 
+    // 太短的片段送到 ASR 只会拿回 empty_result，用户读到的是「没有听清」，
+    // 会以为是识别不准而反复重试同样短的一下。直接说是「太短」，才指得出
+    // 下一步该做什么。
+    if (duration * 1000 < MIN_RECORD_MS) {
+      analytics.trackEvent('voice_recognize_failed', { reason: 'too_short', durationMs: Math.round(duration * 1000) });
+      wx.showToast({ title: voiceFailureMessage({ reason: 'too_short' }), icon: 'none', duration: 2400 });
+      return;
+    }
+
     fileSystemManager = wx.getFileSystemManager();
     fileSystemManager.readFile({
       filePath: filePath,
@@ -678,7 +707,11 @@ Page({
           self.setData({ recognizing: false });
 
           if (!recognizeResult || !recognizeResult.ok || !recognizeResult.text) {
-            analytics.trackEvent('voice_recognize_failed', { reason: recognizeResult && recognizeResult.reason ? recognizeResult.reason : 'unknown' });
+            analytics.trackEvent('voice_recognize_failed', {
+              reason: recognizeResult && recognizeResult.reason ? recognizeResult.reason : 'unknown',
+              providerErrorCode: recognizeResult && recognizeResult.providerErrorCode ? recognizeResult.providerErrorCode : '',
+              durationMs: Math.round(duration * 1000)
+            });
             wx.showToast({ title: voiceFailureMessage(recognizeResult), icon: 'none', duration: 2800 });
             return;
           }
@@ -730,11 +763,16 @@ Page({
     recorderRouter.unregister(this);
   },
 
-  onRecorderError: function () {
+  onRecorderError: function (error) {
     this.stopRecordingTimer();
+    this.stopScheduled = false;
     this.setData({ recording: false, recordingSeconds: 0 });
-    analytics.trackEvent('voice_record_error', {});
-    wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none', duration: 2500 });
+    // 原来这里只上报一个空事件，真机上录音失败的具体原因（被系统音频占用、
+    // 机型不支持该编码等）全部丢掉了，无从排查「有些人失败」到底是哪些人。
+    analytics.trackEvent('voice_record_error', {
+      errMsg: String(error && (error.errMsg || error.errCode || error.message) || '').slice(0, 180)
+    });
+    wx.showToast({ title: '这次没录上，再按住说一次', icon: 'none', duration: 2500 });
   },
 
   onDreamInput: function (event) {
