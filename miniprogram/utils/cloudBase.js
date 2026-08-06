@@ -526,18 +526,23 @@ var SPEECH_RETRYABLE_REASONS = {
   cloud_unavailable: true,
   recognize_timeout: true
 };
-// 云函数侧 Tencent ASR 通常 1-3 秒返回，弱网上传一段 60 秒 mp3 的 base64
-// 才是耗时大头。30 秒对 4G 边缘信号偏紧。
+// 云函数侧 Tencent ASR 通常 1-3 秒返回，弱网上传才是耗时大头。
 var SPEECH_CLIENT_TIMEOUT_MS = 45000;
 
-function speechRecognize(audioBase64, duration, callback) {
-  var payload = {
-    audioBase64: audioBase64 || '',
-    format: 'mp3',
-    duration: Number(duration) || 0
-  };
-  var attempted = false;
+// 超过这个长度就改走云存储，不再把音频塞进 callFunction 的请求体。
+//
+// 「越长越容易失败」是这条链路的结构性问题，不是调大超时能解决的：base64 音频
+// 走 callFunction 时，同一段字节要被搬两次——客户端上行一次（弱网上行常年只有
+// 几百 kbps），云函数再原样 POST 给腾讯 ASR 一次。两段耗时都随时长线性增长，
+// 而云函数的平台超时是一堵固定的墙，于是短音频过得去、长音频撞墙。
+//
+// 换成云存储之后：上传走 uploadFile（不占 callFunction 的超时预算），云函数只
+// 递一个签名 URL 给腾讯，让它在腾讯自己的网络里取——云函数的运行时长几乎与音频
+// 长度无关，那堵墙就不再随时长逼近。
+var SPEECH_UPLOAD_MIN_SECONDS = 8;
 
+function speechCallFunction(payload, callback) {
+  var attempted = false;
   function attempt() {
     return callCloudFunction('speechRecognize', payload, function (result) {
       var reason = result && result.reason ? String(result.reason) : '';
@@ -549,8 +554,87 @@ function speechRecognize(audioBase64, duration, callback) {
       if (callback) callback(result);
     }, { timeoutMs: SPEECH_CLIENT_TIMEOUT_MS });
   }
-
   return attempt();
+}
+
+function speechRecognize(audioBase64, duration, callback) {
+  return speechCallFunction({
+    audioBase64: audioBase64 || '',
+    format: 'mp3',
+    duration: Number(duration) || 0
+  }, callback);
+}
+
+// 页面统一走这里：读文件、决定内联还是上传、失败兜底，全部收在一处。之前两个
+// 页面各自 readFile 再拼 base64，任何一处改动都得改两遍。
+function recognizeSpeech(filePath, duration, callback) {
+  var seconds = Number(duration) || 0;
+
+  function done(result) {
+    if (callback) callback(result);
+  }
+
+  function inlineFallback(uploadError) {
+    if (!wx.getFileSystemManager) {
+      done({ ok: false, reason: 'invalid_audio', message: uploadError || 'no_file_system' });
+      return;
+    }
+    wx.getFileSystemManager().readFile({
+      filePath: filePath,
+      encoding: 'base64',
+      success: function (readResult) {
+        speechCallFunction({
+          audioBase64: readResult.data || '',
+          format: 'mp3',
+          duration: seconds,
+          // 上传失败后退回内联时留个痕，否则线上只会看到「内联路径偶尔慢」，
+          // 看不出它其实是上传失败的下游。
+          uploadFallback: uploadError ? String(uploadError).slice(0, 120) : ''
+        }, done);
+      },
+      fail: function () {
+        done({ ok: false, reason: 'invalid_audio', message: 'file_read_failed' });
+      }
+    });
+  }
+
+  if (!filePath) {
+    done({ ok: false, reason: 'invalid_audio', message: 'missing_file_path' });
+    return false;
+  }
+
+  if (!cloudReady) initCloud();
+
+  var canUpload = seconds >= SPEECH_UPLOAD_MIN_SECONDS && cloudReady && hasCloud() && wx.cloud.uploadFile;
+  if (!canUpload) {
+    inlineFallback('');
+    return true;
+  }
+
+  wx.cloud.uploadFile({
+    cloudPath: 'voice-clips/' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10) + '.mp3',
+    filePath: filePath,
+    success: function (uploadResult) {
+      var fileID = uploadResult && uploadResult.fileID;
+      if (!fileID) {
+        inlineFallback('upload_missing_file_id');
+        return;
+      }
+      speechCallFunction({ fileID: fileID, format: 'mp3', duration: seconds }, function (result) {
+        // 原始语音是这个产品里最私密的内容之一，不能留在存储里。云函数正常跑完
+        // 会自己删；这里是它没跑成（超时、断网）时的兜底。
+        if ((!result || result.ok !== true) && wx.cloud.deleteFile) {
+          try { wx.cloud.deleteFile({ fileList: [fileID], success: function () {}, fail: function () {} }); } catch (error) {}
+        }
+        done(result);
+      });
+    },
+    fail: function (error) {
+      // 上传这条路走不通时不能让用户白说一段话，退回原来的内联方式再试一次。
+      inlineFallback((error && error.errMsg) || 'upload_failed');
+    }
+  });
+  return true;
 }
 
 // 梦后对话走的是 interpretDream 这个云函数，于是继承了它 70 秒的客户端上限。
@@ -706,6 +790,8 @@ module.exports = {
   interpretDream: interpretDream,
   metaphysicalReading: metaphysicalReading,
   speechRecognize: speechRecognize,
+  recognizeSpeech: recognizeSpeech,
+  SPEECH_UPLOAD_MIN_SECONDS: SPEECH_UPLOAD_MIN_SECONDS,
   chatAboutDream: chatAboutDream,
   refineDream: refineDream,
   aiHealth: aiHealth,

@@ -44,6 +44,7 @@ exports.main = function (event) {
       var audioBase64 = event && typeof event.audioBase64 === 'string'
         ? event.audioBase64
         : '';
+      var fileID = event && typeof event.fileID === 'string' ? event.fileID : '';
       var duration = Number(event && event.duration);
 
       if (duration > 60 || audioBase64.length > 4 * 1024 * 1024) {
@@ -51,7 +52,7 @@ exports.main = function (event) {
         return;
       }
 
-      if (!audioBase64) {
+      if (!audioBase64 && !fileID) {
         resolve(resultError('invalid_audio', '音频数据为空'));
         return;
       }
@@ -67,9 +68,9 @@ exports.main = function (event) {
         return;
       }
 
-      var audioBuffer = Buffer.from(audioBase64, 'base64');
+      var audioBuffer = audioBase64 ? Buffer.from(audioBase64, 'base64') : null;
 
-      if (audioBuffer.length > 3 * 1024 * 1024) {
+      if (audioBuffer && audioBuffer.length > 3 * 1024 * 1024) {
         resolve(resultError('too_long'));
         return;
       }
@@ -86,15 +87,55 @@ exports.main = function (event) {
           }
         }
       });
-      var request = {
+
+      // 原始语音是这个产品里最私密的内容之一。无论识别成败都要删掉，且删除
+      // 失败不能影响返回——用户不该因为一次清理失败而拿不到识别结果。
+      function discardUpload() {
+        if (!fileID || !cloud.deleteFile) return Promise.resolve();
+        return cloud.deleteFile({ fileList: [fileID] }).catch(function () { return null; });
+      }
+
+      function runRecognition(request) {
+        client.SentenceRecognition(request, function (error, response) {
+          discardUpload();
+          onRecognized(error, response);
+        });
+      }
+
+      // 走云存储时只把签名 URL 递给腾讯，让它在腾讯自己的网络里去取音频。
+      // 云函数不再原样搬运一遍字节，运行时长几乎与音频长度无关——这正是
+      // 「越长越容易失败」的根源所在。
+      if (fileID) {
+        cloud.getTempFileURL({ fileList: [fileID] }).then(function (res) {
+          var item = res && res.fileList && res.fileList[0];
+          var url = item && item.tempFileURL ? String(item.tempFileURL) : '';
+          if (!url) {
+            discardUpload();
+            resolve(resultError('invalid_audio', '音频临时地址获取失败'));
+            return;
+          }
+          runRecognition({
+            EngSerViceType: '16k_zh',
+            SourceType: 0,
+            Url: url,
+            VoiceFormat: 'mp3'
+          });
+        }).catch(function (error) {
+          discardUpload();
+          resolve(resultError('invalid_audio', (error && error.message) || '音频临时地址获取失败'));
+        });
+        return;
+      }
+
+      runRecognition({
         EngSerViceType: '16k_zh',
         SourceType: 1,
         Data: audioBase64,
         DataLen: audioBuffer.length,
         VoiceFormat: 'mp3'
-      };
+      });
 
-      client.SentenceRecognition(request, function (error, response) {
+      function onRecognized(error, response) {
         try {
           if (error) {
             // 腾讯 ASR 的 code（如 FailedOperation.ErrorRecognize、
@@ -129,7 +170,7 @@ exports.main = function (event) {
             callbackError.message || '语音识别失败'
           ));
         }
-      });
+      }
     } catch (error) {
       resolve(resultError(
         'recognize_failed',

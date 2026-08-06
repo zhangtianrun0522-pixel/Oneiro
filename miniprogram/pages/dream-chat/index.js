@@ -329,28 +329,23 @@ Page({
       wx.showToast({ title: voiceFailureMessage({ reason: 'too_short' }), icon: 'none', duration: 2400 });
       return;
     }
-    wx.getFileSystemManager().readFile({
-      filePath: filePath,
-      encoding: 'base64',
-      success: function (readResult) {
-        that.setData({ recognizing: true });
-        cloudBase.speechRecognize(readResult.data, duration, function (recognizeResult) {
-          that.setData({ recognizing: false });
-          if (!recognizeResult || !recognizeResult.ok || !recognizeResult.text) {
-            analytics.trackEvent('dream_chat_voice_failed', { dreamId: that.data.dream.id, reason: recognizeResult && recognizeResult.reason ? recognizeResult.reason : 'unknown' });
-            wx.showToast({ title: voiceFailureMessage(recognizeResult), icon: 'none' });
-            return;
-          }
-          var text = String(recognizeResult.text).trim();
-          that.setData({ inputValue: that.data.inputValue ? that.data.inputValue + '\n' + text : text });
-          analytics.trackEvent('dream_chat_voice_success', { dreamId: that.data.dream.id, duration: duration, textLength: text.length });
+    // 与首页同一条链路：长音频改走云存储，不把 base64 塞进 callFunction 请求体。
+    this.setData({ recognizing: true });
+    cloudBase.recognizeSpeech(filePath, duration, function (recognizeResult) {
+      that.setData({ recognizing: false });
+      if (!recognizeResult || !recognizeResult.ok || !recognizeResult.text) {
+        analytics.trackEvent('dream_chat_voice_failed', {
+          dreamId: that.data.dream.id,
+          reason: recognizeResult && recognizeResult.reason ? recognizeResult.reason : 'unknown',
+          providerErrorCode: recognizeResult && recognizeResult.providerErrorCode ? recognizeResult.providerErrorCode : '',
+          durationMs: Math.round(duration * 1000)
         });
-      },
-      fail: function () {
-        that.setData({ recognizing: false });
-        analytics.trackEvent('dream_chat_voice_failed', { dreamId: that.data.dream.id, reason: 'file_read_failed' });
-        wx.showToast({ title: voiceFailureMessage({ reason: 'invalid_audio' }), icon: 'none' });
+        wx.showToast({ title: voiceFailureMessage(recognizeResult), icon: 'none' });
+        return;
       }
+      var text = String(recognizeResult.text).trim();
+      that.setData({ inputValue: that.data.inputValue ? that.data.inputValue + '\n' + text : text });
+      analytics.trackEvent('dream_chat_voice_success', { dreamId: that.data.dream.id, duration: duration, textLength: text.length });
     });
   },
 

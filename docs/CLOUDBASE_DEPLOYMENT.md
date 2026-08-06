@@ -202,6 +202,21 @@ Rehdasu's `/v1/images/generations` endpoint is synchronous and historically take
 会以 `providerErrorCode` 原样带回并进入 `voice_recognize_failed` 事件——
 这是区分「音频有问题」和「账号/额度有问题」的唯一信号。
 
+**长音频走云存储，不走请求体。** 超过 `SPEECH_UPLOAD_MIN_SECONDS`（8 秒）的
+录音由客户端 `wx.cloud.uploadFile` 传到 `voice-clips/`，云函数收到的是 `fileID`，
+它换成签名 URL 后以 `SourceType: 0` 交给腾讯 ASR，让腾讯在自己的网络里取音频。
+
+这不是为了省流量，是为了消掉「越长越容易失败」：base64 走 `callFunction` 时同一段
+字节要被搬两次（客户端上行一次、云函数再原样 POST 给腾讯一次），两段耗时都随时长
+线性增长，而平台超时是一堵固定的墙，于是短音频过得去、长音频撞墙。改成 URL 之后
+云函数的运行时长几乎与音频长度无关。上传失败会自动退回内联 base64，并在事件里带上
+`uploadFallback`。
+
+`voice-clips/` 里存的是用户未经处理的原始语音，是这个产品里最私密的内容之一。
+云函数无论识别成败都会 `deleteFile`；客户端在调用失败（云函数没跑成）时也会补一次
+删除。**上线后请在存储控制台确认 `voice-clips/` 长期为空**——如果有残留，说明两条
+删除路径都没生效，要优先修。
+
 ### AI 阶段画像
 
 `profileMemory` 使用 `profile_snapshots` 保存自动发布的阶段画像、用户编辑、历史回溯和停用状态。它会复用 `INTERPRET_PROVIDER` / `DEEPSEEK_API_KEY` 等服务端配置；未配置或调用失败时生成朋友式确定性画像。生成成功的版本直接成为当前画像；只有 `status: confirmed`、`isCurrent: true` 且 `useInFutureReadings: true` 的画像会进入后续解读上下文。

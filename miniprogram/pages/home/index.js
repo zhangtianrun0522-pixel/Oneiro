@@ -662,7 +662,6 @@ Page({
     var duration = result && result.duration
       ? Math.min(Number(result.duration) / 1000, 60)
       : Math.min((Date.now() - this.recordingStartedAt) / 1000, 60);
-    var fileSystemManager;
 
     this.voiceCancelled = false;
     this.voiceSubmitAfterRecognition = false;
@@ -694,49 +693,41 @@ Page({
       return;
     }
 
-    fileSystemManager = wx.getFileSystemManager();
-    fileSystemManager.readFile({
-      filePath: filePath,
-      encoding: 'base64',
-      success: function (readResult) {
-        self.setData({ recognizing: true });
-        cloudBase.speechRecognize(readResult.data, duration, function (recognizeResult) {
-          var text;
-          var nextText;
+    // 读文件 / 内联还是上传 / 失败兜底都收在 cloudBase.recognizeSpeech 里：
+    // 长音频不再把 base64 塞进 callFunction 的请求体（见那里的注释）。
+    this.setData({ recognizing: true });
+    cloudBase.recognizeSpeech(filePath, duration, function (recognizeResult) {
+      var text;
+      var nextText;
 
-          self.setData({ recognizing: false });
+      self.setData({ recognizing: false });
 
-          if (!recognizeResult || !recognizeResult.ok || !recognizeResult.text) {
-            analytics.trackEvent('voice_recognize_failed', {
-              reason: recognizeResult && recognizeResult.reason ? recognizeResult.reason : 'unknown',
-              providerErrorCode: recognizeResult && recognizeResult.providerErrorCode ? recognizeResult.providerErrorCode : '',
-              durationMs: Math.round(duration * 1000)
-            });
-            wx.showToast({ title: voiceFailureMessage(recognizeResult), icon: 'none', duration: 2800 });
-            return;
-          }
-
-          text = String(recognizeResult.text).trim();
-          nextText = self.data.dreamText
-            ? self.data.dreamText + '\n' + text
-            : text;
-          self.setData({ dreamText: nextText });
-          analytics.trackEvent('voice_recognize_success', {
-            duration: duration,
-            textLength: text.length
-          });
-
-          if (shouldAutoSubmit) {
-            // Down-swipe submit: recognition succeeded, go straight to
-            // interpretation without waiting on any further tap.
-            self.generateDreamCard();
-          }
+      if (!recognizeResult || !recognizeResult.ok || !recognizeResult.text) {
+        analytics.trackEvent('voice_recognize_failed', {
+          reason: recognizeResult && recognizeResult.reason ? recognizeResult.reason : 'unknown',
+          providerErrorCode: recognizeResult && recognizeResult.providerErrorCode ? recognizeResult.providerErrorCode : '',
+          // 时长要和失败原因一起上报：「越长越容易失败」这类问题，只有把两者
+          // 放在一张表里才看得出来。
+          durationMs: Math.round(duration * 1000)
         });
-      },
-      fail: function () {
-        self.setData({ recognizing: false });
-        analytics.trackEvent('voice_recognize_failed', { reason: 'file_read_failed' });
-        wx.showToast({ title: voiceFailureMessage({ reason: 'invalid_audio' }), icon: 'none', duration: 2500 });
+        wx.showToast({ title: voiceFailureMessage(recognizeResult), icon: 'none', duration: 2800 });
+        return;
+      }
+
+      text = String(recognizeResult.text).trim();
+      nextText = self.data.dreamText
+        ? self.data.dreamText + '\n' + text
+        : text;
+      self.setData({ dreamText: nextText });
+      analytics.trackEvent('voice_recognize_success', {
+        duration: duration,
+        textLength: text.length
+      });
+
+      if (shouldAutoSubmit) {
+        // Down-swipe submit: recognition succeeded, go straight to
+        // interpretation without waiting on any further tap.
+        self.generateDreamCard();
       }
     });
   },

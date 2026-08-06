@@ -250,6 +250,7 @@ type WxMock = {
   getRecorderManager: () => Record<string, any>;
   authorize: (options: Record<string, any>) => void;
   getFileSystemManager: () => Record<string, any>;
+  failNextFileRead: boolean;
 };
 
 function createCanvasContext(texts: string[] = []): Record<string, any> {
@@ -295,6 +296,7 @@ function createWxMock(): WxMock {
     settingsOpened: 0,
     cloudCalls: [],
     cloudUploads: [],
+    failNextFileRead: false,
     blockNextInterpret: false,
     failNextInterpret: false,
     failNextDreamSave: false,
@@ -355,10 +357,15 @@ function createWxMock(): WxMock {
     },
     getFileSystemManager() {
       return {
+        // 默认成功：内联识别这条路径要能真的走完，否则「短音频内联、长音频
+        // 走云存储」这条分叉根本测不到。失败分支由 failNextFileRead 触发。
         readFile(options: Record<string, any>) {
-          if (options && typeof options.fail === 'function') {
-            options.fail({ errMsg: 'readFile:fail mock' });
+          if (wx.failNextFileRead) {
+            wx.failNextFileRead = false;
+            if (options && typeof options.fail === 'function') options.fail({ errMsg: 'readFile:fail mock' });
+            return;
           }
+          if (options && typeof options.success === 'function') options.success({ data: 'bW9jay1hdWRpbw==' });
         },
       };
     },
@@ -1660,6 +1667,33 @@ assert.equal(
   wx.cloudCalls.filter((call) => call.name === 'speechRecognize').length,
   speechCallsBeforeShortClip
 );
+
+// 「说得久一点就失败」是这条链路的结构性问题，不是调大超时能解决的：base64
+// 音频走 callFunction 时同一段字节要被搬两次（客户端上行一次，云函数再原样
+// POST 给腾讯一次），两段耗时都随时长线性增长，而云函数平台超时是一堵固定的
+// 墙。超过阈值改走云存储：客户端 uploadFile 不占 callFunction 的超时预算，
+// 云函数只递一个签名 URL，运行时长几乎与音频长度无关。
+const uploadsBeforeShortSpeech = wx.cloudUploads.length;
+homePage.data.recording = true;
+homePage.recordingStartedAt = Date.now();
+homePage.onRecorderStop({ tempFilePath: '/tmp/brief.mp3', duration: 3000 });
+// 短音频仍然内联，不为一句话多付一次上传往返。
+assert.equal(wx.cloudUploads.length, uploadsBeforeShortSpeech);
+const inlineSpeechCall = last(wx.cloudCalls.filter((call) => call.name === 'speechRecognize'));
+assert.ok(inlineSpeechCall.data.audioBase64);
+assert.equal(inlineSpeechCall.data.fileID, undefined);
+
+homePage.data.dreamText = '';
+homePage.data.recording = true;
+homePage.recordingStartedAt = Date.now();
+homePage.onRecorderStop({ tempFilePath: '/tmp/long.mp3', duration: 42000 });
+assert.equal(wx.cloudUploads.length, uploadsBeforeShortSpeech + 1);
+assert.ok(last(wx.cloudUploads).cloudPath.startsWith('voice-clips/'));
+const uploadedSpeechCall = last(wx.cloudCalls.filter((call) => call.name === 'speechRecognize'));
+// 长音频只传 fileID，请求体里不再有音频字节。
+assert.ok(uploadedSpeechCall.data.fileID);
+assert.equal(uploadedSpeechCall.data.audioBase64, undefined);
+assert.equal(uploadedSpeechCall.data.duration, 42);
 const profilePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
 profilePage.onLoad();
 profilePage.onInput({ currentTarget: { dataset: { key: 'nickname' } }, detail: { value: ' Runtu ' } });
