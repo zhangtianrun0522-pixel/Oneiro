@@ -112,6 +112,9 @@
   50% { transform: scaleY(1); opacity: 1; }
 }
 .capture-waveform-note { display: block; margin-top: 10rpx; color: rgba(193, 68, 59, 0.75); font-size: var(--fs-label); text-align: center; }
+/* 倒数不另起一种颜色——同一支朱砂加满、加重即可。这里要的是「同一句话说得更
+   用力」，换色会读成另一件事。 */
+.capture-waveform-note.is-limit { color: var(--cinnabar-ink); font-weight: 600; }
 
 .capture-recognizing { display: block; color: var(--gold-ink); font-size: var(--fs-aux); text-align: center; }
 

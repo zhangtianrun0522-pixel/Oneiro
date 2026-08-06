@@ -83,8 +83,9 @@
         <button class="send-button" aria-label="发送" disabled="{{sending || recording || recognizing}}" bindtap="sendMessage">↑</button>
       </view>
       <view class="composer-foot">
-        <!-- 只剩最后一轮时先说出来。上限到得毫无预兆，才会被读成故障。 -->
-        <text class="voice-note">{{recognizing ? '正在整理刚才的话…' : recording ? '松开后转成文字' : (turnCount === maxTurns - 1 ? '还剩最后一轮' : '按住「说」可以直接讲')}}</text>
+        <!-- 只剩最后一轮时先说出来。上限到得毫无预兆，才会被读成故障。录音的
+             60 秒上限同理：最后十几秒改成倒数，而不是数到 60 就凭空结束。 -->
+        <text class="voice-note {{recordingCountdown ? 'is-limit' : ''}}">{{recognizing ? '正在整理刚才的话…' : (recording ? (recordingCountdown ? '还剩 ' + recordingCountdown + ' 秒 · 到点这段也会收下' : '松开后转成文字') : (turnCount === maxTurns - 1 ? '还剩最后一轮' : '按住「说」可以直接讲'))}}</text>
         <text class="turn-limit">{{turnCount}} / {{maxTurns}}</text>
       </view>
     </block>

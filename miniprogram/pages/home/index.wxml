@@ -18,7 +18,10 @@
             <view class="wave-bar" style="height:34rpx;animation-delay:0.3s"></view>
             <view class="wave-bar" style="height:20rpx;animation-delay:0.15s"></view>
           </view>
-          <text class="capture-waveform-note">{{recordingSeconds}}s · 松开完成</text>
+          <!-- 只往上数到 60 然后凭空结束，用户读到的是「我的话丢了」。最后
+               十几秒改成倒数，把上限提前说出来，他才有机会把这句说完。 -->
+          <text wx:if="{{recordingCountdown}}" class="capture-waveform-note is-limit">还剩 {{recordingCountdown}} 秒 · 到点这段也会收下</text>
+          <text wx:else class="capture-waveform-note">{{recordingSeconds}}s · 松开完成</text>
         </view>
         <text wx:elif="{{recognizing}}" class="capture-recognizing">正在整理刚才的话…</text>
       </view>

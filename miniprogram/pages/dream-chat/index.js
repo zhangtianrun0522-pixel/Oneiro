@@ -11,6 +11,9 @@ var MAX_USER_TURNS = 6;
 // stop 会拿到 0 字节文件。
 var MIN_RECORD_MS = 1000;
 var MIN_RECORD_LIFETIME_MS = 600;
+// 与首页同源：60 秒是腾讯云「一句话识别」接口自身的上限，不是产品定的。
+var MAX_RECORD_SECONDS = 60;
+var RECORD_WARN_SECONDS = 15;
 var FEEDBACK_OPENINGS = {
   too_generic: "你标了'有点泛'。梦里哪个画面你觉得最被忽略了？我们从它开始",
   too_mystical: '你觉得太玄了。我们抛开象征，只说梦里实际发生了什么',
@@ -72,6 +75,8 @@ Page({
     sending: false,
     recording: false,
     recordingSeconds: 0,
+    // 只在最后 RECORD_WARN_SECONDS 秒内是正数，其余时间为 0（= 不提示）。
+    recordingCountdown: 0,
     recognizing: false,
     turnCount: 0,
     maxTurns: MAX_USER_TURNS,
@@ -141,7 +146,7 @@ Page({
   onRecorderError: function (error) {
     this.stopRecordingTimer();
     this.stopScheduled = false;
-    this.setData({ recording: false, recordingSeconds: 0 });
+    this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 });
     analytics.trackEvent('dream_chat_voice_error', {
       dreamId: this.data.dream && this.data.dream.id || '',
       errMsg: String(error && (error.errMsg || error.errCode || error.message) || '').slice(0, 180)
@@ -178,7 +183,12 @@ Page({
     var that = this;
     this.stopRecordingTimer();
     this.recordingTimer = setInterval(function () {
-      that.setData({ recordingSeconds: Math.min(Math.floor((Date.now() - that.recordingStartedAt) / 1000), 60) });
+      var seconds = Math.min(Math.floor((Date.now() - that.recordingStartedAt) / 1000), MAX_RECORD_SECONDS);
+      var remaining = MAX_RECORD_SECONDS - seconds;
+      that.setData({
+        recordingSeconds: seconds,
+        recordingCountdown: remaining <= RECORD_WARN_SECONDS ? remaining : 0
+      });
     }, 500);
   },
 
@@ -221,14 +231,16 @@ Page({
       return;
     }
     this.recordingStartedAt = Date.now();
-    this.setData({ recording: true, recordingSeconds: 0 });
+    this.userStoppedRecorder = false;
+    this.voiceAutoStopped = false;
+    this.setData({ recording: true, recordingSeconds: 0, recordingCountdown: 0 });
     this.startRecordingTimer();
     analytics.trackEvent('dream_chat_voice_start', { dreamId: this.data.dream.id, mode: this.voiceStartMode || 'tap' });
     try {
-      recorderRouter.start({ format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, duration: 60000 });
+      recorderRouter.start({ format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, duration: MAX_RECORD_SECONDS * 1000 });
     } catch (error) {
       this.stopRecordingTimer();
-      this.setData({ recording: false, recordingSeconds: 0 });
+      this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 });
       wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none' });
     }
   },
@@ -238,6 +250,9 @@ Page({
     var elapsed;
 
     if (!this.data.recording || this.stopScheduled) return;
+    // 标记「这次停止是我们要求的」，好在 onRecorderStop 里把它和录音器自己
+    // 走到 60 秒上限那一次区分开。见首页同名注释。
+    this.userStoppedRecorder = true;
     // 录音器刚 start 就 stop 会拿到 0 字节文件；把 stop 推迟到采集真正开始
     // 之后再执行。
     elapsed = Date.now() - (this.recordingStartedAt || 0);
@@ -251,14 +266,14 @@ Page({
     }
     this.stopRecordingTimer();
     analytics.trackEvent('dream_chat_voice_stop', { dreamId: this.data.dream.id, seconds: this.data.recordingSeconds });
-    try { recorderRouter.stop(); } catch (error) { this.setData({ recording: false, recordingSeconds: 0 }); }
+    try { recorderRouter.stop(); } catch (error) { this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 }); }
   },
 
   stopRecorderForExit: function () {
     this.stopScheduled = false;
     if (!this.data.recording) return;
     this.stopRecordingTimer();
-    this.setData({ recording: false, recordingSeconds: 0 });
+    this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 });
     try { recorderRouter.stopForExit(this); } catch (error) {}
   },
 
@@ -275,6 +290,7 @@ Page({
     this.clearVoiceStartTimer();
     this.voiceTouching = true;
     this.voiceLongPressStarted = false;
+    this.voiceAutoStopped = false;
     if (this.data.recording) return;
     this.voiceStartTimer = setTimeout(function () {
       that.voiceStartTimer = null;
@@ -287,6 +303,15 @@ Page({
   onVoiceTouchEnd: function () {
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
+    // 录音已经因为撞到 60 秒上限自己停了，那一段也在转文字的路上。这次松手只是
+    // 「把手拿开」：再往下走会把 voiceStopAfterAuthorization 置位，让下一次按住
+    // 变成空按。同时吃掉紧随其后的 tap，避免它把录音又开起来。
+    if (this.voiceAutoStopped) {
+      this.voiceAutoStopped = false;
+      this.voiceLongPressStarted = false;
+      this.voiceSuppressTap = true;
+      return;
+    }
     if (!this.voiceLongPressStarted && !this.data.recording) return;
     this.voiceSuppressTap = true;
     if (this.data.recording) this.stopRecorder();
@@ -296,6 +321,12 @@ Page({
   onVoiceTouchCancel: function () {
     this.voiceTouching = false;
     this.clearVoiceStartTimer();
+    if (this.voiceAutoStopped) {
+      this.voiceAutoStopped = false;
+      this.voiceLongPressStarted = false;
+      this.voiceSuppressTap = true;
+      return;
+    }
     if (this.voiceLongPressStarted && !this.data.recording) this.voiceStopAfterAuthorization = true;
     if (this.data.recording) this.stopRecorder();
     this.voiceLongPressStarted = false;
@@ -313,11 +344,25 @@ Page({
 
   onRecorderStop: function (result) {
     var that = this;
+    // 我们没要求停，录音器却停了——只可能是它自己走到了 60 秒上限。
+    var hitLimit = !this.userStoppedRecorder;
     var filePath = result && (result.tempFilePath || result.filePath);
-    var duration = result && result.duration ? Math.min(Number(result.duration) / 1000, 60) : Math.min((Date.now() - this.recordingStartedAt) / 1000, 60);
+    var duration = result && result.duration
+      ? Math.min(Number(result.duration) / 1000, MAX_RECORD_SECONDS)
+      : Math.min((Date.now() - this.recordingStartedAt) / 1000, MAX_RECORD_SECONDS);
     this.stopRecordingTimer();
     this.stopScheduled = false;
-    this.setData({ recording: false, recordingSeconds: 0 });
+    this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 });
+    if (hitLimit) {
+      // 这一段照常往下转文字：已经说出口的 60 秒不能因为撞到上限就整段丢掉。
+      this.voiceAutoStopped = true;
+      this.voiceLongPressStarted = false;
+      analytics.trackEvent('dream_chat_voice_limit_reached', {
+        dreamId: this.data.dream.id,
+        durationMs: Math.round(duration * 1000)
+      });
+      wx.showToast({ title: '已到 60 秒上限，这段收下了 · 可以接着按住说', icon: 'none', duration: 3200 });
+    }
     if (!filePath) {
       wx.showToast({ title: voiceFailureMessage({ reason: 'invalid_audio' }), icon: 'none' });
       return;

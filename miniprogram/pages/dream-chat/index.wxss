@@ -175,6 +175,8 @@
 .voice-button[disabled], .send-button[disabled] { opacity: 0.36; }
 .composer-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12rpx; }
 .voice-note { color: var(--ink-70); font-size: var(--fs-label); }
+/* 倒数只加重同一句话，不另起一种颜色语言。 */
+.voice-note.is-limit { color: var(--cinnabar-ink); font-weight: 600; }
 
 /* 聊满轮次上限后的收束态。这里刻意不是一条灰色提示，而是一个有出口的
    结束卡片——一个不能再输入的界面必须自己说清为什么，并把用户送到下一步，

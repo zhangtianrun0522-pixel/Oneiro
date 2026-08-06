@@ -219,6 +219,7 @@ type WxMock = {
   recorderErrorListener?: (error: Record<string, any>) => void;
   recorderStopCalls: number;
   recorderStartCalls: number;
+  recorderStartOptions: Record<string, any>[];
   failNextPortraitToggle: boolean;
   failNextPortraitSave: boolean;
   failNextPortraitGenerate: boolean;
@@ -251,6 +252,7 @@ type WxMock = {
   authorize: (options: Record<string, any>) => void;
   getFileSystemManager: () => Record<string, any>;
   failNextFileRead: boolean;
+  failNextSpeechRecognize: boolean;
 };
 
 function createCanvasContext(texts: string[] = []): Record<string, any> {
@@ -297,6 +299,7 @@ function createWxMock(): WxMock {
     cloudCalls: [],
     cloudUploads: [],
     failNextFileRead: false,
+    failNextSpeechRecognize: false,
     blockNextInterpret: false,
     failNextInterpret: false,
     failNextDreamSave: false,
@@ -306,6 +309,7 @@ function createWxMock(): WxMock {
     failDreamSaveTitles: [],
     recorderStopCalls: 0,
     recorderStartCalls: 0,
+    recorderStartOptions: [],
     failNextPortraitToggle: false,
     failNextPortraitSave: false,
     failNextPortraitGenerate: false,
@@ -346,7 +350,10 @@ function createWxMock(): WxMock {
       return {
         onStop(callback: (result: Record<string, any>) => void) { wx.recorderStopListener = callback; },
         onError(callback: (error: Record<string, any>) => void) { wx.recorderErrorListener = callback; },
-        start() { wx.recorderStartCalls += 1; },
+        start(options: Record<string, any>) {
+          wx.recorderStartCalls += 1;
+          wx.recorderStartOptions.push(options || {});
+        },
         stop() { wx.recorderStopCalls += 1; },
       };
     },
@@ -501,6 +508,18 @@ function createWxMock(): WxMock {
       if (options.name === 'saveDream' && wx.failDreamSaveTitles.includes(String(options.data?.dream?.result?.title || ''))) {
         wx.failDreamSaveTitles = wx.failDreamSaveTitles.filter((title) => title !== String(options.data?.dream?.result?.title || ''));
         options.success({ result: { ok: false, reason: 'mock_replaced_save_failed' } });
+        return;
+      }
+      // 识别要真的还回一段文字。原来这里落到最后那句只有 ok:true 的兜底上，
+      // 于是每次语音都走了失败分支——「转出来的字有没有真的进到草稿里」这件事
+      // 从来没被验证过。
+      if (options.name === 'speechRecognize') {
+        if (wx.failNextSpeechRecognize) {
+          wx.failNextSpeechRecognize = false;
+          options.success({ result: { ok: false, reason: 'empty_result' } });
+          return;
+        }
+        options.success({ result: { ok: true, text: '我梦见沙漠里下起暴雨' } });
         return;
       }
       if (options.name === 'interpretDream') {
@@ -898,6 +917,9 @@ function loadPage(
   app: Record<string, any>
 ): MiniProgramPage {
   let page: MiniProgramPage | null = null;
+  // 沙箱里没有真实时钟。把 setInterval 的回调存下来交给用例手动「走表」，
+  // 录音倒数这类跟时间强相关的行为才测得动——否则只能靠 sleep 碰运气。
+  const intervalCallbacks: Function[] = [];
   const sandbox = {
     console,
     Date,
@@ -924,12 +946,24 @@ function loadPage(
     // 手势代码会主动撤销还没触发的长按计时器（下滑提交时不该误起录音）。
     // 沙箱里 setTimeout 是同步的，所以这里只需要一个不抛错的存根。
     clearTimeout() {},
+    setInterval(callback: Function) {
+      intervalCallbacks.push(callback);
+      return intervalCallbacks.length;
+    },
+    clearInterval(id: number) {
+      // 清掉的计时器换成空函数而不是从数组里摘掉，这样后面的 id 不会错位。
+      if (id) intervalCallbacks[id - 1] = function () {};
+    },
     wx,
   };
 
   vm.runInNewContext(read(path), sandbox, { filename: path });
   assert.ok(page, `${path} should register a Page`);
-  return page!;
+  const loaded = page as unknown as MiniProgramPage;
+  loaded.__tickIntervals = function () {
+    intervalCallbacks.slice().forEach((callback) => callback());
+  };
+  return loaded;
 }
 
 function loadApp(
@@ -1012,6 +1046,10 @@ for (const [path, expected] of [
   // 以及录音中那一行必须一次说全三条出路——落点条只讲了下滑，上滑取消和
   // 「直接松手就转文字」没有别的地方会说。
   ['miniprogram/pages/home/index.wxml', '上滑取消 · 下滑直接解读 · 松手转成文字'],
+  // 60 秒是「一句话识别」接口自身的上限。只往上数到 60 然后凭空结束，用户读到
+  // 的是「我的话丢了」；最后十几秒必须倒数，并且说明到点那段也会收下。
+  ['miniprogram/pages/home/index.wxml', '还剩 {{recordingCountdown}} 秒'],
+  ['miniprogram/pages/dream-chat/index.wxml', 'recordingCountdown'],
   ['miniprogram/pages/home/index.wxml', 'catchtouchmove="onVoiceTouchMove"'],
   ['miniprogram/pages/home/index.wxml', 'bindtap="onDreamTextTap"'],
   ['miniprogram/pages/home/index.wxml', 'bindtouchstart="onVoiceTouchStart"'],
@@ -1473,6 +1511,11 @@ function startVoiceGesture(page: MiniProgramPage): void {
   page.lastDragZone = 'none';
   page.voiceMoved = false;
   page.voiceStartTimer = null;
+  page.voiceAutoStopped = false;
+  page.voiceStopAfterAuthorization = false;
+  // 默认「这次停止是用户要求的」，好让下面的用例只在真的要测 60 秒上限时
+  // 才显式把它翻成 false。
+  page.userStoppedRecorder = true;
   page.data.recording = false;
   page.data.recognizing = false;
   page.data.editingDream = false;
@@ -1659,6 +1702,7 @@ homePage.data.dreamText = '';
 // 是识别不准而反复重试同样短的一下。客户端直接拦下，且不发起云调用。
 const speechCallsBeforeShortClip = wx.cloudCalls.filter((call) => call.name === 'speechRecognize').length;
 homePage.data.recording = true;
+homePage.userStoppedRecorder = true;
 homePage.recordingStartedAt = Date.now();
 homePage.onRecorderStop({ tempFilePath: '/tmp/short.mp3', duration: 400 });
 assert.equal(homePage.data.recording, false);
@@ -1675,6 +1719,7 @@ assert.equal(
 // 云函数只递一个签名 URL，运行时长几乎与音频长度无关。
 const uploadsBeforeShortSpeech = wx.cloudUploads.length;
 homePage.data.recording = true;
+homePage.userStoppedRecorder = true;
 homePage.recordingStartedAt = Date.now();
 homePage.onRecorderStop({ tempFilePath: '/tmp/brief.mp3', duration: 3000 });
 // 短音频仍然内联，不为一句话多付一次上传往返。
@@ -1685,6 +1730,7 @@ assert.equal(inlineSpeechCall.data.fileID, undefined);
 
 homePage.data.dreamText = '';
 homePage.data.recording = true;
+homePage.userStoppedRecorder = true;
 homePage.recordingStartedAt = Date.now();
 homePage.onRecorderStop({ tempFilePath: '/tmp/long.mp3', duration: 42000 });
 assert.equal(wx.cloudUploads.length, uploadsBeforeShortSpeech + 1);
@@ -1694,6 +1740,70 @@ const uploadedSpeechCall = last(wx.cloudCalls.filter((call) => call.name === 'sp
 assert.ok(uploadedSpeechCall.data.fileID);
 assert.equal(uploadedSpeechCall.data.audioBase64, undefined);
 assert.equal(uploadedSpeechCall.data.duration, 42);
+
+// ── 60 秒上限：录音可以停，说过的话不能丢 ──
+// 60 秒是腾讯云「一句话识别」接口自身的上限，不是产品挑的数。原来到点时录音器
+// 静默切断、界面直接退回待机，用户读到的不是「到上限了」而是「我刚说的全没了」。
+
+// 1) 最后 15 秒开始倒数，而不是一路数到 60 然后凭空结束。
+homePage.data.recording = true;
+homePage.recordingStartedAt = Date.now() - 44000;
+homePage.startRecordingTimer();
+homePage.__tickIntervals();
+// 还剩 16 秒：不打扰。
+assert.equal(homePage.data.recordingSeconds, 44);
+assert.equal(homePage.data.recordingCountdown, 0);
+homePage.recordingStartedAt = Date.now() - 46000;
+homePage.__tickIntervals();
+assert.equal(homePage.data.recordingCountdown, 14);
+homePage.stopRecordingTimer();
+
+// 2) 到点时那 60 秒照常送去识别。这是这条反馈里最伤人的部分——用户已经说出口
+//    的话不能因为撞到上限就整段作废。
+startVoiceRecordingGesture(homePage);
+let limitReleaseSubmits = 0;
+homePage.generateDreamCard = function () { limitReleaseSubmits += 1; };
+homePage.data.dreamText = '';
+// 我们没要求停，是录音器自己走到了 60 秒。
+homePage.userStoppedRecorder = false;
+homePage.recordingStartedAt = Date.now() - 60000;
+const speechCallsBeforeLimit = wx.cloudCalls.filter((call) => call.name === 'speechRecognize').length;
+const toastsBeforeLimit = wx.toasts.length;
+homePage.onRecorderStop({ tempFilePath: '/tmp/limit.mp3', duration: 60000 });
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'speechRecognize').length,
+  speechCallsBeforeLimit + 1
+);
+assert.ok(homePage.data.dreamText);
+// 到点这件事必须说出来，否则用户读到的是故障而不是上限。
+assert.ok(wx.toasts.length > toastsBeforeLimit);
+assert.ok(String(last(wx.toasts)).includes('60'));
+assert.ok(analytics.getEvents().some((event) => event.name === 'voice_record_limit_reached'));
+assert.equal(homePage.voiceAutoStopped, true);
+
+// 3) 撞上限之后那次松手只是「把手拿开」。它落进任何一支都是错的：submit 会凭空
+//    提交，pendingRecording 会置位 voiceStopAfterAuthorization——于是下一次按住
+//    圆环整个变成空按，用户说了一整段，一个字都进不来。
+homePage.onVoiceTouchEnd(touchEndAt(160));
+assert.equal(limitReleaseSubmits, 0);
+assert.ok(!homePage.voiceStopAfterAuthorization);
+assert.equal(homePage.voiceAutoStopped, false);
+assert.equal(homePage.voiceLongPressStarted, false);
+
+// 4) 所以下一次按住必须真的录得起来——这是上一条的落点。
+const recorderStartsBeforeResume = wx.recorderStartCalls;
+homePage.data.recording = false;
+homePage.data.recognizing = false;
+homePage.voiceStopAfterAuthorization = false;
+homePage.startRecorder();
+assert.equal(wx.recorderStartCalls, recorderStartsBeforeResume + 1);
+assert.equal(homePage.data.recording, true);
+// 录音器自报的时长要和上限一致，客户端不能比接口放得更宽。
+assert.equal(last(wx.recorderStartOptions).duration, 60000);
+homePage.stopRecordingTimer();
+homePage.data.recording = false;
+homePage.generateDreamCard = originalGenerateDreamCard;
+homePage.data.dreamText = '';
 const profilePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
 profilePage.onLoad();
 profilePage.onInput({ currentTarget: { dataset: { key: 'nickname' } }, detail: { value: ' Runtu ' } });

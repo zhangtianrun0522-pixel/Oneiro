@@ -21,6 +21,14 @@ var ANALYSIS_STAGES = [
 //     · 松手时在下方区域（越过 SUBMIT 阈值）→ 转文字后直接进入解读
 //     · 其余任何位置松手               → 只转成文字，留在输入区
 //
+// 还有一条不由手指决定的出路：录到 60 秒时录音器自己停（那是腾讯云「一句话
+// 识别」接口的上限）。这时手指多半还按在圆环上，所以：
+//     · 已经说的那 60 秒照常转成文字进草稿——撞上限不等于这段作废
+//     · 这一次手势就地作废（voiceAutoStopped），之后那次松手只是「把手拿开」，
+//       不再当成取消或提交；否则它会置位 voiceStopAfterAuthorization，让下一次
+//       按住整个变成空按
+//     · 最后 RECORD_WARN_SECONDS 秒改成倒数，别让上限到得毫无预兆
+//
 // 关键点：拖拽绝不中断录音。之前有一个「越过 slop 就判定为划、撤掉长按」的
 // 分支，结果是按下后马上开始拖的人根本录不上音——按住说话这件事在他手里
 // 就是坏的。现在唯一决定录不录的是「按住有没有超过 240ms」，唯一决定拖拽
@@ -81,6 +89,13 @@ var MIN_RECORD_MS = 1000;
 // 松手的场景下，start 和 stop 可能落在同一帧里，产出 0 字节文件或直接报错。
 // 这时把 stop 推迟到这个下限之后再执行，用户说的那半句话才不会凭空消失。
 var MIN_RECORD_LIFETIME_MS = 600;
+// 60 秒不是我们挑的数：腾讯云「一句话识别」接口本身的上限就是 60 秒。录音器
+// 的 duration、客户端的夹逼、云函数的 too_long 兜底全是在镜像同一个上限，所以
+// 它们必须共用这一个常量——改的时候不能只改一处。
+var MAX_RECORD_SECONDS = 60;
+// 到点静默切断时，用户读到的不是「到上限了」而是「我的话丢了」。最后这段时间
+// 开始倒数，让他有机会把这句说完；真到点了那一段也照常收下（见 onRecorderStop）。
+var RECORD_WARN_SECONDS = 15;
 
 function voiceFailureMessage(result) {
   var reason = result && result.reason ? String(result.reason) : '';
@@ -225,6 +240,8 @@ Page({
     dreamText: '',
     recording: false,
     recordingSeconds: 0,
+    // 只在最后 RECORD_WARN_SECONDS 秒内是正数，其余时间为 0（= 不提示）。
+    recordingCountdown: 0,
     recognizing: false,
     editingDream: false,
     dragDx: 0,
@@ -330,10 +347,20 @@ Page({
   startRecordingTimer: function () {
     var self = this;
     this.stopRecordingTimer();
+    this.warnedAboutLimit = false;
     this.recordingTimer = setInterval(function () {
-      var seconds = Math.floor((Date.now() - self.recordingStartedAt) / 1000);
+      var seconds = Math.min(Math.floor((Date.now() - self.recordingStartedAt) / 1000), MAX_RECORD_SECONDS);
+      var remaining = MAX_RECORD_SECONDS - seconds;
+      var countdown = remaining <= RECORD_WARN_SECONDS ? remaining : 0;
+      // 说话的人多半没在看屏幕，所以进入倒数区时补一次震动——这是唯一一个不用
+      // 抬头也能收到的信号。只在跨过阈值那一下震，不是每 500ms 都震。
+      if (countdown && !self.warnedAboutLimit) {
+        self.warnedAboutLimit = true;
+        triggerVibrate('light');
+      }
       self.setData({
-        recordingSeconds: Math.min(seconds, 60)
+        recordingSeconds: seconds,
+        recordingCountdown: countdown
       });
     }, 500);
   },
@@ -397,9 +424,14 @@ Page({
     }
 
     this.recordingStartedAt = Date.now();
+    // 每次开录都要清掉，否则上一段留下的「是我们主动停的」会让下一段走到上限
+    // 时被误判成正常松手。
+    this.userStoppedRecorder = false;
+    this.voiceAutoStopped = false;
     this.setData({
       recording: true,
-      recordingSeconds: 0
+      recordingSeconds: 0,
+      recordingCountdown: 0
     });
     this.startRecordingTimer();
     analytics.trackEvent('voice_record_start', { mode: this.voiceStartMode || 'tap' });
@@ -410,13 +442,14 @@ Page({
         sampleRate: 16000,
         numberOfChannels: 1,
         encodeBitRate: 48000,
-        duration: 60000
+        duration: MAX_RECORD_SECONDS * 1000
       });
     } catch (error) {
       this.stopRecordingTimer();
       this.setData({
         recording: false,
-        recordingSeconds: 0
+        recordingSeconds: 0,
+        recordingCountdown: 0
       });
       wx.showToast({ title: voiceFailureMessage({ reason: 'recognize_failed' }), icon: 'none', duration: 2500 });
     }
@@ -429,6 +462,12 @@ Page({
     if (!this.data.recording || this.stopScheduled) {
       return;
     }
+
+    // 记下「这次停止是我们要求的」。录音器还会因为自己走到 60 秒上限而停一次，
+    // 两者在 onRecorderStop 里必须分开处理：走到上限那一次手指还按在圆环上，
+    // 用户并没有表达任何「说完了 / 取消 / 提交」的意思。标记要在这里、也就是
+    // 请求发出的时刻置位，而不是在下面真正 stop 的时刻——中间还隔着一次延迟。
+    this.userStoppedRecorder = true;
 
     // 录音器刚 start 就 stop 会拿到 0 字节文件。把 stop 推迟到采集真正开始
     // 之后再执行，用户那半句话才录得进去；这段时间里 recording 仍为 true，
@@ -450,7 +489,8 @@ Page({
     } catch (error) {
       this.setData({
         recording: false,
-        recordingSeconds: 0
+        recordingSeconds: 0,
+        recordingCountdown: 0
       });
     }
   },
@@ -459,7 +499,7 @@ Page({
     this.stopScheduled = false;
     if (!this.data.recording) return;
     this.stopRecordingTimer();
-    this.setData({ recording: false, recordingSeconds: 0 });
+    this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 });
     try { recorderRouter.stopForExit(this); } catch (error) {}
   },
 
@@ -510,6 +550,7 @@ Page({
     this.clearVoiceStartTimer();
     this.voiceTouching = true;
     this.voiceLongPressStarted = false;
+    this.voiceAutoStopped = false;
     this.voiceCancelled = false;
     this.voiceSubmitAfterRecognition = false;
     this.voiceStartX = touch ? touch.clientX : 0;
@@ -539,7 +580,9 @@ Page({
 
   onVoiceTouchMove: function (event) {
     var touch = event && event.touches && event.touches[0];
-    if (!this.voiceTouching || !touch) return;
+    // 撞到上限之后手指往往还在圆环上。这时再让圆环跟手、再冒出「松开取消」，
+    // 说的是一件已经不会发生的事。
+    if (!this.voiceTouching || this.voiceAutoStopped || !touch) return;
 
     var dx = touch.clientX - this.voiceStartX;
     var dy = touch.clientY - this.voiceStartY;
@@ -574,6 +617,22 @@ Page({
   },
 
   onVoiceTouchEnd: function (event) {
+    // 录音已经因为撞到 60 秒上限自己停了，那一段也已经在转文字的路上。此刻的
+    // 松手只是「把手拿开」，不再承载取消或提交的语义——它落到下面任何一支都是
+    // 错的：cancel 会去丢一段并不存在的录音，submit / pendingRecording 会置位
+    // voiceStopAfterAuthorization，让下一次按住变成空按。
+    if (this.voiceAutoStopped) {
+      this.voiceAutoStopped = false;
+      this.voiceTouching = false;
+      this.clearVoiceStartTimer();
+      this.lastDragZone = 'none';
+      this.voiceDragZone = 'none';
+      this.voiceLongPressStarted = false;
+      this.voiceMoved = false;
+      this.resetDragState();
+      return;
+    }
+
     var touch = event && event.changedTouches && event.changedTouches[0];
     // The final point can differ from the last touchmove (especially on a
     // slow release), so always recalculate from changedTouches when present.
@@ -631,6 +690,19 @@ Page({
   },
 
   onVoiceTouchCancel: function () {
+    // 同 onVoiceTouchEnd：上限已经收尾过了，这里不能再当成一次录音中断处理。
+    if (this.voiceAutoStopped) {
+      this.voiceAutoStopped = false;
+      this.voiceTouching = false;
+      this.clearVoiceStartTimer();
+      this.lastDragZone = 'none';
+      this.voiceDragZone = 'none';
+      this.voiceLongPressStarted = false;
+      this.voiceMoved = false;
+      this.resetDragState();
+      return;
+    }
+
     var wasRecording = this.data.recording;
     var pendingRecording = this.voiceLongPressStarted && !wasRecording;
 
@@ -656,12 +728,14 @@ Page({
 
   onRecorderStop: function (result) {
     var self = this;
+    // 我们没要求停，录音器却停了 —— 只可能是它自己走到了 60 秒上限。
+    var hitLimit = !this.userStoppedRecorder;
     var wasCancelled = !!this.voiceCancelled;
     var shouldAutoSubmit = !!this.voiceSubmitAfterRecognition;
     var filePath = result && (result.tempFilePath || result.filePath);
     var duration = result && result.duration
-      ? Math.min(Number(result.duration) / 1000, 60)
-      : Math.min((Date.now() - this.recordingStartedAt) / 1000, 60);
+      ? Math.min(Number(result.duration) / 1000, MAX_RECORD_SECONDS)
+      : Math.min((Date.now() - this.recordingStartedAt) / 1000, MAX_RECORD_SECONDS);
 
     this.voiceCancelled = false;
     this.voiceSubmitAfterRecognition = false;
@@ -670,8 +744,30 @@ Page({
     this.stopRecordingTimer();
     this.setData({
       recording: false,
-      recordingSeconds: 0
+      recordingSeconds: 0,
+      recordingCountdown: 0
     });
+
+    if (hitLimit) {
+      // 关键：这一段照常往下走去转文字。用户已经说出口的 60 秒不能因为撞到
+      // 上限就整段丢掉——那正是「录音变长就失败」这条反馈里最伤人的部分。
+      //
+      // 同时把这次手势就地作废。手指此刻还按在圆环上，他之后的那次松手表达的
+      // 是「我说完了」，而不是对一段还在录的音做取消或提交的处置。不作废的话
+      // 那次 touchend 会落进 pendingRecording 分支，把 voiceStopAfterAuthorization
+      // 置位，于是下一次按住圆环整个变成空按——说了一整段，一个字都进不来。
+      this.voiceAutoStopped = true;
+      this.voiceLongPressStarted = false;
+      this.lastDragZone = 'none';
+      this.voiceDragZone = 'none';
+      this.resetDragState();
+      analytics.trackEvent('voice_record_limit_reached', { durationMs: Math.round(duration * 1000) });
+      wx.showToast({
+        title: '已到 60 秒上限，这段收下了 · 松手后可以接着按住说',
+        icon: 'none',
+        duration: 3200
+      });
+    }
 
     if (wasCancelled) {
       // Up-swipe cancel: drop the clip entirely, no toast, no leftover text.
@@ -757,7 +853,7 @@ Page({
   onRecorderError: function (error) {
     this.stopRecordingTimer();
     this.stopScheduled = false;
-    this.setData({ recording: false, recordingSeconds: 0 });
+    this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 });
     // 原来这里只上报一个空事件，真机上录音失败的具体原因（被系统音频占用、
     // 机型不支持该编码等）全部丢掉了，无从排查「有些人失败」到底是哪些人。
     analytics.trackEvent('voice_record_error', {
