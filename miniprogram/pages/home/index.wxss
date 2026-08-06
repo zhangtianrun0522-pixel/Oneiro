@@ -12,14 +12,6 @@
   color: var(--ink);
 }
 
-.brand {
-  color: rgba(33, 29, 23, 0.3);
-  font-size: 20rpx;
-  font-weight: 700;
-  letter-spacing: 10rpx;
-  text-align: center;
-}
-
 /* 朱砂只留给 .title-accent 这一处点睛，分享提示条改用旧金细线，
    与 .month-observation / .original-dream 等左边框语言保持一致 */
 .share-note {
@@ -140,13 +132,20 @@
 }
 .drag-label--cancel { color: var(--cinnabar-ink); }
 
-/* 圆环下方这块有两个身份，共用同一块几何空间但视觉语言完全不同：
-   · is-actionable（有草稿、未录音）＝ 页面此刻唯一的主动作，深墨实心块，
-     和全站 .primary-button 同一套语言（2rpx 直角、墨底纸字、800 字重）。
-     胶囊圆角在这套纸墨排版里是异物——那是上一版读起来「像个没做完的标签」
-     的主要原因。
-   · is-target（录音中）＝ 下滑落点，虚线描边 = 待命，旧金 = 进入感应范围，
-     墨色实线 = 越过阈值松手即提交。
+/* 圆环下方这块有两个身份，共用同一块几何空间：
+   · is-actionable（有草稿、未录音）＝ 可以直接点的提交按钮
+   · is-target（录音中）＝ 下滑落点，虚线待命 → 旧金感应 → 墨色就绪
+
+   这里刻意**只用描边、不填实心**。上一版是 400×96rpx 的深墨实心块，紧挨在
+   一个 1rpx 发丝描边、中心只有 8px 圆点的圆环下面——那个圆环是整页最克制的
+   造型，下面压一块黑色实心砖，两者的视觉重量差了一个量级，这是它读起来
+   「丑」的主要原因，不是圆角或箭头的问题。改成同一族的细描边之后，按钮和
+   圆环成为一组，而不是一个精致图形被一块广告位坠着。
+
+   描边化还顺手修掉一个看起来像 bug 的现象：原来 is-actionable 是墨底、
+   is-armed 是纸底，有草稿的人往下拖时按钮会在半路从黑翻成白。现在两者都只
+   改描边颜色，是一条连续的变化。
+
    始终占位、只切换 opacity：条件渲染会在手势进行到一半时插入整块高度，
    把下方文字顶走，页面自己跳一下。 */
 .confirm-target {
@@ -154,13 +153,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 400rpx;
-  height: 96rpx;
+  width: 300rpx;
+  height: 84rpx;
   /* 圆环向下跟手上限 40px（= DRAG_SUBMIT_THRESHOLD）。128rpx(64px) 静止净空
      → 跟到底时仍留 24px，两者不会读成相接的一个整体。 */
   margin: 128rpx auto 0;
   padding: 0;
-  border: 2rpx dashed rgba(33, 29, 23, 0.28);
+  border: 1rpx dashed rgba(33, 29, 23, 0.28);
   border-radius: 2rpx;
   background: transparent;
   opacity: 0;
@@ -174,22 +173,24 @@
 .confirm-target.is-near,
 .confirm-target.is-armed { opacity: 1; }
 
-/* 有草稿、未录音：这是页面此刻唯一的主动作，必须读起来就是一个按钮。 */
+/* 有草稿、未录音：页面此刻唯一的主动作。实线描边 + 墨字，与圆环同族的
+   细线语言；分量靠「唯一实线」和文字自身，不靠填充色。 */
 .confirm-target.is-actionable {
   opacity: 1;
   pointer-events: auto;
-  border: 1rpx solid var(--ink);
-  background: var(--ink);
-  box-shadow: 0 10rpx 24rpx rgba(33, 29, 23, 0.14);
+  border-style: solid;
+  border-color: var(--ink);
 }
 .confirm-target.is-actionable .confirm-target-label {
-  color: var(--paper);
+  color: var(--ink);
   font-size: var(--fs-aux);
-  font-weight: 800;
 }
+/* 按下才填实心：这是唯一需要「按钮感」的瞬间，静止时不需要。 */
 .confirm-target.is-actionable:active {
-  transform: translateY(2rpx);
-  box-shadow: 0 4rpx 12rpx rgba(33, 29, 23, 0.16);
+  background: var(--ink);
+}
+.confirm-target.is-actionable:active .confirm-target-label {
+  color: var(--paper);
 }
 /* 微信内置的 button[disabled] 会把底色刷成 #f7f7f7、文字刷成浅灰，选择器
    权重比 .confirm-target 高。这里只中和它的配色，可见度仍然由上面的
@@ -199,7 +200,6 @@
   background: transparent;
   color: inherit;
 }
-.confirm-target.is-armed[disabled] { background: var(--paper-raised); }
 
 .confirm-target-label {
   color: rgba(33, 29, 23, 0.5);
@@ -217,13 +217,12 @@
   color: var(--gold-ink);
 }
 
-/* 越过阈值：实线深墨描边 + 浅纸底，读作「已就绪，松手即提交」。
-   这里刻意不做成深墨实心——录音中的圆环本身就是深墨填充，
-   两个同色实心块靠近时会读成一个整体形状。 */
+/* 越过阈值：实线深墨描边 + 轻微放大，读作「已就绪，松手即提交」。
+   这里刻意不填实心——录音中的圆环本身就是深墨填充，两个同色实心块靠近时
+   会读成一个整体形状。 */
 .confirm-target.is-armed {
   border-style: solid;
   border-color: var(--ink);
-  background: var(--paper-raised);
   transform: scale(1.04);
 }
 .confirm-target.is-armed .confirm-target-label {

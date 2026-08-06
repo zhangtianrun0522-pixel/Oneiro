@@ -1,6 +1,7 @@
+<!-- 页面内不再重复 ONEIRO：微信原生导航栏已经用 index.json 的
+     navigationBarTitleText 显示了同样四个字，两处相隔十几个像素出现同一个词，
+     读起来是渲染重复，也白占掉首屏最上面一块留白。 -->
 <view class="screen">
-  <view class="brand"><text>ONEIRO</text></view>
-
   <view class="capture-stage">
     <text class="capture-eyebrow">{{heroCardNo}} · {{heroDate}}</text>
 
@@ -66,15 +67,12 @@
            它必须始终占位：原来用 wx:if 条件渲染，一旦拖过 16px 就凭空插入一个
            176rpx 高的块，把下面的提示文字整体顶下去——手势进行到一半页面自己
            跳一下。现在常驻占位、只切换可见度与可点性。 -->
-      <!-- 箭头写在同一个 text 节点里：拆成两个节点时它们各自按自身字体算基线，
-           中文和箭头会差半个像素地错开，正是「这个按钮处理得太丑」里最刺眼的
-           那一处。 -->
       <button
         class="confirm-target {{recording ? 'is-target' : ''}} {{!recording && dreamText ? 'is-actionable' : ''}} {{dragZone === 'submit' ? 'is-armed' : ''}} {{dragZone === 'attempt' ? 'is-near' : ''}}"
         disabled="{{recording || recognizing || !dreamText}}"
         bindtap="onSubmitTap"
       >
-        <text class="confirm-target-label">{{dragZone === 'submit' ? '松开 · 进入解读' : recording ? '下滑到这里 · 直接解读' : '解读这个梦 →'}}</text>
+        <text class="confirm-target-label">{{dragZone === 'submit' ? '松开 · 进入解读' : recording ? '下滑到这里' : '解读这个梦'}}</text>
       </button>
     </view>
 
