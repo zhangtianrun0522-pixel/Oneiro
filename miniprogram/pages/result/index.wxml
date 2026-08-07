@@ -109,7 +109,30 @@
         <text class="reading-label">与你有关</text>
         <block wx:if="{{possibleConnections.length}}">
           <view class="connection-list">
-            <text wx:for="{{possibleConnections}}" wx:key="*this" class="connection-item">{{item}}</text>
+            <!-- 每条呼应挂着它自己的两个出口，而不是整块共用一组按钮：模型一次
+                 可以给出三条，共用一组就问不清用户在说哪一条，收到的表态也就
+                 无法上行成任何证据。判断必须贴着被判断的那句话。 -->
+            <view wx:for="{{possibleConnections}}" wx:key="text" class="connection-entry">
+              <text class="connection-item">{{item.text}}</text>
+              <view class="connection-verdicts">
+                <view
+                  class="connection-verdict {{item.verdict === 'confirmed' ? 'is-chosen' : ''}}"
+                  data-index="{{index}}"
+                  data-verdict="confirmed"
+                  bindtap="onConnectionVerdict"
+                >是这样</view>
+                <view
+                  class="connection-verdict {{item.verdict === 'rejected' ? 'is-chosen' : ''}}"
+                  data-index="{{index}}"
+                  data-verdict="rejected"
+                  bindtap="onConnectionVerdict"
+                >不太像</view>
+              </view>
+              <!-- 表态之后必须看得见它去了哪里。不回话的按钮，用户点第二次就
+                   不点了；而这两条路径去向不同，说法也不能含糊成一句「已记录」。 -->
+              <text wx:if="{{item.verdict === 'confirmed'}}" class="connection-verdict-note">这条会作为背景，进入之后对你的理解。</text>
+              <text wx:elif="{{item.verdict === 'rejected'}}" class="connection-verdict-note">那就在下面聊聊，说说实际是怎么回事。</text>
+            </view>
           </view>
           <text class="reading-boundary">这是一种理解角度，你可以保留、修正或否定它。</text>
         </block>
@@ -206,10 +229,12 @@
   <!-- 聊聊这个梦：放在阅读内容结束之后、操作栏（收藏/分享/删除）之前，
        做成一个独立可点卡片（浅底色块 + 细边框 + 明确箭头），比普通文字链更
        醒目，避免被忽略；不做成朱砂实心按钮，保持暖纸/深墨的克制调性 -->
-  <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry {{feedback === 'too_generic' || feedback === 'too_mystical' || feedback === 'not_grounded' ? 'has-feedback' : ''}}" bindtap="openDreamChat">
+  <!-- 被否定的呼应压过解读评价：前者指向一句具体的、用户刚刚亲手划掉的话，
+       后者只是对整份解读的粗评。有更具体的东西可聊时，不该从粗评开始。 -->
+  <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry {{connectionToCorrect || feedback === 'too_generic' || feedback === 'too_mystical' || feedback === 'not_grounded' ? 'has-feedback' : ''}}" bindtap="openDreamChat">
     <view class="chat-entry-copy">
-      <text class="reading-label">{{feedback === 'too_generic' ? '从被忽略的画面聊起' : feedback === 'too_mystical' ? '只说梦里实际发生的事' : feedback === 'not_grounded' ? '从醒来后的现实联想聊起' : '聊聊这个梦'}}</text>
-      <text class="chat-entry-question">{{feedback ? '把你的感受说具体一点' : dream.result.integration_question}}</text>
+      <text class="reading-label">{{connectionToCorrect ? '说说那条哪里不对' : feedback === 'too_generic' ? '从被忽略的画面聊起' : feedback === 'too_mystical' ? '只说梦里实际发生的事' : feedback === 'not_grounded' ? '从醒来后的现实联想聊起' : '聊聊这个梦'}}</text>
+      <text class="chat-entry-question">{{connectionToCorrect ? '把实际的情况讲给我听，我重新理解' : feedback ? '把你的感受说具体一点' : dream.result.integration_question}}</text>
     </view>
     <view class="chat-entry-arrow-badge">
       <text class="chat-entry-arrow">→</text>

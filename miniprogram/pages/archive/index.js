@@ -104,6 +104,14 @@ function normalizeCloudDream(item) {
       time_sense: facts.timeSense || facts.time_sense || []
     },
     chatMessages: item && Array.isArray(item.chatMessages) ? item.chatMessages : [],
+    // 用户在每条呼应上的表态。云端记录在这里会盖回本地（远端更新时间更晚时
+    // 远端胜出），漏掉这三个字段的后果不是「云端没有」而是「本地被抹掉」——
+    // 逛一次归档回来，刚点过的「是这样」全部弹回未选中。
+    connectionVerdicts: item && item.connectionVerdicts && typeof item.connectionVerdicts === 'object'
+      ? item.connectionVerdicts
+      : {},
+    connectionToCorrect: String((item && item.connectionToCorrect) || ''),
+    connectionCorrectionRaisedFor: String((item && item.connectionCorrectionRaisedFor) || ''),
     interpretationSource: String((item && item.interpretationSource) || ''),
     interpretationProvider: String((item && item.interpretationProvider) || ''),
     interpretationRevision: Math.max(0, Number(item && item.interpretationRevision) || 0),

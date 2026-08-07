@@ -110,6 +110,11 @@ const SYSTEM_PROMPT = [
   '核心意图：先把原梦中真正发生的事说清楚，再让每个模块提供一条有辨识度、可被用户修正的观察。',
   '模块核心意图：dream_translation 只复述场景与感受；reading_hook 找到一个具体转折；cultural_symbolism 给出中国传统解梦对本梦意象的说法；underneath 观察梦中细节之间的个人张力；possible_connections 只在有具体呼应时提出现实假设；integration_question 留一个容易回答的问题；one_small_act 给一个轻量行动。',
   '模块核心意图：历史记忆只有在历史观察、生活片段或画像与本梦有具体呼应时才使用，并显式说出来源与时间感；没有具体呼应时禁止假装记得。',
+  // 画像和「与你有关」是一件事的两半，但接缝绝不能露出来。用户明确反感把主题
+  // 当标签贴——`「承接压力」` 这种带括号、单独框起来指认的写法读起来是机械分类，
+  // 不是理解。关联必须织进一句完整自然语句里，且必须由梦中一处具体细节接住，
+  // 不能只凭画像本身成立。
+  '模块核心意图：当前阶段画像只是可修正的长期背景。只有当本梦中一处具体细节（某个动作、位置、结局）恰好呼应了画像所指的长期状态时，才在 possible_connections 里写这条关联，并且必须写成一句完整自然的话：把梦里那处细节和那个长期状态连起来说（例：「梦里水一直漫上来、你却一点也不慌，和你最近一直在默默接住很多事是同一种姿态」）。严禁把画像主题当标签贴出：不得出现用「」『』括起、单独框起来指认的主题词，不得出现“主题：”“标签：”“对应画像 X”这类元话语，也不得罗列画像里的词。读起来必须像一句观察，不像给这个梦标注分类。画像与本梦没有具体呼应时，宁可完全不提画像，possible_connections 为空。',
   // 旧版要求「写清是哪个意象、上一次什么时候出现、那次和这次有什么不同」，
   // 模型只做了前两件（查数据，容易），跳过了第三件（说出差别，难），于是输出
   // 变成「这是你第 12 次梦见沙漠」这类报表。次数是真的，但它不产生任何理解——
@@ -156,7 +161,7 @@ const SYSTEM_PROMPT = [
   '  "metaphysical_basis": "按当前模板规则输出",',
   '  "metaphysical_reading": { "temperament": "这次梦被调动的内在底色；无具体呼应可为空", "dream_echo": "出生节律与本梦具体意象的呼应；无具体呼应可为空", "tension": "出生节律与梦中行动的拉扯；无具体呼应可为空", "rhythm": "基于本梦的当下行动节奏；无具体依据可为空", "basis": "内部计算记录，可为空" },',
   '  "underneath": "引用梦里至少一个具体动作或变化，说出它与另一处细节之间的张力；禁止把两个意象的词典义拼成反差句；有材料才写，可以为空",',
-  '  "possible_connections": ["只有梦中细节与用户上下文有具体呼应时才写现实关联，0条完全可以"],',
+  '  "possible_connections": ["只有梦中细节与用户上下文（含阶段画像）有具体呼应时才写；每条是一句完整自然语句，不出现括起来的主题标签，0条完全可以"],',
   '  "mirror": "对 possible_connections 的简短总结",',
   '  "integration_question": "一个围绕当次梦的可回答问题",',
   '  "one_small_act": "连向梦所指向的现实处境的一个小行动，不超过20字；不得把梦里的物件搬成现实道具；无可连处境时留空",',
@@ -293,6 +298,35 @@ function hasPredictiveMetaphysicalLanguage(value) {
 function sanitizeFortuneClaims(value) {
   const text = typeof value === 'string' ? value.trim() : '';
   return FORTUNE_CLAIM_PATTERN.test(text) ? '' : text;
+}
+
+// 把画像主题当标签贴出来的两种写法。「承接压力」这样单独框起来指认一个主题，
+// 和「主题：承接压力」这样的元话语，读起来都是在给这个梦做分类归档，而不是在
+// 说一句观察——用户明确反感这一点，所以「与你有关」只能是自然语句。
+//
+// 提示词里已经禁了，但那是靠模型自觉，而这条禁令是产品的硬边界，不能只有一道
+// 靠说服的闸。这里做确定性兜底，且分两种力度：元话语整段删掉（它没有信息，
+// 只有分类动作）；引号只拆掉括号本身、留下里面的话（那句话往往是句子的主干，
+// 连带删掉会把整条呼应打碎，而拆掉括号后它自然融回句子）。
+// 冒号后面那截只在「短到只可能是个主题词」时才一起删（≤8 字）。这道限制是必须
+// 的：「主题：承接压力。梦里水漫上来…」冒号后是标签值，该删；而「对应画像 2：
+// 梦里水漫上来你却不慌」冒号后就是那句观察本身，删掉整条呼应就没了。长度是这
+// 两种写法之间唯一稳定可判的差别。
+const CONNECTION_LABEL_META_PATTERN = /(?:^|[，,。；;、])\s*(?:对应)?(?:阶段)?(?:画像)?(?:主题|标签|关键词|分类|对应画像)\s*[0-9０-９]*\s*[：:]\s*(?:[^，,。；;]{1,8}(?=[，,。；;]|$))?/g;
+
+function stripConnectionLabels(value) {
+  const original = String(value || '').trim();
+  const cleaned = original
+    .replace(CONNECTION_LABEL_META_PATTERN, '')
+    .replace(/[「」『』]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s，,、。；;：:]+/, '')
+    .trim();
+  // 没动过的原样返回。长度下限只对被清理过的内容生效——干净的短句是合法输出，
+  // 不该被这道闸误伤；而清完只剩残句的，说明它本来就只是个标签，不是观察，
+  // 宁可这次没有关联，也不要在「与你有关」下面挂一句读不通的话。
+  if (cleaned === original) return original;
+  return cleaned.length >= 8 ? cleaned : '';
 }
 
 function sanitizeMetaphysicalText(value, fallback, maxLength) {
@@ -1520,15 +1554,17 @@ function normalizeAiResult(raw, dreamText, profile, cardIndex, sourceLabel, memo
     metaphysical_reading: metaphysicalFallback.reading,
     underneath: repairDreamTerms(freeformText(raw && raw.underneath, 700), ''),
     cultural_symbolism: sanitizeFortuneClaims(repairDreamTerms(freeformText(raw && raw.cultural_symbolism, 700), '')),
-    mirror: repairDreamTerms(asString(
+    // mirror 同样要过一遍：它是对 possible_connections 的总结，而且在一条呼应
+    // 都没有时会被结果页当成「与你有关」的正文顶上去。
+    mirror: stripConnectionLabels(repairDreamTerms(asString(
       raw && raw.mirror,
       '',
       700
-    ), safeBaseFallback('mirror')),
+    ), safeBaseFallback('mirror'))),
     possible_connections: (function () {
       const candidateConnections = asStringArray(raw && raw.possible_connections, [], 3, 260).map(function (item) {
-        return repairDreamTerms(item, '');
-      });
+        return stripConnectionLabels(repairDreamTerms(item, ''));
+      }).filter(Boolean);
       return candidateConnections;
     }()),
     // 已下线的模块。它本意是防止解读硬化成人格判决，实际输出却变成「这也许

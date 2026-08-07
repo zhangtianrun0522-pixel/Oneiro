@@ -123,7 +123,10 @@ App({
         return;
       }
       if (task.type === 'life_note') {
-        cloudBase.addLifeNote(task.dreamId, task.text, function (result) {
+        // source 区分「梦后对话提取的现实线索」和「用户在一条呼应上点的头」。
+        // 补写路径必须把它带上，否则离线时确认的呼应重放回云端就退化成一条
+        // 普通生活记录，画像那头再也分不出它当初是被用户核实过的。
+        cloudBase.addLifeNote(task.dreamId, task.text, task.source || '', function (result) {
           if (!result || !result.ok) {
             finishTask();
             return;
@@ -133,13 +136,16 @@ App({
             finishTask();
             return;
           }
-          cloudBase.generateProfilePortrait('补偿写入现实线索后重新理解你', function (portraitResult) {
+          var noteReason = task.source === 'dream_connection'
+            ? '补写你确认过的一条呼应后重新理解你'
+            : '补偿写入现实线索后重新理解你';
+          cloudBase.generateProfilePortrait(noteReason, function (portraitResult) {
             if (portraitResult && portraitResult.ok && portraitResult.snapshot) {
               applyPortraitSnapshot(portraitResult.snapshot, task.refreshKey || 'life-note:' + task.dreamId);
             } else {
               syncQueue.enqueue('portrait_refresh', {
                 refreshKey: task.refreshKey || 'life-note:' + task.dreamId,
-                reason: '补偿写入现实线索后重新理解你'
+                reason: noteReason
               });
             }
             finishTask();

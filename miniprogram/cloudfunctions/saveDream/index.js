@@ -34,6 +34,25 @@ function safeDream(dream) {
     }).filter(function (item) { return item.content; }) : [];
   }
 
+  // 键是呼应原文本身，不是数组下标：重新解读后条目顺序会变，但用户当时点过
+  // 「是这样」的那句话不会变，用文本才不会把表态错配到另一条呼应上。上限跟着
+  // 模型能给出的呼应条数（3 条）走，多出来的是客户端异常，不收。
+  function connectionVerdicts(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const cleaned = {};
+    Object.keys(source).slice(0, 3).forEach(function (key) {
+      const record = source[key];
+      const verdict = record && record.verdict;
+      if (verdict !== 'confirmed' && verdict !== 'rejected') return;
+      cleaned[String(key).slice(0, 260)] = {
+        verdict: verdict,
+        text: String((record && record.text) || key).slice(0, 260),
+        at: record && record.at ? new Date(record.at) : new Date()
+      };
+    });
+    return cleaned;
+  }
+
   return {
     localId: String((dream && dream.id) || ''),
     dreamText: String((dream && dream.dreamText) || ''),
@@ -61,6 +80,14 @@ function safeDream(dream) {
       memoryUnavailable: !!(dream && dream.interpretationMeta && dream.interpretationMeta.memoryUnavailable)
     },
     chatMessages: chatMessages(dream && dream.chatMessages),
+    // 用户在「与你有关」每条呼应上的表态。这个白名单是严格的——没列进来的字段
+    // 会被静默丢掉，而云端记录在归档页会盖回本地（同一条记录云端更新时间更晚，
+    // 远端胜出），于是表态在下一次进归档时就会被抹掉，按钮全部弹回未选中。
+    // 「是这样」上行出去的证据活在 life_notes 里不受影响，但用户看到的是自己
+    // 刚做过的判断凭空消失，那比没有这个功能更糟。
+    connectionVerdicts: connectionVerdicts(dream && dream.connectionVerdicts),
+    connectionToCorrect: String((dream && dream.connectionToCorrect) || '').slice(0, 260),
+    connectionCorrectionRaisedFor: String((dream && dream.connectionCorrectionRaisedFor) || '').slice(0, 260),
     feedback: feedback,
     feedbackAt: feedback && dream.feedbackAt ? new Date(dream.feedbackAt) : null,
     createdAt: dream && dream.createdAt ? new Date(dream.createdAt) : new Date(),
@@ -503,8 +530,18 @@ function mergeConcurrentReadyWrite(current, incoming) {
       });
   }
 
+  // 两份 ready 解读撞车时，呼应本身已经被换掉了，指着旧呼应的表态不该跟着
+  // 新解读一起留下来。以 incoming 为准（它带着这一次的解读），current 的旧表态
+  // 让位——靠原文匹配的裁决表失配是无害的，但待纠偏项会一直指着一条页面上
+  // 已经不存在的呼应。
+  const incomingVerdicts = incoming && incoming.connectionVerdicts;
   return Object.assign({}, current, {
     result: result,
+    connectionVerdicts: incomingVerdicts && Object.keys(incomingVerdicts).length
+      ? incomingVerdicts
+      : (current && current.connectionVerdicts) || {},
+    connectionToCorrect: (incoming && incoming.connectionToCorrect) || '',
+    connectionCorrectionRaisedFor: (incoming && incoming.connectionCorrectionRaisedFor) || '',
     chatMessages: mergedChatMessages(current && current.chatMessages, incoming && incoming.chatMessages),
     feedback: incoming && incoming.feedback || current && current.feedback || '',
     feedbackAt: incoming && incoming.feedback
@@ -587,7 +624,13 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
   });
 }
 
-async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText) {
+// 生活记录现在有两个来源：梦后对话提取的现实线索（source 空，历史行为），和
+// 用户在「与你有关」某条呼应上点的「是这样」（source='dream_connection'）。两者
+// 对画像的用法不同——后者是他对我们某个假设的核实，前者是他自己讲出来的事——
+// 所以来源要跟着记录一起存下去，不能只在写入那一刻区分。
+const LIFE_NOTE_SOURCES = ['dream_connection'];
+
+async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText, noteSource) {
   const legacyJob = await findDeletionJob(openid, localDreamId);
   if (legacyJob) return null;
 
@@ -606,6 +649,7 @@ async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText) {
   const noteData = {
     openid: openid,
     text: normalizedText,
+    source: LIFE_NOTE_SOURCES.indexOf(String(noteSource || '')) >= 0 ? String(noteSource) : '',
     sourceDreamId: localDreamId,
     createdAt: new Date()
   };
@@ -1135,7 +1179,8 @@ exports.main = async function (event) {
       return { ok: false, reason: 'invalid_note' };
     }
 
-    var addedNote = await addLifeNoteUnlessDeleted(wxContext.OPENID, noteDreamId, noteText);
+    var noteSource = String((event && event.source) || '').trim();
+    var addedNote = await addLifeNoteUnlessDeleted(wxContext.OPENID, noteDreamId, noteText, noteSource);
     if (!addedNote) return { ok: false, reason: 'dream_deleted' };
 
     return { ok: true, id: addedNote._id, deduplicated: addedNote.deduplicated === true };

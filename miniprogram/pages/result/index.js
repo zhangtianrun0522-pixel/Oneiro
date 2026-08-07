@@ -3,6 +3,7 @@ var acceptanceDreamResult = acceptanceDream.acceptanceDreamResult;
 var acceptanceDreamText = acceptanceDream.acceptanceDreamText;
 var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
+var dreamMemory = require('../../utils/dreamMemory');
 var tabNav = require('../../utils/tabNav');
 var syncQueue = require('../../utils/syncQueue');
 
@@ -221,6 +222,35 @@ function connectionTexts(result) {
     return value.possible_connections.filter(Boolean);
   }
   return [value.mirror].filter(Boolean);
+}
+
+// 呼应用原文本身当 key，而不是数组下标：重新解读后条目顺序会变，但用户当时
+// 点过「是这样」的那句话不会变，用文本才不会把裁决错配到另一条上。
+function connectionVerdictKey(text) {
+  return String(text || '').trim();
+}
+
+// 把每条呼应和它的裁决（confirmed / rejected / 空）打包给视图。裁决存在
+// dream.connectionVerdicts 这个以呼应原文为键的表里，跨重进页面稳定。
+function decorateConnections(dream) {
+  var result = dream && dream.result;
+  var verdicts = (dream && dream.connectionVerdicts) || {};
+  return connectionTexts(result).map(function (text) {
+    var record = verdicts[connectionVerdictKey(text)];
+    return {
+      text: text,
+      verdict: record && record.verdict ? record.verdict : ''
+    };
+  });
+}
+
+// 「还没被聊过的那条否定」。底部入口据此改口，梦后对话据此开场——两边必须用
+// 同一个判断，否则会出现「对话已经问过了，结果页还在催你去说」这种自相矛盾。
+// 裁决本身不受影响：那条呼应仍然显示为「不太像」，只是不再是一件待办。
+function pendingConnectionCorrection(dream) {
+  var target = String((dream && dream.connectionToCorrect) || '').trim();
+  if (!target) return '';
+  return String((dream && dream.connectionCorrectionRaisedFor) || '') === target ? '' : target;
 }
 
 function hasMetaphysicalReading(result) {
@@ -691,6 +721,9 @@ Page({
     dreamTextCollapsible: false,
     dreamTextExpanded: false,
     possibleConnections: [],
+    // 最近一条被否定且仍否定着的呼应。非空时底部「聊聊这个梦」改口，梦后对话
+    // 也会以它开场——「不太像」必须有个去处，否则它只是一个熄灭的按钮。
+    connectionToCorrect: '',
     feedbackOptions: FEEDBACK_OPTIONS,
     feedback: '',
     cloudSyncPending: false,
@@ -796,9 +829,7 @@ Page({
       dream.result.card_no = dream.result.card_no || 'NO. 001';
       dream.result.profile_summary = dream.result.profile_summary || '梦境记忆';
     }
-    var possibleConnections = Array.isArray(dream.result.possible_connections) && dream.result.possible_connections.length
-      ? dream.result.possible_connections
-      : [dream.result.mirror].filter(Boolean);
+    var possibleConnections = decorateConnections(dream);
     this.setData({
       dream: dream,
       displayTimestamp: displayTimestamp,
@@ -810,6 +841,7 @@ Page({
       interpretationErrorCode: dream.interpretationErrorCode || '',
       interpretationDiagnostics: dream.interpretationDiagnostics || null,
       possibleConnections: possibleConnections,
+      connectionToCorrect: pendingConnectionCorrection(dream),
       metaphysicalEntryVisible: metaphysicalEntryVisible,
       metaphysicalReadingReady: metaphysicalReadingReady,
       metaphysicalReadingError: '',
@@ -970,6 +1002,12 @@ Page({
       };
       dream.interpretationErrorCode = '';
       dream.interpretationDiagnostics = normalizeInterpretationDiagnostics(cloudResult);
+      // 这一版呼应全部换新，上一版的裁决和待纠偏项都失去了指向的对象。裁决表
+      // 靠原文匹配会自然失配，待纠偏项不会，所以显式清掉。已经上行成画像证据
+      // 的那些不受影响——它们早已离开这个梦，存在 life_notes 里。
+      dream.connectionVerdicts = {};
+      dream.connectionToCorrect = '';
+      dream.connectionCorrectionRaisedFor = '';
       dream.updatedAt = new Date().toISOString();
       // A newly interpreted result is a new version of the dream. Keep the
       // local card visible, but require this version to reach cloud storage
@@ -1010,7 +1048,11 @@ Page({
         interpretationUnavailable: false,
         dream: dream,
         cardBackInsight: cardBackInsight(dream.result),
-        possibleConnections: connectionTexts(dream.result),
+        possibleConnections: decorateConnections(dream),
+        // 重解读换掉了整组呼应。旧裁决靠原文匹配自然失配，但待纠偏的那句仍
+        // 指着一条已经不在页面上的话，必须一起清掉，否则底部入口会邀请用户
+        // 去纠正一条他再也看不到的呼应。
+        connectionToCorrect: '',
         imageQualityStatus: dream.result.image_quality_status || 'idle'
       });
       analytics.trackEvent('interpretation_retry_success', {
@@ -1176,6 +1218,11 @@ Page({
     var dream = this.data.dream;
     var result = dream && dream.result ? dream.result : null;
     var hasSavedImage;
+
+    // 从梦后对话回来时，那条否定已经被聊过了。对话页改的是它自己从 storage 读
+    // 出来的那份记录，不是这里的 this.data.dream，所以标记要主动取回来——否则
+    // 底部入口会继续催用户去说一件他刚说完的事。放在所有生图 early-return 之前。
+    this.refreshConnectionCorrection();
     // 首次进入时 onShow 排在 onReady 之前，这时补偿会和 onReady 里的首次请求
     // 撞在一起、生成两张图。只有 onReady 已经跑过（= 真的是「离开后又回来」）
     // 才需要补偿。
@@ -1199,6 +1246,24 @@ Page({
     if (!result.image_prompt && !result.image && !result.visual_plan) return;
     this.setData({ imageStatus: 'generating', imageErrorMessage: '', imageLoadError: '' });
     this.requestDreamImage();
+  },
+
+  refreshConnectionCorrection: function () {
+    var dream = this.data.dream;
+    var stored = dream && dream.id ? findDreamById(dream.id) : null;
+    var pending;
+    if (!dream || !stored) return;
+    dream.connectionToCorrect = stored.connectionToCorrect || '';
+    dream.connectionCorrectionRaisedFor = stored.connectionCorrectionRaisedFor || '';
+    // chatMessages 也一并取回：对话页把纠偏开场白接在了已有对话后面并落了盘，
+    // 这里不同步的话，页面上这份记录还停在进对话之前的样子。
+    if (Array.isArray(stored.chatMessages)) dream.chatMessages = stored.chatMessages;
+    // 比的是最终要显示的那个值，不是记录上的字段。storage 在真机上会反序列化出
+    // 一份新对象，而本地存取有可能拿回同一个实例——对话页在那种情况下已经就地
+    // 改好了 dream，比字段永远相等，于是这一整个刷新会被跳过，入口继续催。
+    pending = pendingConnectionCorrection(dream);
+    if (pending === this.data.connectionToCorrect) return;
+    this.setData({ dream: dream, connectionToCorrect: pending });
   },
 
   toggleDreamCard: function () {
@@ -1682,6 +1747,111 @@ Page({
     });
   },
 
+  // 「与你有关」每条呼应下的「是这样 / 不太像」。这是画像↔解读双向环里唯一
+  // 露在用户面前的接缝：一次点击，把模型的一个假设变成用户的一次表态。
+  //   · 是这样 → 上行：这条呼应成为画像证据（仿 life_note 那条已通的管子）
+  //   · 不太像 → 下行到底部「聊聊这个梦」：把这条设成待纠偏，驱动一次校准对话
+  // 再点同一个按钮＝取消这次表态。
+  onConnectionVerdict: function (event) {
+    var that = this;
+    var dream = this.data.dream;
+    if (!dream || dream.status !== 'ready' || this.data.interpretationUnavailable) return;
+
+    var index = Number(event.currentTarget.dataset.index);
+    var verdict = String(event.currentTarget.dataset.verdict || '');
+    var list = this.data.possibleConnections || [];
+    var item = list[index];
+    if (!item || (verdict !== 'confirmed' && verdict !== 'rejected')) return;
+
+    var key = connectionVerdictKey(item.text);
+    var map = dream.connectionVerdicts && typeof dream.connectionVerdicts === 'object' ? dream.connectionVerdicts : {};
+    var current = map[key] && map[key].verdict;
+    var nextVerdict = current === verdict ? '' : verdict;
+    var nextMap = Object.assign({}, map);
+    if (nextVerdict) nextMap[key] = { verdict: nextVerdict, at: new Date().toISOString(), text: item.text };
+    else delete nextMap[key];
+    dream.connectionVerdicts = nextMap;
+
+    // 「不太像」把这条记成待纠偏，底部入口据此改文案，梦后对话据此开场。确认
+    // 或撤销时清掉——纠偏对象始终只指向「最近一条被否定且仍否定着的呼应」。
+    // 换了对象就把「已经开过场」的标记一并清掉，否则对话会沉默地跳过新的那条。
+    if (nextVerdict === 'rejected') {
+      if (dream.connectionToCorrect !== item.text) dream.connectionCorrectionRaisedFor = '';
+      dream.connectionToCorrect = item.text;
+    } else if (dream.connectionToCorrect === item.text) {
+      dream.connectionToCorrect = '';
+      dream.connectionCorrectionRaisedFor = '';
+    }
+
+    dream.cloudSynced = false;
+    persistLocalDream(dream);
+    this.setData({
+      dream: dream,
+      possibleConnections: decorateConnections(dream),
+      connectionToCorrect: pendingConnectionCorrection(dream),
+      cloudSyncPending: true
+    });
+    analytics.trackEvent('dream_connection_verdict', {
+      dreamId: dream.id || '',
+      verdict: nextVerdict || 'cleared',
+      connectionLength: item.text.length
+    });
+
+    // 上行只在「确认」时发生，并且走 life_note 那条已经通了的管子：写进
+    // life_notes → 进入画像证据 → 触发一次画像重算。梦后对话提取现实线索时
+    // 走的就是这条路，失败补偿、去重、画像失效都已经在上面挂好了，这里不该
+    // 另起一条只被一个入口用到的新管道。source 是唯一的新东西，用来让画像那
+    // 头知道这句话是用户在一条呼应上点头，而不是他自己讲出来的一件事。
+    //
+    // 撤销确认不撤回已发布的画像证据——画像沿版本轴单调生长，回撤会把「变化
+    // 原因」这条轴搞乱；撤销之后它只是不再被下一版强化。
+    if (nextVerdict === 'confirmed') {
+      this.uploadConfirmedConnection(dream, item.text, key);
+    }
+
+    cloudBase.saveDream(dream, function (saveResult) {
+      dream.cloudSynced = !!(saveResult && saveResult.ok);
+      persistLocalDream(dream);
+      that.setData({ dream: dream, cloudSyncPending: !dream.cloudSynced });
+      if (!dream.cloudSynced) queueDreamSync(dream);
+      else removeDreamSync(dream);
+      if (dream.cloudSynced && getApp && getApp().flushPendingSyncTasks) getApp().flushPendingSyncTasks();
+    });
+  },
+
+  // 上行的那一半。写入成功才刷画像：画像的证据在云端，本地点头而云端没收到时
+  // 重算，只会拿旧证据再算一遍，白花一次供应商调用还可能发一版没有依据的新画像。
+  uploadConfirmedConnection: function (dream, text, key) {
+    var dreamId = dream.id || '';
+    var refreshKey = 'life-note:connection:' + String(dreamId) + ':' + String(key);
+    if (!dreamId) return;
+    cloudBase.confirmDreamConnection(dreamId, text, function (noteResult) {
+      if (noteResult && noteResult.ok) {
+        analytics.trackEvent('dream_connection_life_note', {
+          dreamId: dreamId,
+          deduplicated: !!noteResult.deduplicated
+        });
+        dreamMemory.refreshPortraitInBackground({
+          cloudBase: cloudBase,
+          reason: '你确认了一条和现实的呼应',
+          refreshKey: refreshKey,
+          archive: wx.getStorageSync('oneiro:dreamArchive') || []
+        });
+        return;
+      }
+      analytics.trackEvent('dream_connection_life_note_failed', {
+        dreamId: dreamId,
+        reason: noteResult && noteResult.reason ? noteResult.reason : 'unknown'
+      });
+      syncQueue.enqueue('life_note', {
+        dreamId: dreamId,
+        text: text,
+        source: 'dream_connection',
+        refreshKey: refreshKey
+      });
+    });
+  },
+
   chooseDreamFeedback: function (event) {
     var that = this;
     var dream = this.data.dream;
@@ -1712,10 +1882,16 @@ Page({
     });
   },
 
+  // 待纠偏的那句话不进 URL：它最长 260 字，编码后能把查询串撑到近千字符，而
+  // 对话页本来就要按 id 把这个梦读出来，从记录上拿比从地址栏拿更稳、也更准。
   openDreamChat: function () {
     var dreamId = this.data.dream && this.data.dream.id ? this.data.dream.id : '';
     var feedback = this.data.feedback || '';
-    analytics.trackEvent('dream_chat_open', { dreamId: dreamId, feedback: feedback });
+    analytics.trackEvent('dream_chat_open', {
+      dreamId: dreamId,
+      feedback: feedback,
+      correctingConnection: !!this.data.connectionToCorrect
+    });
     wx.navigateTo({ url: '/pages/dream-chat/index?id=' + encodeURIComponent(dreamId) + '&feedback=' + encodeURIComponent(feedback) });
   },
 

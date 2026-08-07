@@ -20,6 +20,14 @@ var FEEDBACK_OPENINGS = {
   not_grounded: '你觉得不贴合。说说醒来后你想到的第一件现实里的事？'
 };
 
+// 「不太像」的下行出口，和 FEEDBACK_OPENINGS 同一个机制：用户在结果页做的一次
+// 表态，在这里变成对话的第一句。区别是它必须先把被否定的那句原样念回来——上面
+// 三条针对整份解读，这条针对一条具体的呼应，不引出来用户就不知道我们在纠正哪
+// 一条；而且这句话本来就是我们说的，不认领它就没有纠偏可言。
+function connectionCorrectionOpening(text) {
+  return '刚才这条你说不太像："' + String(text || '').trim() + '"。那实际是怎么回事？说说你最近真实的处境，我重新理解';
+}
+
 function voiceFailureMessage(result) {
   var reason = result && result.reason ? String(result.reason) : '';
   if (reason === 'not_configured') return '语音服务未配置，请先用文字输入';
@@ -100,18 +108,47 @@ Page({
       return;
     }
     messages = Array.isArray(dream.chatMessages) ? dream.chatMessages : [];
+
+    // 待纠偏的呼应压过解读评价：前者指向用户刚刚亲手划掉的一句具体的话，后者
+    // 只是对整份解读的粗评。raisedFor 保证同一条只开一次场——否则每次进来都要
+    // 重问一遍已经聊过的事。
+    var correction = String(dream.connectionToCorrect || '').trim();
+    var correctionPending = !!correction && String(dream.connectionCorrectionRaisedFor || '') !== correction;
+
     if (!messages.length) {
       messages = [{
         role: 'assistant',
-        content: FEEDBACK_OPENINGS[feedback] && !wx.getStorageSync(feedbackKey)
-          ? FEEDBACK_OPENINGS[feedback]
-          : dream.result.integration_question || '你最想从这个梦的哪个画面开始聊？',
+        content: correctionPending
+          ? connectionCorrectionOpening(correction)
+          : FEEDBACK_OPENINGS[feedback] && !wx.getStorageSync(feedbackKey)
+            ? FEEDBACK_OPENINGS[feedback]
+            : dream.result.integration_question || '你最想从这个梦的哪个画面开始聊？',
         createdAt: new Date().toISOString()
       }];
-      if (FEEDBACK_OPENINGS[feedback] && !wx.getStorageSync(feedbackKey)) {
+      if (!correctionPending && FEEDBACK_OPENINGS[feedback] && !wx.getStorageSync(feedbackKey)) {
         wx.setStorageSync(feedbackKey, true);
       }
+    } else if (correctionPending) {
+      // 已经聊过的梦又被否定了一条呼应。开场白的位置已经过去了，所以把它作为
+      // 新的一句接在后面——这条否定是刚刚发生的，不能因为对话开过头就被吞掉。
+      // 这一句必须落盘：空对话时的开场白会在用户回第一句时被一起带上，而接在
+      // 已有对话后面的这句没人带，不存就会在下次进来时凭空消失。
+      messages = messages.concat([{
+        role: 'assistant',
+        content: connectionCorrectionOpening(correction),
+        createdAt: new Date().toISOString()
+      }]);
+      dream.chatMessages = messages.slice(-12);
     }
+
+    if (correctionPending) {
+      dream.connectionCorrectionRaisedFor = correction;
+      dream.updatedAt = new Date().toISOString();
+      persistDream(dream, function (saveResult) {
+        if (!saveResult || !saveResult.ok) syncQueue.enqueue('dream_sync', { dream: dream });
+      });
+    }
+
     this.setData({
       dream: dream,
       messages: messages,
@@ -122,7 +159,11 @@ Page({
     });
     this.pageActive = true;
     recorderRouter.register(this);
-    analytics.trackEvent('dream_chat_view', { dreamId: dream.id, existingMessages: messages.length });
+    analytics.trackEvent('dream_chat_view', {
+      dreamId: dream.id,
+      existingMessages: messages.length,
+      correctingConnection: correctionPending
+    });
   },
 
   onUnload: function () {

@@ -283,12 +283,26 @@ function skipRevisit(dreamId, callback) {
   }, callback);
 }
 
-function addLifeNote(dreamId, text, callback) {
+// source 是可选的第三个参数，老调用点仍然传 (dreamId, text, callback)。
+function addLifeNote(dreamId, text, source, callback) {
+  if (typeof source === 'function') {
+    callback = source;
+    source = '';
+  }
   return callCloudFunction('saveDream', {
     action: 'addLifeNote',
     dreamId: dreamId || '',
-    text: text || ''
+    text: text || '',
+    source: source || ''
   }, callback);
+}
+
+// 用户在「与你有关」某一条上点了「是这样」。这不是一条新的生活记录，而是他对
+// 一个假设的一次确认——但它对画像的意义和生活记录完全一样（一句他认账的现实
+// 描述），所以走同一张表、同一条补偿链路，只用 source 把来源分开，让画像那头
+// 能按「用户核实过的呼应」而不是「用户自己讲的事」来使用它。
+function confirmDreamConnection(dreamId, text, callback) {
+  return addLifeNote(dreamId, text, 'dream_connection', callback);
 }
 
 function deleteLifeNote(noteId, callback) {
@@ -776,6 +790,7 @@ module.exports = {
   answerRevisit: answerRevisit,
   skipRevisit: skipRevisit,
   addLifeNote: addLifeNote,
+  confirmDreamConnection: confirmDreamConnection,
   deleteLifeNote: deleteLifeNote,
   getLifeNotes: getLifeNotes,
   editLifeNote: editLifeNote,

@@ -285,6 +285,28 @@ const lifeNotePortrait = await isolatedProfileMain({ action: 'generate', changeR
 assert.equal(lifeNotePortrait.ok, true, JSON.stringify(lifeNotePortrait));
 assert.equal(lifeNotePortrait.snapshot.realLifeContext.some((item: string) => item.includes('换工作')), true);
 assert.equal(lifeNotePortrait.snapshot.sourceRefs.some((ref: Row) => ref.sourceType === 'life_notes' && ref.sourceId === 'isolated-note'), true);
+// 用户在一条呼应上点头，同样成为画像证据——这是这套系统里唯一一次他主动说
+// 「对」，不进画像的话，「与你有关」就只是个单向的展示。但它必须和他自己讲出
+// 来的事分开标注：那句话是我们写的，画像照抄回去就等于把自己的措辞当成他的
+// 原话，越写越确信。
+isolatedDatabase.rows.life_notes.push({
+  _id: 'isolated-connection', openid: 'isolated-a', source: 'dream_connection',
+  text: '梦里门一直关不上，和你最近一直在收尾一件事是同一种姿态。',
+  sourceDreamId: 'isolated-dream', createdAt: new Date(now.getTime() + 2000),
+});
+const connectionPortrait = await isolatedProfileMain({ action: 'generate', changeReason: '已确认呼应回归' });
+assert.equal(connectionPortrait.ok, true, JSON.stringify(connectionPortrait));
+assert.equal(
+  connectionPortrait.snapshot.sourceRefs.some((ref: Row) => ref.sourceType === 'life_notes' && ref.sourceId === 'isolated-connection'),
+  true
+);
+assert.equal(
+  connectionPortrait.snapshot.realLifeContext.some((item: string) => item.startsWith('你确认过的呼应：')),
+  true
+);
+// 「你最近提到…」后面只能是用户自己说过的话。已确认的呼应是系统写的句子，引在
+// 那里就是把我们的措辞当成他的原话念回去。
+assert.equal(connectionPortrait.snapshot.summary.includes('梦里门一直关不上'), false);
 
 const edited = await profileMain({
   action: 'save',
@@ -765,6 +787,29 @@ assert.equal(Object.prototype.hasOwnProperty.call(archiveList.dreams[0], 'openid
 const recoveredDream = archiveList.dreams.find((item: Row) => item.localId === 'dream-1');
 assert.equal(recoveredDream.result.image_file_id, 'cloud://dream-image-1.png');
 assert.equal(recoveredDream.result.imageUrl, 'https://temp.example/cloud%3A%2F%2Fdream-image-1.png');
+// 表态必须活过一次云端往返。dream_entries 是严格白名单，而归档页会用云端记录
+// 盖回本地（同一条记录云端更新时间更晚，远端胜出），所以字段没进白名单的后果
+// 不是「云端存不下」，而是用户逛一次归档回来，刚点过的「是这样」全部弹回未选
+// 中——上行出去的证据还在 life_notes 里，但他看到的是自己的判断凭空消失。
+const verdictSentence = '学校与迟到可能和近期的截止时间有关。';
+await saveDreamMain({
+  dream: {
+    id: 'dream-2', dreamText: '一场普通的梦', status: 'ready',
+    result: { title: '普通梦', possible_connections: [verdictSentence] },
+    connectionVerdicts: {
+      [verdictSentence]: { verdict: 'confirmed', text: verdictSentence, at: now.toISOString() },
+      '不该留下的一条': { verdict: '', text: '不该留下的一条' },
+    },
+    connectionToCorrect: '',
+    connectionCorrectionRaisedFor: verdictSentence,
+  },
+});
+const verdictRecord = database.rows.dream_entries.find((item: Row) => item.localId === 'dream-2');
+assert.equal(verdictRecord.connectionVerdicts[verdictSentence].verdict, 'confirmed');
+assert.equal(verdictRecord.connectionCorrectionRaisedFor, verdictSentence);
+// 只有 confirmed / rejected 是真的表态。空裁决是「已撤销」，不该以记录形式留下。
+assert.equal(Object.prototype.hasOwnProperty.call(verdictRecord.connectionVerdicts, '不该留下的一条'), false);
+
 const lifeNotes = await saveDreamMain({ action: 'listLifeNotes' });
 assert.equal(lifeNotes.notes.length, 1);
 const addedLifeNote = await saveDreamMain({ action: 'addLifeNote', dreamId: 'dream-2', text: '这是确认过的现实片段' });
@@ -778,6 +823,25 @@ assert.equal(duplicateLifeNote.deduplicated, true);
 assert.equal(database.rows.life_notes.length, lifeNoteCountAfterAdd);
 const crossUserLifeNote = await saveDreamMain({ action: 'addLifeNote', dreamId: 'private-other', text: '不应写入' });
 assert.equal(crossUserLifeNote.reason, 'dream_deleted');
+// 用户在「与你有关」某条呼应上点「是这样」，走的就是这条管子，只多带一个
+// source。来源必须跟着记录一起存下去：画像那头要靠它分辨这句话是用户自己讲的
+// 事，还是他在我们写的一句话上点了头——后者不能被当成他的原话复述回去。
+const confirmedConnectionNote = await saveDreamMain({
+  action: 'addLifeNote', dreamId: 'dream-2', text: '梦里水漫上来你却不慌，和你最近一直在接住很多事是同一种姿态', source: 'dream_connection',
+});
+assert.equal(confirmedConnectionNote.ok, true);
+assert.equal(
+  database.rows.life_notes.find((item: Row) => item._id === confirmedConnectionNote.id)?.source,
+  'dream_connection'
+);
+// 白名单之外的 source 不落库，客户端传什么都不能变成一个新的证据类别。
+const unknownSourceNote = await saveDreamMain({
+  action: 'addLifeNote', dreamId: 'dream-2', text: '来源不明的片段', source: 'whatever',
+});
+assert.equal(unknownSourceNote.ok, true);
+assert.equal(database.rows.life_notes.find((item: Row) => item._id === unknownSourceNote.id)?.source, '');
+await saveDreamMain({ action: 'deleteLifeNote', noteId: confirmedConnectionNote.id });
+await saveDreamMain({ action: 'deleteLifeNote', noteId: unknownSourceNote.id });
 await saveDreamMain({ action: 'deleteLifeNote', noteId: addedLifeNote.id });
 const editedLifeNote = await saveDreamMain({ action: 'editLifeNote', noteId: 'note-1', text: '项目期限已经调整' });
 assert.equal(editedLifeNote.ok, true);

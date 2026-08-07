@@ -228,6 +228,9 @@ type WxMock = {
   portraitUnchangedId: string;
   lastPortraitGenerateForced: boolean;
   adminStatsResult: boolean;
+  // 归档页拉云端存档时返回的记录。为 null 时走默认的 { ok: true }（没有 dreams
+  // 数组），归档页据此跳过合并——绝大多数用例不需要碰这条路径。
+  archiveListDreams: Array<Record<string, any>> | null;
   feedbackStatsResult: Record<string, any>;
   internalStatsResult: Record<string, any>;
   profilePortraitSummary: string;
@@ -319,6 +322,7 @@ function createWxMock(): WxMock {
     lastPortraitGenerateForced: false,
     // 默认不是管理员：内测观测面板必须对普通测试者完全不存在。
     adminStatsResult: false,
+    archiveListDreams: null,
     feedbackStatsResult: {
       ok: true,
       total: 3,
@@ -473,6 +477,10 @@ function createWxMock(): WxMock {
       });
       if (options.name === 'login') {
         options.success({ result: { openid: 'mock-openid' } });
+        return;
+      }
+      if (options.name === 'saveDream' && options.data?.action === 'list' && wx.archiveListDreams) {
+        options.success({ result: { ok: true, dreams: wx.archiveListDreams } });
         return;
       }
       if (options.name === 'saveDream' && options.data?.action === 'feedbackStats') {
@@ -1060,6 +1068,12 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.wxml', '你记下的原梦'],
   ['miniprogram/pages/result/index.wxml', '梦里发生了什么'],
   ['miniprogram/pages/result/index.wxml', '与你有关'],
+  // 每条呼应下面挂着它自己的两个出口。整块共用一组按钮问不清用户在说哪一条，
+  // 收到的表态也就无法上行成任何证据。
+  ['miniprogram/pages/result/index.wxml', 'bindtap="onConnectionVerdict"'],
+  ['miniprogram/pages/result/index.wxml', '是这样'],
+  ['miniprogram/pages/result/index.wxml', '不太像'],
+  ['miniprogram/pages/result/index.wxml', '{{item.text}}'],
   ['miniprogram/pages/result/index.wxml', '文化象征'],
   ['miniprogram/pages/result/index.wxml', '再多看一点'],
   ['miniprogram/pages/result/index.wxml', '这次没有找到和你生活的具体呼应'],
@@ -1201,6 +1215,19 @@ for (const [path, expected] of [
   ['miniprogram/pages/result/index.js', "cloudBase.metaphysicalReading"],
   ['miniprogram/pages/result/index.js', "metaphysical_reading_done"],
   ['miniprogram/pages/result/index.js', "dream_chat_open"],
+  // 上行走的是 life_note 那条已经通了的管子（写入 → 画像证据 → 重算 → 失败
+  // 补偿），不另起一条只被一个入口用到的新管道。
+  ['miniprogram/pages/result/index.js', "cloudBase.confirmDreamConnection"],
+  ['miniprogram/pages/result/index.js', "syncQueue.enqueue('life_note'"],
+  ['miniprogram/pages/result/index.js', "source: 'dream_connection'"],
+  ['miniprogram/utils/cloudBase.js', "confirmDreamConnection"],
+  ['miniprogram/cloudfunctions/saveDream/index.js', "LIFE_NOTE_SOURCES"],
+  ['miniprogram/cloudfunctions/profileMemory/index.js', "userConfirmedConnections"],
+  // 补写路径必须带上 source，否则离线时确认的呼应重放回云端就退化成一条普通
+  // 生活记录，画像那头再也分不出它当初是被用户核实过的。
+  ['miniprogram/app.js', "task.source"],
+  ['miniprogram/pages/dream-chat/index.js', "connectionCorrectionOpening"],
+  ['miniprogram/pages/dream-chat/index.js', "connectionCorrectionRaisedFor"],
   ['miniprogram/pages/result/index.js', "dream_deleted"],
   ['miniprogram/pages/result/index.wxml', "重新生成画面"],
   ['miniprogram/pages/result/index.wxml', "重新解读"],
@@ -1344,6 +1371,20 @@ for (const folded of ['梦里发生了什么', '传统解梦怎么说']) {
   const at = resultTemplate.indexOf(folded);
   assert.ok(at > foldStart, `${folded} 应留在折叠区内`);
 }
+
+// ── 「与你有关」只能是自然语句，不能是标签块 ──
+//
+// 画像接进解读之后，最省事的写法是把画像主题原样贴出来：「承接压力」。它读起来
+// 不是理解，是归档——用户明确反感这一点。提示词里已经禁了，但那是靠模型自觉；
+// 这条是产品的硬边界，不能只有一道靠说服的闸，所以云函数里必须有确定性兜底。
+assertIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'stripConnectionLabels');
+assertIncludes('miniprogram/cloudfunctions/interpretDream/index.js', 'CONNECTION_LABEL_META_PATTERN');
+// 结果页自己也不许在呼应周围造标签块——渲染的是模型那句话本身，前后不加分类框。
+assert.doesNotMatch(
+  resultTemplate.slice(resultTemplate.indexOf('connection-list'), resultTemplate.indexOf('reading-boundary')),
+  /[「『]/,
+  '「与你有关」的呼应不得被括号框成标签'
+);
 
 // 兜底文案不得预设梦里有什么。「一段话」这类预设一旦在无对话的梦上触发，
 // 就是对用户自己的梦说了假话。
@@ -2484,6 +2525,86 @@ assert.equal(typeof dreamChatPage.startNewDream, 'function');
 dreamChatPage.startNewDream();
 assert.equal(last(wx.navigations), '/pages/home/index');
 
+// ── 画像 ↔「与你有关」的双向闭环 ──
+//
+// 「与你有关」是产品里唯一一处系统主动对用户的现实下判断的地方。判断只往下走
+// 而收不回表态，画像就永远只能从梦本身长，用户读到的关联对不对，我们无从知道。
+// 这一段测的就是那两条回路真的接上了，且各自去了不同的地方：
+//   是这样 → 上行成画像证据（复用 life_note 那条管子，靠 source 分辨来源）
+//   不太像 → 下行进梦后对话，成为纠偏对话的第一句
+const addLifeNoteCalls = () => wx.cloudCalls.filter(
+  (call) => call.name === 'saveDream' && call.data?.action === 'addLifeNote'
+);
+// 呼应是对象而不是字符串——wxml 里渲染的是 item.text。这条断言存在的原因很
+// 直接：改成对象数组而模板还在渲染 item 时，页面上出现的是 [object Object]。
+assert.equal(typeof resultPage.data.possibleConnections[0], 'object');
+const confirmedConnection = resultPage.data.possibleConnections[0].text;
+const rejectedConnection = resultPage.data.possibleConnections[1].text;
+assert.equal(confirmedConnection, '学校与迟到可能和近期的截止时间有关。');
+assert.equal(resultPage.data.possibleConnections[0].verdict, '');
+
+const lifeNoteCallsBeforeVerdict = addLifeNoteCalls().length;
+const portraitGenerationsBeforeVerdict = generatePortraitCalls();
+resultPage.onConnectionVerdict({ currentTarget: { dataset: { index: 0, verdict: 'confirmed' } } });
+assert.equal(resultPage.data.possibleConnections[0].verdict, 'confirmed');
+assert.equal(addLifeNoteCalls().length, lifeNoteCallsBeforeVerdict + 1);
+// source 是这条回路和梦后对话提取现实线索的唯一区别。丢了它，画像那头就分不出
+// 这句话是用户自己讲的事，还是他在我们写的一句话上点了头——而后者不能被当成
+// 他的原话复述回去。
+assert.equal(last(addLifeNoteCalls()).data.text, confirmedConnection);
+assert.equal(last(addLifeNoteCalls()).data.source, 'dream_connection');
+// 确认过的呼应不进纠偏队列：它没有要纠正的东西。
+assert.equal(resultPage.data.connectionToCorrect, '');
+// 确认之后必须当场重算画像，否则这条证据要等到下一个梦才生效——用户点头和
+// 画像变化之间隔着一整个梦，这条回路对他来说就是不存在的。
+assert.equal(generatePortraitCalls(), portraitGenerationsBeforeVerdict + 1);
+
+// 再点一次＝撤销表态。但已经发布出去的画像证据不回撤——画像沿版本轴单调生长，
+// 回撤会把「这一版为什么变了」这条轴搞乱；撤销后它只是下一版不再被强化。
+resultPage.onConnectionVerdict({ currentTarget: { dataset: { index: 0, verdict: 'confirmed' } } });
+assert.equal(resultPage.data.possibleConnections[0].verdict, '');
+assert.equal(addLifeNoteCalls().length, lifeNoteCallsBeforeVerdict + 1);
+
+// 「不太像」是否定，不是证据：它一个字都不该上行。
+resultPage.onConnectionVerdict({ currentTarget: { dataset: { index: 1, verdict: 'rejected' } } });
+assert.equal(resultPage.data.possibleConnections[1].verdict, 'rejected');
+assert.equal(addLifeNoteCalls().length, lifeNoteCallsBeforeVerdict + 1);
+assert.equal(resultPage.data.connectionToCorrect, rejectedConnection);
+// 裁决以呼应原文为键存盘。重新解读会打乱条目顺序，用下标存就会把用户当时点的
+// 那次表态挂到另一条呼应上。
+const verdictDream = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>)
+  .find((item) => item.id === archiveAfterDream[0].id);
+assert.equal(verdictDream?.connectionVerdicts[rejectedConnection].verdict, 'rejected');
+assert.equal(verdictDream?.connectionToCorrect, rejectedConnection);
+
+// 下行的那一半：被否定的呼应必须在梦后对话里被原样念回来。只说「你觉得不对」
+// 而不引出是哪一条，用户没法纠正任何东西——这个梦已经聊过 3 条消息了，所以
+// 纠偏问句要接在后面，而不是顶掉早就过去的开场白。
+const correctionChatPage = loadPage('miniprogram/pages/dream-chat/index.js', pageModules, wx, app);
+correctionChatPage.onLoad({ id: archiveAfterDream[0].id });
+const correctionOpening = last(correctionChatPage.data.messages as Array<Record<string, any>>);
+assert.ok(correctionChatPage.data.messages.length > 1);
+assert.equal(correctionOpening.role, 'assistant');
+assert.ok(correctionOpening.content.includes(rejectedConnection));
+// 接在已有对话后面的这句没人替它落盘（空对话时的开场白会被用户的第一条消息
+// 一起带上，这句不会），所以它必须自己存下来，否则下次进来就凭空消失了。
+assert.equal(
+  last((wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>)
+    .find((item) => item.id === archiveAfterDream[0].id)?.chatMessages as Array<Record<string, any>>).content,
+  correctionOpening.content
+);
+// 同一条呼应只开一次场。每次进来都重问一遍已经聊过的事，纠偏就变成了骚扰。
+const reopenedCorrectionPage = loadPage('miniprogram/pages/dream-chat/index.js', pageModules, wx, app);
+reopenedCorrectionPage.onLoad({ id: archiveAfterDream[0].id });
+assert.equal(reopenedCorrectionPage.data.messages.length, correctionChatPage.data.messages.length);
+// 从对话回来后，底部入口不该继续催用户去说一件他刚说完的事。对话页改的是它
+// 自己从 storage 读出来的那份记录，所以结果页必须主动把标记取回来。否定本身
+// 仍然留着——那条呼应还显示为「不太像」，只是不再是一件待办。
+assert.equal(resultPage.data.connectionToCorrect, rejectedConnection);
+resultPage.onShow();
+assert.equal(resultPage.data.connectionToCorrect, '');
+assert.equal(resultPage.data.possibleConnections[1].verdict, 'rejected');
+
 resultPage.newDream();
 assert.equal(last(wx.navigations), '/pages/home/index');
 resultPage.openArchive();
@@ -2659,6 +2780,32 @@ assert.equal(
   wx.cloudCalls.filter((call) => call.name === 'profileMemory' && call.data?.action === 'generate').length,
   portraitCallsBeforeArchiveReplay
 );
+
+// 归档页会用云端记录盖回本地（同一条记录云端更新时间更晚时远端胜出）。呼应上
+// 的表态因此必须一路跟着云端记录回来——漏在任何一层，用户逛一次归档回来，刚
+// 点过的「是这样」就全部弹回未选中。上行出去的证据还在，但他看到的是自己的判断
+// 凭空消失，那比没有这个功能更糟。
+const verdictSentence = '学校与迟到可能和近期的截止时间有关。';
+wx.storage['oneiro:dreamArchive'] = [{
+  id: 'verdict-roundtrip', dreamText: '我梦到考试迟到。', status: 'ready',
+  result: { title: '云影', possible_connections: [verdictSentence] },
+  connectionVerdicts: { [verdictSentence]: { verdict: 'confirmed', text: verdictSentence } },
+  connectionToCorrect: '', cloudSynced: true,
+  createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+}];
+wx.archiveListDreams = [{
+  localId: 'verdict-roundtrip', dreamText: '我梦到考试迟到。', status: 'ready',
+  result: { title: '云影', possible_connections: [verdictSentence] },
+  connectionVerdicts: { [verdictSentence]: { verdict: 'confirmed', text: verdictSentence } },
+  connectionToCorrect: '', connectionCorrectionRaisedFor: '',
+  createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+}];
+const verdictRoundtripPage = loadPage('miniprogram/pages/archive/index.js', pageModules, wx, app);
+verdictRoundtripPage.onShow();
+const roundtrippedDream = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>)
+  .find((item) => item.id === 'verdict-roundtrip');
+assert.equal(roundtrippedDream?.connectionVerdicts[verdictSentence].verdict, 'confirmed');
+wx.archiveListDreams = null;
 
 wx.storage['oneiro:dreamArchive'] = [
   {

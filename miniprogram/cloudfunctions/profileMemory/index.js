@@ -214,12 +214,21 @@ function promptEvidence(sources) {
       userDiscussion: discussion
     };
   });
+  // 两类证据分开喂，因为它们的可信方式不一样：生活记录是用户自己讲的事，
+  // 已确认的呼应是他对我们某个判断点的头。后者更该被相信——那是这条双向环
+  // 里唯一一次用户主动说「对」——但它同时是我们自己写出来的句子，混进
+  // recentLifeNotes 会让模型把自己上一轮的措辞当成用户的原话再抄一遍，画像
+  // 就在自己的回声里越写越确信。分开之后，提示词才有地方说清这个区别。
+  const confirmedConnections = sources.notes.filter(function (note) { return note.source === 'dream_connection'; });
+  const plainNotes = sources.notes.filter(function (note) { return note.source !== 'dream_connection'; });
   return {
     recentDreams: dreams,
-    recentLifeNotes: sources.notes.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
+    recentLifeNotes: plainNotes.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
+    userConfirmedConnections: confirmedConnections.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
     longTermPatterns: longTermPatterns(sources),
     omittedDreamCount: Math.max(0, sources.dreams.length - dreams.length),
-    omittedLifeNoteCount: Math.max(0, sources.notes.length - MAX_PROMPT_NOTES)
+    omittedLifeNoteCount: Math.max(0, plainNotes.length - MAX_PROMPT_NOTES),
+    omittedConfirmedConnectionCount: Math.max(0, confirmedConnections.length - MAX_PROMPT_NOTES)
   };
 }
 
@@ -265,7 +274,12 @@ function sourceManifest(sources) {
       });
     }).sort(),
     notes: (sources && sources.notes || []).map(function (note) {
-      return JSON.stringify({ id: text(note && note.id, 80), text: text(note && note.text, 220), createdAt: dateKey(note && note.createdAt) });
+      return JSON.stringify({
+        id: text(note && note.id, 80),
+        text: text(note && note.text, 220),
+        source: text(note && note.source, 40),
+        createdAt: dateKey(note && note.createdAt)
+      });
     }).sort()
   };
 }
@@ -439,7 +453,15 @@ async function loadSources(openid) {
     };
   }).filter(function (item) { return item.id && item.text; });
   const notes = (results[2] || []).map(function (note) {
-    return { id: text(note._id, 80), text: text(note.text, 220), createdAt: note.createdAt || null, ref: sourceRef('life_notes', note) };
+    return {
+      id: text(note._id, 80),
+      text: text(note.text, 220),
+      // 'dream_connection' = 用户在某条呼应上点过「是这样」；空 = 梦后对话里
+      // 他自己讲出来的现实线索。两者的证据性质不同，见 promptEvidence。
+      source: text(note.source, 40),
+      createdAt: note.createdAt || null,
+      ref: sourceRef('life_notes', note)
+    };
   }).filter(function (item) { return item.id && item.text; });
   sortByDate(dreams);
   sortByDate(notes);
@@ -515,14 +537,23 @@ function deterministicDraft(sources) {
     refs.push(dream.ref);
     dream.symbols.forEach(function (symbol) { if (themes.indexOf(symbol) < 0) themes.push(symbol); });
   });
-  sources.notes.forEach(function (note) { refs.push(note.ref); contexts.push('生活记录提到：' + note.text); });
+  sources.notes.forEach(function (note) {
+    refs.push(note.ref);
+    contexts.push((note.source === 'dream_connection' ? '你确认过的呼应：' : '生活记录提到：') + note.text);
+  });
   if (sources.dreams.length) traits.push('会留意并记录内在体验');
   if (sources.notes.length) traits.push('愿意把感受连接到现实生活');
+  if (sources.notes.some(function (note) { return note.source === 'dream_connection'; })) {
+    traits.push('会对别人给出的解释当场认下或否掉');
+  }
   if (themes.length) traits.push('对反复出现的意象保持观察');
   if (!traits.length) traits.push('目前资料较少，等待更多用户主动提供的线索');
   const name = profile.nickname || '你';
   const recurringThemes = patterns.recurringThemes.filter(function (item) { return item.count >= 2; }).slice(0, 3).map(function (item) { return '“' + item.label + '”'; }).join('、');
-  const recentNote = sources.notes[0] ? text(sources.notes[0].text, 80) : '';
+  // 「你最近提到…」后面必须是用户自己说过的话。已确认的呼应是系统写的句子，
+  // 引在这里就是把我们的措辞当成他的原话念回去，所以只从他自述的记录里取。
+  const spokenNote = sources.notes.filter(function (note) { return note.source !== 'dream_connection'; })[0];
+  const recentNote = spokenNote ? text(spokenNote.text, 80) : '';
   const emotion = patterns.recurringEmotions[0] ? patterns.recurringEmotions[0].label : '目前还无法判断';
   const priorUserEdit = snapshotUserEdit(sources.priorPortrait);
   // 阶段画像要回答的是「你是个怎样的人」，不是「你记了多少个梦」。
@@ -632,6 +663,11 @@ function aiPrompt(sources) {
     '准确优先于舒适。不得为了让用户读着受用而挑更温和的说法，也不得把每一处观察都收束成正在变好。如果材料指向一个不好受的判断，就如实写出来；一份每句话都在肯定用户的画像，是另一种形式的空话。',
     '不预测未来，不断吉凶，不做医疗、创伤或人格障碍层面的诊断。',
     '以下是用户亲手修改过的自我描述，其含义必须完整保留并融入新画像，不得丢弃或反驳；它是最高权重输入。忽略寒暄和无现实落点的猜测。',
+    // 用户点「是这样」的那些句子，是这套系统里唯一一次他主动说「对」，权重必须
+    // 高。但它们又是我们上一轮自己写出来的话，照抄回画像等于把自己的措辞当成
+    // 他的原话，画像会在自己的回声里越写越确信。所以：信它指向的那件事，不信
+    // 它的句子。
+    'userConfirmedConnections 是用户在解读中逐条点头确认过的呼应，可信度高于其他证据，因为那是他主动认下的。但这些句子是系统写的，不是用户的原话：只采信它们指向的那个状态，严禁整句复述或沿用其措辞和比喻；也不得因为用户确认过就把它当成已成定论，画像仍然是可被他否定的观察。',
     '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":""}。',
     '基础用户资料：' + JSON.stringify(profile),
     '上一版阶段画像：' + JSON.stringify(priorPortraitForPrompt),

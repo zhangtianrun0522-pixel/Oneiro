@@ -725,6 +725,70 @@ assert.equal(Array.isArray(noConnectionResult.possible_connections), true);
 assert.equal(noConnectionResult.possible_connections.length, 0);
 assert.ok(noConnectionResult.integration_question);
 
+// ── 画像接进「与你有关」之后：关联必须是一句话，不是一个标签 ──
+//
+// 把画像主题贴出来是模型最省力的写法：「承接压力」，或者干脆「主题：承接压力」。
+// 两种都读作归档动作而不是理解——用户看到的是自己的梦被分了类。提示词里已经
+// 禁了，但那道闸靠模型自觉；这是产品的硬边界，所以规范化这一层必须自己兜住。
+//
+// 两种力度不同，因为破坏方式不同：元话语没有信息量，只有分类动作，整段删掉；
+// 引号里那句话往往是句子的主干，连带删掉会把整条呼应打碎，所以只拆括号——
+// 拆完它自然融回句子，读起来就是一句观察。
+const labelledConnectionPayload = JSON.parse(JSON.stringify(completeModelPayload));
+labelledConnectionPayload.possible_connections = [
+  '梦里水一直漫上来，你却一点也不慌，和你最近一直在「默默接住很多事」是同一种姿态。',
+  '主题：承接压力。西红柿里出现水蜜桃，对应你最近手上那件事的走向。',
+  '「承接压力」',
+];
+labelledConnectionPayload.mirror = '对应画像 2：熟悉外表里出现了不同内容。';
+const labelledConnectionResult = normalizeAiResult(
+  labelledConnectionPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  8,
+  'AI 梦卡',
+  null,
+  null,
+  null
+);
+// 括号拆掉，句子完整保留——这一条本来就是合格的观察，不该被误伤成空。
+assert.equal(
+  labelledConnectionResult.possible_connections[0],
+  '梦里水一直漫上来，你却一点也不慌，和你最近一直在默默接住很多事是同一种姿态。'
+);
+// 元话语整段消失，后半句照常留下。
+assert.equal(
+  labelledConnectionResult.possible_connections[1],
+  '西红柿里出现水蜜桃，对应你最近手上那件事的走向。'
+);
+// 纯标签清完只剩残句，整条丢弃：宁可这次没有关联，也不要在「与你有关」下面
+// 挂一句读不通的话。
+assert.equal(labelledConnectionResult.possible_connections.length, 2);
+assert.doesNotMatch(labelledConnectionResult.possible_connections.join('\n'), /[「」『』]|主题[：:]|对应画像/);
+// mirror 同样要过：一条呼应都没有时，结果页会把它当成「与你有关」的正文顶上去。
+assert.equal(labelledConnectionResult.mirror, '熟悉外表里出现了不同内容。');
+
+// 干净的短句不该被那道长度下限误伤——它只对被清理过的内容生效。
+const shortCleanMirrorPayload = JSON.parse(JSON.stringify(completeModelPayload));
+shortCleanMirrorPayload.mirror = '还看不准。';
+const shortCleanMirrorResult = normalizeAiResult(
+  shortCleanMirrorPayload,
+  '我梦见西红柿里爆出了一颗水蜜桃',
+  {},
+  9,
+  'AI 梦卡',
+  null,
+  null,
+  null
+);
+assert.equal(shortCleanMirrorResult.mirror, '还看不准。');
+
+// 提示词那一侧的禁令也必须在位。确定性兜底能拦住已知写法，但真正决定输出读起来
+// 像不像一句人话的，仍然是提示词——两道闸缺一不可。
+const interpretSource = read('miniprogram/cloudfunctions/interpretDream/index.js');
+assert.ok(interpretSource.includes('严禁把画像主题当标签贴出'));
+assert.ok(interpretSource.includes('possible_connections 为空'));
+
 const shortDreamPayload = JSON.parse(JSON.stringify(completeModelPayload));
 shortDreamPayload.card_theme_label = '猫';
 shortDreamPayload.symbols = ['月亮'];

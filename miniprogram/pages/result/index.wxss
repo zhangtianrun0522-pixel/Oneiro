@@ -578,17 +578,54 @@
   -webkit-line-clamp: 1;
 }
 
+/* 每条呼应从一行文字变成了一个可判断的单元（正文 + 两个出口 + 回执），
+   条目间距因此从 18rpx 拉开到 32rpx：不然上一条的按钮会贴在下一条的正文上，
+   读起来像那组按钮属于下面那句话。 */
 .connection-list {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 32rpx;
   margin-top: var(--space-tight);
 }
 
 .connection-item {
+  display: block;
   color: rgba(33, 29, 23, 0.76);
   font-size: var(--fs-aux);
   line-height: 1.82;
+}
+
+/* 「是这样 / 不太像」和下面「这份解读，贴合你吗」的 chip 是同一类动作——
+   都是用户对我们说的话做表态——所以共用一套形状与选中态，只按更贴身的
+   尺度收小一号。 */
+.connection-verdicts {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.connection-verdict {
+  min-height: 52rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.18);
+  border-radius: 26rpx;
+  color: var(--ink-70);
+  font-size: 22rpx;
+  line-height: 52rpx;
+}
+
+.connection-verdict.is-chosen {
+  border-color: var(--gold-line);
+  background: rgba(184, 134, 59, 0.12);
+  color: var(--gold-ink);
+}
+
+.connection-verdict-note {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: 1.6;
 }
 
 /* 字面量 rgba(33,29,23,0.42) 约 2.6:1，改用 --ink-70（6.1:1） */
