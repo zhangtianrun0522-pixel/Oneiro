@@ -262,6 +262,22 @@ Rehdasu's `/v1/images/generations` endpoint is synchronous and historically take
 
 用户编辑和历史回溯不会覆盖原快照，而是创建新的递增版本并移动 `profile_memory_state.currentSnapshotId`。历史旧草稿在读取时归入历史，不再作为待确认版本显示。
 
+画像的纠偏入口是对话，不是输入框。「梦册」里的「这段不像我」会打开 `pages/dream-chat/index?portrait=1`，走 `interpretDream` 的 `chatAboutPortrait` 分支；用户在那里说的每一句原样存进 `life_notes`（`source: 'portrait_correction'`），下一次生成时作为高权重证据参与。手写覆盖画像的旧路径（`profileMemory` 的 `save` action）仍然受理并继续读取已存下的 `userEditedOriginal`，但客户端不再提供入口。
+
+#### 出生盘假设（冷启动与衰减）
+
+新用户还没有任何梦时，画像来自出生资料推出的 3-4 条假设。它们由 `profileMemory/baziHypotheses.js` 确定性生成（真太阳时校正后排四柱，只用日主、扶抑、十神偏向、五行空缺四个轴），存在 `profile_memory_state.baziHypotheses`，每条带 `untested / confirmed / rejected / expired` 状态。这个函数因此依赖 `lunar-javascript`，并保有一份与 `interpretDream` 逐字相同的 `locationResolver.js`（CI 会断言两份一致）。
+
+三条约束是这套设计成立的前提，改动前请先读 `baziHypotheses.js` 顶部的注释：
+
+- **输出里没有命理术语。** 盘面只是内部计算中间量，用户读到的必须是白话。`portraitSummary()` 会拦截含术语、含吉凶、含版本叙述的模型输出并退回确定性文案。
+- **只有第一版能自报来历。** 那一版确实只有出生资料，坦白比装作从梦里读出来的更可信；此后任何一版出现「出生 / 生辰」都会被拦下。
+- **衰减是结构性的，不靠提示词。** `HYPOTHESIS_DECAY_DREAM_COUNT = 10`：到第 10 个梦，所有还没被证据碰过的假设一律作废。被证据支持的那些转为 `confirmed` 并挂到具体证据上，来源不再记作盘面。状态单向，不回头，所以集合一定收敛。
+
+假设从不进入解梦和聊天的输入，只留在画像里——否则会形成自我确认闭环：盘面推出的判断去影响梦的解读，解读读出对应主题，主题回头「验证」了那条假设。生成证据的路径必须对假设保持无知。
+
+出生资料本身也不再整份进入画像提示词（此前它在里面，却没有任何规则说该拿它干什么，模型可以自行推出生肖星座再悄悄使用）。生辰现在只经由这组受衰减约束的假设影响画像。
+
 `profile_memory_state` stores the atomic next-version counter and single current-snapshot pointer. `deletion_jobs` stores idempotent privacy-deletion progress; keep a job until all share, asset, life-note, and derived-profile cleanup succeeds.
 
 The newly created `profileMemory` function currently reports a 3-second timeout, which is sufficient for its deterministic fallback and state operations. If provider credentials are later added to this function for live AI portrait generation, raise its timeout above `PROFILE_MEMORY_TIMEOUT_MS` first.

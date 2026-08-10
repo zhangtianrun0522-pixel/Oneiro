@@ -1,6 +1,7 @@
 const cloud = require('wx-server-sdk');
 const http = require('http');
 const https = require('https');
+const baziHypotheses = require('./baziHypotheses');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
@@ -14,6 +15,17 @@ const MAX_PROMPT_DREAMS = 18;
 const MAX_PROMPT_NOTES = 10;
 const MAX_PROMPT_DISCUSSIONS = 12;
 const MAX_TEXT = 280;
+// 出生盘假设活到第几个梦为止。
+//
+// 这个数字就是在回答「我们到底多信八字」。它不能靠提示词实现——把「随证据增加
+// 请降低生辰权重」写进 prompt，模型做不到；更糟的是上一版画像本身是高权重输入，
+// 所以 V1 里那句从盘面推来的话会被 V2 继承、换个说法留下来，五版之后它已经洗成
+// 一句看起来像从梦里读出来的判断，而没有任何梦支持过它。
+//
+// 所以衰减必须是结构性的：到了这个梦数，所有还没被任何证据碰过的假设一律作废，
+// 不管模型怎么想。被证据支持过的那些不受影响，但它们那时已经不算八字了——见
+// confirmHypothesis 的注释。
+const HYPOTHESIS_DECAY_DREAM_COUNT = 10;
 
 function text(value, limit) {
   return String(value == null ? '' : value).replace(/[\r\n\t]+/g, ' ').trim().slice(0, limit || MAX_TEXT);
@@ -147,6 +159,119 @@ function baseProfile(user) {
   };
 }
 
+// ── 出生盘假设的生命周期 ────────────────────────────────────────────────
+//
+// 新用户一个梦都没有，画像却得说点什么。没有证据的时候，先验是手上唯一的东西。
+// 但它只能以「假设」的身份进来：每一条都带 id、带状态，能被证据支持、被证据
+// 推翻、或者到期作废。用户从头到尾看不到这套机制，他只是聊了两句，然后发现
+// 画像变了。
+//
+// 状态是单向的：untested → confirmed / rejected / expired，之后不再回头。
+// 这一条不只是洁癖——它保证了假设集合会收敛，否则模型这次说「支持」下次说
+// 「说不好」，画像会在两版之间反复横跳，而版本号是「真的变了」的唯一凭据。
+
+function normalizeHypothesis(item) {
+  if (!item || typeof item !== 'object') return null;
+  const id = text(item.id, 60);
+  const claim = text(item.claim, 160);
+  if (!id || !claim) return null;
+  const status = ['untested', 'confirmed', 'rejected', 'expired'].indexOf(text(item.status, 20)) >= 0
+    ? text(item.status, 20)
+    : 'untested';
+  return {
+    id: id,
+    dimension: text(item.dimension, 30),
+    claim: claim,
+    origin: text(item.origin, 20) || 'bazi',
+    status: status,
+    evidence: cleanStrings(item.evidence, 3, 140),
+    createdAt: item.createdAt || null,
+    resolvedAt: item.resolvedAt || null
+  };
+}
+
+function normalizeHypotheses(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeHypothesis).filter(Boolean).slice(0, 8);
+}
+
+function hasBirthBasis(profile) {
+  return !!(profile && profile.birthDate && profile.birthTime && profile.birthPlace);
+}
+
+// 只有还没定论的、以及已经被证据接住的，才进提示词。被推翻和到期的必须彻底
+// 消失——留在上下文里，模型迟早会把它们当成「关于这个人的信息」再写回去。
+function livingHypotheses(list) {
+  return (list || []).filter(function (item) {
+    return item.status === 'untested' || item.status === 'confirmed';
+  });
+}
+
+// 派生、衰减，都在这里。返回 changed 是为了让调用方知道要不要落库。
+function resolveHypotheses(stored, user, dreamCount, now) {
+  const profile = baseProfile(user);
+  let list = normalizeHypotheses(stored);
+  let changed = false;
+
+  // 还没派生过，而且出生资料齐了 → 现在派生。资料不全、城市认不出、排盘失败
+  // 都会拿回空数组，那就什么都不做，画像走原本的少证据路径。
+  if (!list.length && hasBirthBasis(profile)) {
+    const derived = baziHypotheses.deriveHypotheses(profile, now);
+    if (derived.length) {
+      list = normalizeHypotheses(derived);
+      changed = true;
+    }
+  }
+
+  // 到期清算。跟模型无关，跟画像写得好不好也无关：数到了就一律作废。
+  if (dreamCount >= HYPOTHESIS_DECAY_DREAM_COUNT) {
+    list = list.map(function (item) {
+      if (item.status !== 'untested') return item;
+      changed = true;
+      return Object.assign({}, item, { status: 'expired', resolvedAt: now });
+    });
+  }
+
+  return { list: list, changed: changed };
+}
+
+// 模型每次生成画像时顺带给出的判定。这里只认三种动作，而且都是单向的。
+//
+// 「支持」不是让这条假设升级成结论，而是给它换发证人：它从此挂在那条真实证据
+// 上，来源不再是盘面。用户永远不会在后面的版本里读到「根据你的出生时间」——
+// 到那时候，那句话已经是从他的梦里读出来的了。
+function applyHypothesisVerdicts(list, verdicts, now) {
+  if (!Array.isArray(verdicts) || !verdicts.length) return { list: list, changed: false };
+  const byId = {};
+  verdicts.forEach(function (item) {
+    if (!item || typeof item !== 'object') return;
+    const id = text(item.id, 60);
+    if (id) byId[id] = item;
+  });
+  let changed = false;
+  const next = (list || []).map(function (item) {
+    const verdict = byId[item.id];
+    if (!verdict || item.status !== 'untested') return item;
+    const decision = text(verdict.verdict, 20);
+    if (decision !== 'support' && decision !== 'contradict') return item;
+    changed = true;
+    return Object.assign({}, item, {
+      status: decision === 'support' ? 'confirmed' : 'rejected',
+      evidence: cleanStrings((item.evidence || []).concat([text(verdict.evidence, 140)]), 3, 140),
+      resolvedAt: now
+    });
+  });
+  return { list: next, changed: changed };
+}
+
+// 指纹要跟着假设走，否则 V1 发布之后假设状态再变也触发不了新版本。用状态而不是
+// 全文，是因为 evidence 里的措辞每次调用都可能不同，带上它这道闸就永远不相等。
+function hypothesisFingerprintPart(list) {
+  return (list || []).map(function (item) {
+    return item.id + ':' + item.status;
+  }).sort();
+}
+
 function discussionTexts(dream) {
   const messages = Array.isArray(dream && dream.chatMessages) ? dream.chatMessages : [];
   const userMessages = messages.filter(function (message) {
@@ -220,11 +345,17 @@ function promptEvidence(sources) {
   // recentLifeNotes 会让模型把自己上一轮的措辞当成用户的原话再抄一遍，画像
   // 就在自己的回声里越写越确信。分开之后，提示词才有地方说清这个区别。
   const confirmedConnections = sources.notes.filter(function (note) { return note.source === 'dream_connection'; });
-  const plainNotes = sources.notes.filter(function (note) { return note.source !== 'dream_connection'; });
+  // 用户在画像下面「聊聊」时说的话。和梦后对话里顺口提到的现实线索不同，这些
+  // 话是他专程来纠正这份画像的，指向性强得多，所以单独喂。
+  const corrections = sources.notes.filter(function (note) { return note.source === 'portrait_correction'; });
+  const plainNotes = sources.notes.filter(function (note) {
+    return note.source !== 'dream_connection' && note.source !== 'portrait_correction';
+  });
   return {
     recentDreams: dreams,
     recentLifeNotes: plainNotes.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
     userConfirmedConnections: confirmedConnections.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
+    portraitCorrections: corrections.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
     longTermPatterns: longTermPatterns(sources),
     omittedDreamCount: Math.max(0, sources.dreams.length - dreams.length),
     omittedLifeNoteCount: Math.max(0, plainNotes.length - MAX_PROMPT_NOTES),
@@ -280,7 +411,8 @@ function sourceManifest(sources) {
         source: text(note && note.source, 40),
         createdAt: dateKey(note && note.createdAt)
       });
-    }).sort()
+    }).sort(),
+    hypotheses: hypothesisFingerprintPart(sources && sources.hypotheses)
   };
 }
 
@@ -308,7 +440,8 @@ function evidenceFingerprint(manifest) {
   const payload = JSON.stringify({
     profile: manifest && manifest.profile,
     dreams: manifest && manifest.dreams,
-    notes: manifest && manifest.notes
+    notes: manifest && manifest.notes,
+    hypotheses: manifest && manifest.hypotheses
   });
   // FNV-1a：够稳定、够短，且不引入依赖。这里只做「变没变」的判断，不用于安全。
   let hash = 0x811c9dc5;
@@ -481,7 +614,10 @@ async function loadSources(openid) {
     currentSnapshotId: memoryState && memoryState.currentSnapshotId,
     memoryState: memoryState || null,
     portraitHistory: portraitHistory,
-    rawDreams: results[1] || []
+    rawDreams: results[1] || [],
+    // 派生和衰减都在 generate 里做，这里只把库里那份读出来；resolveHypotheses
+    // 之后调用方会覆盖它，好让指纹和提示词看到的是同一份。
+    hypotheses: normalizeHypotheses(memoryState && memoryState.baziHypotheses)
   };
 }
 
@@ -580,10 +716,18 @@ function deterministicDraft(sources) {
   const emotionClause = patterns.recurringEmotions[0]
     ? '这些梦里最常留下来的感受是' + emotionLabel + '。'
     : '';
+  // 一个梦都还没有、但出生资料齐了：兜底也该说那几条假设，否则新用户在
+  // provider 挂掉时会看到一句「你正在开始留下线索」——他刚交出生辰，什么都
+  // 没换到。这里不做取舍也不润色，原样连起来，并且照样交代来历。
+  const coldStartClaims = isColdStart(sources)
+    ? livingHypotheses(sources.hypotheses).slice(0, 2).map(function (item) { return item.claim; })
+    : [];
   const summary = priorUserEdit && priorUserEdit.summary
     ? String(priorUserEdit.summary).trim().slice(0, 500)
-    : (name + '，' + openingState + emotionClause
-      + '这只是当前资料里的有限观察，你可以修改或忽略它。').slice(0, 300);
+    : coldStartClaims.length
+      ? (name + '，' + coldStartClaims.join('') + '这些目前只是根据你的出生时间推的，我还没读过你的梦——不对的地方，你说。').slice(0, 300)
+      : (name + '，' + openingState + emotionClause
+        + '这只是当前资料里的有限观察，你可以修改或忽略它。').slice(0, 300);
   return {
     summary: summary,
     traits: cleanStrings(traits, 5, 80),
@@ -614,35 +758,89 @@ function isMetaSummary(value) {
 const PORTRAIT_FORM_PATTERN = /当下的状态：|反复出现的主题：|情绪的底色：|正在变化的：/;
 // 「你已经记下 60 个梦」是使用统计，不是这个人的样子。梦的条数是系统的视角。
 const PORTRAIT_STATISTIC_PATTERN = /\d+\s*个梦|第\s*\d+\s*次|共\s*\d+/;
+// 命理术语一次都不许出现在画像里，包括第一版。盘面只是这套系统内部的起点，
+// 用户读到的必须是一句关于他的白话——一旦出现这些词，画像就变成了运势。
+const PORTRAIT_METAPHYSICAL_PATTERN = /八字|四柱|日主|十神|五行|命理|命盘|命格|生肖|属相|星座|上升星|流年|大运/;
+// 来历只有第一版能提，因为那一版确实只有出生资料。此后再出现，就是盘面在借
+// 画像的壳复活——用户会读到「根据你的生辰」，而那时候画像本该是从梦里来的。
+const PORTRAIT_ORIGIN_PATTERN = /出生|生辰|诞生|你的星|排盘/;
+// 画像不叙述自己的沿革。这些词一出现，用户读到的就成了我们的修订说明。
+const PORTRAIT_CHANGELOG_PATTERN = /上一版|这一版|第一版|上次的画像|这次更新|之前(?:我|我们|系统)(?:认为|以为|说)|被推翻/;
 
-function portraitSummary(value, fallback) {
+function portraitSummary(value, fallback, allowOrigin) {
   const source = text(String(value == null ? '' : value).replace(/\s+/g, ' ').trim(), 400);
   if (!source) return fallback.summary;
   if (PORTRAIT_FORM_PATTERN.test(source)) return fallback.summary;
   if (PORTRAIT_STATISTIC_PATTERN.test(source)) return fallback.summary;
+  if (PORTRAIT_METAPHYSICAL_PATTERN.test(source)) return fallback.summary;
+  if (PORTRAIT_CHANGELOG_PATTERN.test(source)) return fallback.summary;
+  if (!allowOrigin && PORTRAIT_ORIGIN_PATTERN.test(source)) return fallback.summary;
   return source;
 }
 
-function normalizeObservation(raw, fallback) {
+function normalizeVerdicts(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(function (item) {
+    if (!item || typeof item !== 'object') return null;
+    const id = text(item.id, 60);
+    const verdict = text(item.verdict, 20);
+    if (!id || ['support', 'contradict', 'unclear'].indexOf(verdict) < 0) return null;
+    return { id: id, verdict: verdict, evidence: text(item.evidence, 140) };
+  }).filter(Boolean).slice(0, 8);
+}
+
+function normalizeObservation(raw, fallback, allowOrigin) {
   raw = raw && typeof raw === 'object' ? raw : {};
   const traits = cleanStrings(raw.traits, 5, 80);
   const themes = cleanStrings(raw.themes, 3, 40);
   const contexts = cleanStrings(raw.realLifeContext, 5, 140);
   return {
-    summary: isMetaSummary(raw.summary) ? fallback.summary : portraitSummary(raw.summary, fallback),
+    summary: isMetaSummary(raw.summary) ? fallback.summary : portraitSummary(raw.summary, fallback, allowOrigin),
     traits: traits.length ? traits : fallback.traits,
     themes: themes.length ? themes : fallback.themes,
     realLifeContext: contexts.length ? contexts : fallback.realLifeContext,
     sourceRefs: fallback.sourceRefs,
     baseProfile: fallback.baseProfile,
     sourceCounts: fallback.sourceCounts,
-    changeReason: text(raw.changeReason, 220) || fallback.changeReason
+    changeReason: text(raw.changeReason, 220) || fallback.changeReason,
+    hypothesisVerdicts: normalizeVerdicts(raw.hypothesisVerdicts)
   };
+}
+
+// 手上还没有任何证据的那一版。此时画像唯一能凭的是出生盘推出来的几条假设。
+//
+// 这一版必须自报来历，而且只在这一版报。用户一个梦都还没记，画像却已经在描述
+// 他了——什么都不说，他会以为我们凭空捏了一段；说了，一句错话就从「这 app 不
+// 准」变成「它在猜，而且它承认在猜，那我告诉它」。后面每一版都不许再提。
+function coldStartPromptRules(hypotheses) {
+  return [
+    '这是第一版画像。用户还没有记录任何梦，也还没有留下任何生活记录，你手上只有下面这组来自出生资料的待验证假设。',
+    '从中挑最能立住的两到三条，用你自己的措辞写成一段连续的话。不要逐条罗列，不要编号，不要把四条都塞进去。',
+    '必须在这段话里用一句自然的话交代来历：这一份目前只是根据他的出生时间推的，你还没有读过他的梦。这句话只说一次，语气是坦白，不是免责声明，也不要放在最前面当开场白。',
+    '这些假设本身就是待否定的。写的时候不要加固它们，不要补充理由，不要说「这通常意味着」。',
+    '待验证假设：' + JSON.stringify((hypotheses || []).map(function (item) { return item.claim; }))
+  ];
+}
+
+// 有证据之后的每一版。假设降级成「优先留意什么」，不再是可以直接写出来的内容。
+function hypothesisPromptRules(hypotheses) {
+  return [
+    '以下是这个用户的待验证假设。它们来自出生资料，是在没有任何证据时的起点，不是关于他的事实。',
+    '严禁透露它们的来历。这一版画像里不得出现出生、生辰、八字、星座、命理、五行、属相之类的任何字眼，也不得说「最初的判断」「一开始以为」这类指向它们的说法。',
+    '只有当下面的证据确实支持某条假设时，才可以把它对应的那个判断写进画像，而且要按证据的样子写，不许沿用假设的原措辞。证据没有覆盖到的假设，这一版就当它不存在，绝不能因为它写得顺就拿来充数。',
+    '证据和某条假设相反时，以证据为准。',
+    '另外返回 hypothesisVerdicts：对每一条假设给出 verdict（support 表示证据确实支持，contradict 表示证据与它相反，unclear 表示证据没说到这件事），support 和 contradict 必须在 evidence 里写清是哪一条梦或哪一句生活记录让你这么判断。拿不准就给 unclear——这是默认答案，宁可放着不判，也不要凑一个方向。',
+    '待验证假设：' + JSON.stringify((hypotheses || []).map(function (item) {
+      return { id: item.id, claim: item.claim, status: item.status };
+    }))
+  ];
 }
 
 function aiPrompt(sources) {
   const profile = baseProfile(sources.user);
   const evidence = promptEvidence(sources);
+  const living = livingHypotheses(sources.hypotheses);
+  const coldStart = !sources.dreams.length && !sources.notes.length && living.length > 0;
   const priorPortrait = sources.priorPortrait ? normalizedSnapshot(sources.priorPortrait) : null;
   const priorUserEdit = snapshotUserEdit(priorPortrait);
   const priorPortraitForPrompt = priorPortrait ? {
@@ -651,6 +849,20 @@ function aiPrompt(sources) {
     userEdited: priorPortrait.userEdited === true || !!priorUserEdit,
     userEditedOriginal: priorUserEdit
   } : null;
+  if (coldStart) {
+    return [
+      '为 Oneiro 生成这个用户的第一版阶段画像，只能做可修正的观察，不编造、不诊断、不预测。',
+      'summary 是一段连续的话，最多 160 字，不分栏、不加小标题、不列清单。它要回答的是「这个人是怎样的」。'
+    ].concat(coldStartPromptRules(living)).concat([
+      '不许含糊。「似乎、仿佛、某种、一种、也许、可能」这类模糊限定词整段最多用一次；一句话里同时出现两个，这句话就是空的。',
+      '不许用没有具体所指的抽象名词充当判断的核心：「内在资源」「潜意识」「某种转变」「生命力」这类词，读者无法指认它们在自己生活里对应什么。',
+      '不要每句话都以「你」开头。',
+      '不预测未来，不断吉凶，不做医疗、创伤或人格障碍层面的诊断，不谈际遇、财运、姻缘或健康。',
+      '严禁复用本提示中出现过的任何句式或措辞模板。',
+      '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":""}。',
+      '基础用户资料（只用于称呼，不得据此推断其他任何东西）：' + JSON.stringify({ nickname: profile.nickname })
+    ]).join('\n');
+  }
   return [
     '为 Oneiro 生成自动生效的阶段画像，只能据证据做可修正观察，不编造、不诊断、不预测。',
     'summary 是一段连续的话，最多 200 字，不分栏、不加小标题、不列清单。它要回答的是「这个人是怎样的」，不是「这个人最近梦见了什么」。整体替换旧画像，不能追加或逐条复述素材。',
@@ -675,6 +887,12 @@ function aiPrompt(sources) {
     '可以有温度——这份画像本来就该让人觉得被看见，被准确地说中本身就是情绪价值。要禁止的是含糊，不是善意：模糊的赞美给不了任何东西，具体的观察才给得了。',
     '严禁复用本提示中出现过的任何示例措辞或句式。本提示只描述标准，不提供可以照抄的句子；出现照抄即视为未完成。',
     '重点放在当前阶段：最近正在发生什么、和之前有什么不同，而不是全部历史的汇总。',
+    // 「第一版是从你的生辰推的，这三个梦之后其中一条被推翻了」——这种句子讲的
+    // 是系统自己做了什么，不是这个人。跟早先那句「你已经记下 60 个梦」是同一种
+    // 病：用户打开画像读到的成了我们的工作汇报。变化本身是该写的，阶段画像的
+    // 全部意义就在变化；但它必须以关于他的判断的形式出现，不是以修订说明的
+    // 形式。前后版本的差别用户自己读得出来，不需要旁白。
+    '严禁叙述这份画像自身的沿革。不得出现「上一版」「第一版」「这次更新」「之前认为」「有一条被推翻了」这类说法，也不得说明这段话依据了什么材料、经过了几次修改、来自哪里。可以写这个人身上什么变了，不能写这份画像改了什么。',
     '可以对用户的内心作出判断——那正是这份画像存在的意义——但必须是提出，不是宣告。判据只有一个：用户能不能当场说「不对」。从梦里具体细节推出来的判断可以被他否定，合格；以他自己无法核对的口吻宣布他内心真正在想什么（例如声称自己知道他的潜意识在传达什么），在结构上就无法被反驳，不合格。',
     '准确优先于舒适。不得为了让用户读着受用而挑更温和的说法，也不得把每一处观察都收束成正在变好。如果材料指向一个不好受的判断，就如实写出来；一份每句话都在肯定用户的画像，是另一种形式的空话。',
     '不预测未来，不断吉凶，不做医疗、创伤或人格障碍层面的诊断。',
@@ -684,17 +902,31 @@ function aiPrompt(sources) {
     // 他的原话，画像会在自己的回声里越写越确信。所以：信它指向的那件事，不信
     // 它的句子。
     'userConfirmedConnections 是用户在解读中逐条点头确认过的呼应，可信度高于其他证据，因为那是他主动认下的。但这些句子是系统写的，不是用户的原话：只采信它们指向的那个状态，严禁整句复述或沿用其措辞和比喻；也不得因为用户确认过就把它当成已成定论，画像仍然是可被他否定的观察。',
-    '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":""}。',
-    '基础用户资料：' + JSON.stringify(profile),
+    // 用户在画像下面「聊聊」时说的话。他是冲着纠正这份画像来的，所以这些话
+    // 的针对性比梦后闲聊强得多——他在直接告诉我们哪里说错了。
+    'portraitCorrections 是用户读完上一版画像后，在对话里亲口说的话。它们是他对这份画像的直接回应，权重仅次于他手改过的自我描述：与画像冲突的地方以他说的为准。',
+  ].concat(living.length ? hypothesisPromptRules(living) : []).concat([
+    '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":""' +
+      (living.length ? ',"hypothesisVerdicts":[{"id":"","verdict":"support|contradict|unclear","evidence":""}]' : '') + '}。',
+    // 出生资料从这里拿掉了。它以前整份塞在提示里，却没有任何一条规则说该拿它
+    // 干什么——模型完全可以自己算出生肖星座再悄悄用来写判断，我们既没让它用
+    // 好，也没拦住它。现在生辰只经由上面那组假设进入画像，且受衰减约束。
+    '基础用户资料：' + JSON.stringify({ nickname: profile.nickname, gender: profile.gender }),
+    '不得推测或使用用户的出生日期、时间、地点、年龄、生肖或星座，这些不在你的输入里，也不该出现在输出里。',
     '上一版阶段画像：' + JSON.stringify(priorPortraitForPrompt),
     '有边界的近期证据与全量长期模式：' + JSON.stringify(evidence)
-  ].join('\n');
+  ]).join('\n');
+}
+
+function isColdStart(sources) {
+  return !sources.dreams.length && !sources.notes.length && livingHypotheses(sources.hypotheses).length > 0;
 }
 
 async function generateObservation(sources) {
   const fallback = deterministicDraft(sources);
   const config = profileConfig();
   if (!config.apiKey || !config.baseUrl || !config.model) return { observation: fallback, provider: 'deterministic', fallback: true };
+  const allowOrigin = isColdStart(sources);
   try {
     const response = await postJson(config.baseUrl + '/chat/completions', { Authorization: 'Bearer ' + config.apiKey }, {
       model: config.model,
@@ -705,7 +937,7 @@ async function generateObservation(sources) {
     if (response.statusCode < 200 || response.statusCode >= 300) throw new Error('ai_http_' + response.statusCode);
     const data = JSON.parse(response.text);
     const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    return { observation: normalizeObservation(parseJsonObject(content), fallback), provider: 'ai', model: config.model, fallback: false };
+    return { observation: normalizeObservation(parseJsonObject(content), fallback, allowOrigin), provider: 'ai', model: config.model, fallback: false };
   } catch (error) {
     return { observation: fallback, provider: 'deterministic', fallback: true, error: text(error && error.message, 160) };
   }
@@ -799,6 +1031,16 @@ async function runAtomic(work) {
   return work(db);
 }
 
+// 假设集合单独落库，不进快照。放在 state 上而不是每版快照里，是因为它是一份
+// 持续演化的账本，不该跟着版本号复制 30 份；写失败也不该让画像生成失败——
+// 最坏情况只是下次重新派生一遍，得到的是同一批 id。
+async function persistHypotheses(memoryState, list) {
+  if (!memoryState || !memoryState._id) return;
+  await db.collection('profile_memory_state').doc(memoryState._id).update({
+    data: { baziHypotheses: list, updatedAt: new Date() }
+  }).catch(function () { return null; });
+}
+
 exports.main = async function (event) {
   const action = text(event && event.action, 30) || 'get';
   const openid = cloud.getWXContext().OPENID;
@@ -809,6 +1051,12 @@ exports.main = async function (event) {
     if (action === 'generate') {
       await ensureMemoryState(openid);
       const sources = await loadSources(openid);
+      // 派生与到期清算都在读完证据之后、算指纹之前做。顺序不能反：假设是喂给
+      // 画像的东西之一，指纹必须盖住它，否则第一次派生出来的那批假设触发不了
+      // 新版本，V1 永远不会发出去。
+      const resolved = resolveHypotheses(sources.hypotheses, sources.user, sources.dreams.length, new Date());
+      sources.hypotheses = resolved.list;
+      if (resolved.changed) await persistHypotheses(sources.memoryState, resolved.list);
       const expectedSources = sourceManifest(sources);
       const fingerprint = evidenceFingerprint(expectedSources);
       // 用户在界面上主动点了「重新梳理」。他明确要一次新的解读，所以即使证据
@@ -835,6 +1083,19 @@ exports.main = async function (event) {
       const generated = await generateObservation(sources);
       const now = new Date();
       const observation = generated.observation;
+      // 判定和画像是同一次调用返回的，所以这里不额外花一次 provider 请求。
+      // 落库放在快照事务之外：判定的账本和版本号没有关系，而且它写失败时
+      // 画像照发——假设留在 untested，下次再判，最坏也会在第 10 个梦到期。
+      const verdicts = applyHypothesisVerdicts(sources.hypotheses, observation.hypothesisVerdicts, now);
+      if (verdicts.changed) {
+        sources.hypotheses = verdicts.list;
+        await persistHypotheses(sources.memoryState, verdicts.list);
+      }
+      // 存进快照的指纹要反映判定之后的状态。存判定之前那份，下一次生成会因为
+      // 状态对不上而必然重跑一遍——白花一次调用，而且是每次判定都白花一次。
+      const storedFingerprint = verdicts.changed
+        ? evidenceFingerprint(sourceManifest(sources))
+        : fingerprint;
       const priorUserEdit = snapshotUserEdit(sources.priorPortrait);
       const requestedReason = text(event && event.changeReason, 220);
       const checkedSources = await sourcesStillCurrent(openid, expectedSources);
@@ -851,7 +1112,7 @@ exports.main = async function (event) {
           sourceRefs: observation.sourceRefs,
           sourceCounts: observation.sourceCounts,
           baseProfile: observation.baseProfile,
-          sourceFingerprint: fingerprint,
+          sourceFingerprint: storedFingerprint,
           updatedAt: now
         } }).catch(function () { return null; });
         const refreshed = await findOwned(openid, prior._id);
@@ -899,7 +1160,7 @@ exports.main = async function (event) {
           baseProfile: observation.baseProfile, sourceCounts: observation.sourceCounts,
           // 下一次生成据此判断「证据变没变」。缺这个字段的旧快照会走正常生成，
           // 不会被误判成无变化。
-          sourceFingerprint: fingerprint,
+          sourceFingerprint: storedFingerprint,
           changeReason: requestedReason || observation.changeReason, aiOriginal: Object.assign({}, observation, { provider: generated.provider, model: generated.model || '', fallback: generated.fallback }),
           // 延续编辑原文，保证后续生成仍以用户表达为高权重输入。
           userEdited: priorUserEdit ? true : null, userEditedOriginal: priorUserEdit,
