@@ -6,7 +6,7 @@
  * 必须只有一份实现，否则两边迟早会对同一个快照给出不同的版本号或状态。
  *
  * 页面通过 createController(page) 拿到一个控制器；控制器只往 page.setData 写
- * 这些约定好的键（memoryState / portraitLoading / portraitEditing / …），
+ * 这些约定好的键（memoryState / portraitLoading / portraitStatusLabel / …），
  * 页面负责渲染。
  */
 
@@ -161,7 +161,6 @@ function buildView(state, archive, flags) {
     portraitVersionLabel: version ? 'V' + String(version) : '',
     portraitStatusLabel: statusLabel(normalized, flags),
     portraitUpdatedLabel: current ? dayLabel(current.updatedAt || current.createdAt) : '',
-    portraitChangeReason: current ? String(current.changeReason || '').trim() : '',
     portraitSources: buildSourceList(current, archive),
     portraitHistory: buildHistoryList(normalized),
     // 「已更新」只在真的换了版本、且用户还没看过时出现。它不是徽章装饰，是
@@ -344,63 +343,6 @@ function createController(page, options) {
         }, options || {});
       }
       requestPortrait(0);
-    },
-
-    startEdit: function () {
-      var portrait = page.data.memoryState.current;
-      if (!portrait || page.data.portraitLoading) return;
-      page.setData({ portraitEditing: true, portraitEditSummary: portrait.summary || '' });
-    },
-
-    cancelEdit: function () {
-      page.setData({ portraitEditing: false, portraitEditSummary: '' });
-    },
-
-    onSummaryInput: function (event) {
-      page.setData({ portraitEditSummary: event.detail.value });
-    },
-
-    saveEdit: function () {
-      var state = normalizeMemoryState(page.data.memoryState);
-      var portrait = state.current;
-      var summary = String(page.data.portraitEditSummary || '').trim().slice(0, 500);
-      if (!portrait || !summary || page.data.portraitSaving || page.data.portraitLoading) return;
-      if (!snapshotId(portrait) || snapshotId(portrait).indexOf('local-') === 0) {
-        portrait = Object.assign({}, portrait, {
-          summary: summary,
-          profileText: summary,
-          userEdited: { summary: summary, editedAt: new Date().toISOString() },
-          updatedAt: new Date().toISOString()
-        });
-        state.current = portrait;
-        state.history = state.history.map(function (item) { return item.clientId === portrait.clientId ? portrait : item; });
-        persistMemoryState(state);
-        commit(state, { portraitSaving: false, portraitEditing: false, portraitEditSummary: '' });
-        wx.showToast({ title: '修改已保存在本机', icon: 'none' });
-        return;
-      }
-      page.setData({ portraitSaving: true });
-      cloudBase.saveProfilePortrait(snapshotId(portrait), { summary: summary }, function (result) {
-        page.setData({ portraitSaving: false });
-        if (!result || !result.ok || !result.snapshot) {
-          wx.showToast({ title: '云端修改失败，编辑内容仍保留', icon: 'none' });
-          return;
-        }
-        var updated = Object.assign({}, withClientId(result.snapshot), { status: 'confirmed', isCurrent: true });
-        var previousPortraitId = snapshotId(portrait);
-        state.current = updated;
-        state.history = [updated].concat(state.history.filter(function (item) {
-          return item.clientId !== updated.clientId;
-        }).map(function (item) {
-          return item.clientId === previousPortraitId
-            ? Object.assign({}, item, { status: 'superseded', isCurrent: false })
-            : item;
-        })).slice(0, 30);
-        persistMemoryState(state);
-        markVersionSeen(state);
-        commit(state, { portraitEditing: false, portraitEditSummary: '' });
-        wx.showToast({ title: '阶段画像已修改', icon: 'success' });
-      });
     },
 
     // 先本地翻转让界面立刻响应，云端失败再回滚并说明，不留下和云端不一致的

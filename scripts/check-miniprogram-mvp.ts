@@ -245,6 +245,8 @@ type WxMock = {
   reLaunch: (options: { url: string }) => void;
   switchTab: (options: { url: string }) => void;
   showToast: (options: { title: string }) => void;
+  setNavigationBarTitle: (options: { title: string }) => void;
+  navigationBarTitle: string;
   showModal: (options: Record<string, any>) => void;
   showLoading: (options: { title: string }) => void;
   hideLoading: () => void;
@@ -313,6 +315,7 @@ function createWxMock(): WxMock {
     failNextDreamSave: false,
     failEveryDreamSave: false,
     blockNextDreamChat: false,
+    navigationBarTitle: '',
     deferSaveDream: false,
     deferredSaveDreams: [],
     failNextReadyDreamSave: false,
@@ -400,6 +403,9 @@ function createWxMock(): WxMock {
     },
     reLaunch(options) {
       this.navigations.push(options.url);
+    },
+    setNavigationBarTitle(options) {
+      wx.navigationBarTitle = String(options?.title || '');
     },
     showToast(options) {
       this.toasts.push(options.title);
@@ -626,6 +632,18 @@ function createWxMock(): WxMock {
               fallback: false,
               reply: '你提到的期限感让学校和追逐更具体了。这可能与近期被评价的压力有关，也可能只是偶然联想。你最在意的是赶不上，还是被看见？',
               realityClue: '我最近确实很怕赶不上期限',
+            },
+          });
+          return;
+        }
+        if (options.data?.chatAboutPortrait) {
+          options.success({
+            result: {
+              ok: true,
+              provider: 'mock-cloud',
+              fallback: false,
+              reply: '那句确实说反了。你说的是当场就讲，不是先撤开——最近哪件事上是这样？',
+              recorded: true,
             },
           });
           return;
@@ -1174,7 +1192,8 @@ for (const [path, expected] of [
   ['miniprogram/pages/profile/index.wxml', '在梦册查看'],
   ['miniprogram/pages/profile/index.wxml', '系统提取的现实线索'],
   ['miniprogram/pages/archive/index.wxml', '阶段画像'],
-  ['miniprogram/pages/archive/index.wxml', '修改这段理解'],
+  ['miniprogram/pages/archive/index.wxml', '这段不像我'],
+  ['miniprogram/pages/dream-chat/index.wxml', '{{portraitMode}}'],
   ['miniprogram/pages/archive/index.wxml', 'bindtap="refreshPortrait"'],
   // 画像从「好看」变成「可信」的全部差别：判断能指回具体哪几个梦，以及能看到
   // 自己以前的样子。这两样的数据一直存在 profile_snapshots 里，此前从未渲染。
@@ -1202,6 +1221,10 @@ for (const [path, expected] of [
 for (const [path, unexpected] of [
   ['miniprogram/pages/result/index.wxml', '把这张梦卡变成你的'],
   ['miniprogram/pages/result/index.wxml', '生成分享话题卡'],
+  // 让用户自己重写画像的输入框已经废止：他写的那句会被当成最高权重原文照抄
+  // 回去，等于让用户自己给自己下判断。纠偏只走对话。
+  ['miniprogram/pages/archive/index.wxml', 'portrait-editor'],
+  ['miniprogram/pages/archive/index.wxml', 'bindinput="onPortraitSummaryInput"'],
 ] as const) {
   assertNotIncludes(path, unexpected);
 }
@@ -1341,7 +1364,8 @@ for (const [path, expected] of [
   ['miniprogram/pages/profile/index.js', "deleteLifeNote"],
   // 画像的编排只有一份实现（utils/stagePortrait），梦册和「我」两页都用它。
   // 两页各自实现会立刻分叉：同一个快照在两处显示出不同的版本号或状态。
-  ['miniprogram/utils/stagePortrait.js', "saveProfilePortrait"],
+  ['miniprogram/utils/stagePortrait.js', "toggleUse"],
+  ['miniprogram/pages/archive/index.js', "openPortraitChat"],
   ['miniprogram/utils/stagePortrait.js', "generateProfilePortrait"],
   ['miniprogram/utils/stagePortrait.js', "toggleProfilePortrait"],
   ['miniprogram/pages/archive/index.js', "stagePortrait.createController"],
@@ -1927,27 +1951,19 @@ function loadPortraitPage(): MiniProgramPage {
 }
 
 const portraitPage = loadPortraitPage();
-const originalPortraitSummary = portraitPage.data.memoryState.current.summary;
-portraitPage.startPortraitEdit();
-portraitPage.onPortraitSummaryInput({ detail: { value: '这是我确认过措辞的阶段画像。' } });
-wx.failNextPortraitSave = true;
-portraitPage.savePortraitEdit();
-assert.equal(portraitPage.data.memoryState.current.summary, originalPortraitSummary);
-assert.equal(portraitPage.data.portraitEditing, true);
-assert.equal(portraitPage.data.portraitEditSummary, '这是我确认过措辞的阶段画像。');
-portraitPage.savePortraitEdit();
-assert.equal(portraitPage.data.memoryState.current.summary, '这是我确认过措辞的阶段画像。');
-assert.equal(portraitPage.data.portraitEditing, false);
-assert.equal(portraitPage.data.memoryState.current.status, 'confirmed');
-assert.equal(portraitPage.data.memoryState.current.version, 2);
-assert.equal(portraitPage.data.memoryState.pastHistory.some((item: Record<string, any>) => item.version === 1 && item.status === 'superseded'), true);
-assert.ok(wx.cloudCalls.some((call) => call.name === 'profileMemory' && call.data.action === 'save'));
+
+// 手写输入框没了：按钮只能传达「错了」，输入框把写作负担丢给用户，而且他写的
+// 那句会被当成最高权重原文照抄回画像——等于让用户自己给自己下判断。两个都换
+// 成对话，入口按钮上写的就是那句异议本身。
+assert.equal(typeof portraitPage.startPortraitEdit, 'undefined');
+assert.equal(typeof portraitPage.savePortraitEdit, 'undefined');
+assert.equal(typeof portraitPage.onPortraitSummaryInput, 'undefined');
+portraitPage.openPortraitChat();
+assert.equal(last(wx.navigations), '/pages/dream-chat/index?portrait=1');
 
 // 历史版本一直存在 profile_snapshots 里，此前界面只显示当前这一版。
 // 「三个月前你是这样，现在你是这样」是画像唯一能做、而单次解读永远做不到的事。
-assert.ok(portraitPage.data.portraitHistory.length >= 1);
-assert.equal(portraitPage.data.portraitHistory[0].versionLabel, 'V1');
-assert.ok(portraitPage.data.portraitHistory[0].summary.length > 0);
+assert.ok(portraitPage.data.memoryState.current.summary.length > 0);
 assert.equal(portraitPage.data.showPortraitHistory, false);
 portraitPage.togglePortraitHistory();
 assert.equal(portraitPage.data.showPortraitHistory, true);
@@ -2662,6 +2678,45 @@ assert.equal(verdictDream?.connectionToCorrect, rejectedConnection);
 // 下行的那一半：被否定的呼应必须在梦后对话里被原样念回来。只说「你觉得不对」
 // 而不引出是哪一条，用户没法纠正任何东西——这个梦已经聊过 3 条消息了，所以
 // 纠偏问句要接在后面，而不是顶掉早就过去的开场白。
+// ── 画像纠偏对话 ──────────────────────────────────────────────────────
+//
+// 「聊聊」是这套系统里唯一的更正通道，所以它和梦后对话共用同一个页面：复制
+// 一份只有 sendMessage 不同的聊天页，等于把录音那两百行也复制一份。
+const portraitChatPage = loadPage('miniprogram/pages/dream-chat/index.js', pageModules, wx, app);
+portraitChatPage.onLoad({ portrait: '1' });
+assert.equal(portraitChatPage.data.portraitMode, true);
+assert.equal(portraitChatPage.data.dream, null);
+assert.ok(portraitChatPage.data.portraitSummary.length > 0);
+// 第一句已经替用户说完了：他要付出的和点一个「不像」按钮一样多。
+assert.equal(portraitChatPage.data.messages.length, 1);
+assert.ok(portraitChatPage.data.messages[0].content.includes('不像你'));
+
+const portraitGeneratesBeforeCorrection = wx.cloudCalls.filter(
+  (call) => call.name === 'profileMemory' && call.data.action === 'generate'
+).length;
+portraitChatPage.onInput({ detail: { value: '我不是遇事先撤，我是当场就讲。' } });
+portraitChatPage.sendMessage();
+assert.equal(portraitChatPage.data.messages.length, 3);
+assert.equal(portraitChatPage.data.sending, false);
+// 走的是画像通道，不能捎带任何梦上下文上去。
+const portraitChatCall = last(wx.cloudCalls.filter((call) => call.name === 'interpretDream' && call.data.chatAboutPortrait));
+assert.ok(portraitChatCall);
+assert.equal(portraitChatCall.data.dreamText, undefined);
+assert.equal(portraitChatCall.data.userMessage, '我不是遇事先撤，我是当场就讲。');
+// 对话存在本机，不挂在任何一个梦上。
+assert.equal((wx.storage['oneiro:portraitChat'] as Array<Record<string, any>>).length, 3);
+// 他刚说的话已经落进 life_notes，画像必须马上去读它——否则用户还得自己回去
+// 点一次「重新梳理」，这次纠正就白做了。
+assert.ok(
+  wx.cloudCalls.filter((call) => call.name === 'profileMemory' && call.data.action === 'generate').length >
+    portraitGeneratesBeforeCorrection
+);
+
+// 回来时读到的是完整那段对话，不是重新开场。
+const reopenedPortraitChat = loadPage('miniprogram/pages/dream-chat/index.js', pageModules, wx, app);
+reopenedPortraitChat.onLoad({ portrait: '1' });
+assert.equal(reopenedPortraitChat.data.messages.length, 3);
+
 const correctionChatPage = loadPage('miniprogram/pages/dream-chat/index.js', pageModules, wx, app);
 correctionChatPage.onLoad({ id: archiveAfterDream[0].id });
 const correctionOpening = last(correctionChatPage.data.messages as Array<Record<string, any>>);

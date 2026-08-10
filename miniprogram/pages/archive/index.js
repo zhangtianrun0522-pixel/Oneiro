@@ -147,13 +147,9 @@ Page({
     portraitMigrationState: '',
     portraitLoading: false,
     portraitAutoGenerateTriggered: false,
-    portraitSaving: false,
-    portraitEditing: false,
-    portraitEditSummary: '',
     portraitVersionLabel: '',
     portraitStatusLabel: '',
     portraitUpdatedLabel: '',
-    portraitChangeReason: '',
     portraitSources: [],
     portraitHistory: [],
     portraitHasUpdate: false,
@@ -374,11 +370,18 @@ Page({
   // ── 阶段画像 ──
   retryPortrait: function () { this.portrait.retry(); },
   refreshPortrait: function () { this.portrait.refresh(); },
-  startPortraitEdit: function () { this.portrait.startEdit(); },
-  cancelPortraitEdit: function () { this.portrait.cancelEdit(); },
-  savePortraitEdit: function () { this.portrait.saveEdit(); },
-  onPortraitSummaryInput: function (event) { this.portrait.onSummaryInput(event); },
   togglePortraitUse: function () { this.portrait.toggleUse(); },
+
+  // 手写输入框换成了对话。输入框的信息量够，但把写作负担丢给了用户，而且他写
+  // 的那句会被当成最高权重原文照抄回画像——等于让用户自己给自己下判断，这份
+  // 画像就没有存在的意义了。老用户已经存下的手改原文仍然照常参与生成，只是
+  // 不再有新的入口写进去。
+  openPortraitChat: function () {
+    var current = this.data.memoryState && this.data.memoryState.current;
+    if (!current || !(current.summary || current.profileText)) return;
+    analytics.trackEvent('portrait_chat_open', { version: Number(current.version || 0) });
+    wx.navigateTo({ url: '/pages/dream-chat/index?portrait=1' });
+  },
 
   // 「这段来自哪几个梦」。sourceRefs 每一版都存了最多 18 条，此前一条都没
   // 渲染过——prompt 要求画像的判断「能指回具体是哪个梦的哪一处」，界面却不

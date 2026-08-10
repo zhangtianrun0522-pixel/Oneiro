@@ -8,6 +8,13 @@
     <text class="context-dream">{{dream.dreamText}}</text>
   </view>
 
+  <!-- 画像模式：把正在被质疑的那段原样摆在最上面。不摆出来，用户和 AI 会各
+       说各的——他记得的是刚才读到的某一句，模型看到的是完整那段。 -->
+  <view class="chat-context" wx:if="{{portraitMode}}">
+    <text class="context-title">这份画像</text>
+    <text class="context-dream">{{portraitSummary}}</text>
+  </view>
+
   <scroll-view class="message-list" scroll-y scroll-into-view="{{scrollTarget}}">
     <!-- 对话少时贴着输入器往上排，不在中间留一大片空白 -->
     <view class="message-stack">
@@ -36,10 +43,15 @@
     <text wx:if="{{cloudSyncPending}}" class="cloud-sync-hint">聊天记录待同步</text>
 
     <!-- 轻量提示：只在还没开口时出现，点一下填进输入框 -->
-    <scroll-view wx:if="{{!inputValue}}" class="guide-list" scroll-x show-scrollbar="{{false}}">
+    <scroll-view wx:if="{{!inputValue && !portraitMode}}" class="guide-list" scroll-x show-scrollbar="{{false}}">
       <text class="guide-chip" data-prompt="梦里最清楚的画面是：" bindtap="useGuide">梦里最清楚的画面</text>
       <text class="guide-chip" data-prompt="醒来以后，我最明显的情绪是：" bindtap="useGuide">醒来后的情绪</text>
       <text class="guide-chip" data-prompt="这让我想到现实里的：" bindtap="useGuide">现实里的对应</text>
+    </scroll-view>
+    <scroll-view wx:if="{{!inputValue && portraitMode}}" class="guide-list" scroll-x show-scrollbar="{{false}}">
+      <text class="guide-chip" data-prompt="不太对的是这句：" bindtap="useGuide">哪句不对</text>
+      <text class="guide-chip" data-prompt="其实我更像是：" bindtap="useGuide">我更像是</text>
+      <text class="guide-chip" data-prompt="最近真实发生的一件事是：" bindtap="useGuide">最近的一件事</text>
     </scroll-view>
     <view class="composer-row">
       <textarea

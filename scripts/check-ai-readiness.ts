@@ -1390,4 +1390,225 @@ assert.ok(
   'JSON 模式回空时必须退回纯文本再要一次'
 );
 
+
+// ── 出生盘假设：派生、衰减、判定 ──────────────────────────────────────
+//
+// 这一段是真的把模块跑起来，不是查字符串。衰减是这套设计里唯一不能靠提示词
+// 实现的部分——「随证据增加请降低生辰权重」模型做不到，而上一版画像本身是
+// 高权重输入，所以盘面推来的句子会被一版版继承、洗成看起来像从梦里读出来的
+// 判断。它必须是结构性的，也就必须被测到。
+function loadBaziHypotheses() {
+  const commonJsModule = { exports: {} as Record<string, any> };
+  const dir = path.join(root, 'miniprogram/cloudfunctions/profileMemory');
+  const sandbox = {
+    module: commonJsModule,
+    exports: commonJsModule.exports,
+    require(request: string) {
+      if (request === './locationResolver') return nodeRequire(path.join(dir, 'locationResolver.js'));
+      if (request === 'lunar-javascript') {
+        return {
+          Solar: {
+            fromYmdHms() {
+              return { getLunar() { return { getEightChar() { return {
+                setSect() {},
+                getYear: () => '戊寅', getMonth: () => '乙丑', getDay: () => '甲子', getTime: () => '戊辰',
+                getDayGan: () => '甲',
+                getYearHideGan: () => ['甲', '丙', '戊'], getMonthHideGan: () => ['己', '癸', '辛'],
+                getDayHideGan: () => ['癸'], getTimeHideGan: () => ['戊', '乙', '癸'],
+                getYearShiShenGan: () => '偏财', getMonthShiShenGan: () => '劫财',
+                getDayShiShenGan: () => '日主', getTimeShiShenGan: () => '偏财',
+                getYearShiShenZhi: () => ['比肩', '食神', '偏财'],
+                getMonthShiShenZhi: () => ['正财', '正印', '正官'],
+                getDayShiShenZhi: () => ['正印'],
+                getTimeShiShenZhi: () => ['偏财', '劫财', '正印'],
+              }; } }; } };
+            },
+          },
+        };
+      }
+      return nodeRequire(request);
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(dir, 'baziHypotheses.js'), 'utf8'), sandbox);
+  return commonJsModule.exports;
+}
+
+// 两个云函数各自打包部署，共享代码只能靠复制。复制没关系，漂了才有关系——
+// 出生地解析一旦两边不一致，同一个用户在解读里和在画像里会拿到不同的盘。
+assert.equal(
+  read('miniprogram/cloudfunctions/profileMemory/locationResolver.js'),
+  read('miniprogram/cloudfunctions/interpretDream/locationResolver.js'),
+  '两份 locationResolver 必须逐字相同'
+);
+
+const bazi = loadBaziHypotheses();
+const fullBirthProfile = { birthDate: '1998-01-15', birthTime: '08:30', birthPlace: '青岛' };
+const derivedHypotheses = bazi.deriveHypotheses(fullBirthProfile, new Date());
+assert.ok(derivedHypotheses.length >= 3 && derivedHypotheses.length <= 4, '每次派生 3-4 条，不多不少');
+assert.ok(
+  derivedHypotheses.every((item: Record<string, any>) => item.status === 'untested' && item.origin === 'bazi'),
+  '派生出来的一律是待验证，不是结论'
+);
+// 用户读到的必须是一句关于他的白话。术语一旦漏出去，画像就变成了运势。
+const hypothesisText = derivedHypotheses.map((item: Record<string, any>) => item.claim).join('');
+assert.ok(
+  !/八字|四柱|日主|十神|五行|命理|命盘|生肖|属相|星座/.test(hypothesisText),
+  '假设正文不得出现任何命理术语'
+);
+assert.ok(
+  !/运势|吉凶|注定|必然|命运|财运|姻缘/.test(hypothesisText),
+  '假设不得断吉凶或谈际遇'
+);
+// 每条都要具体到用户能当场说「不对」。说不出「不对」的句子永远不会被证据推翻，
+// 于是会一直赖在画像里。
+assert.ok(
+  derivedHypotheses.every((item: Record<string, any>) => item.claim.length >= 12),
+  '假设不能短到无从反驳'
+);
+assert.ok(
+  new Set(derivedHypotheses.map((item: Record<string, any>) => item.dimension)).size === derivedHypotheses.length,
+  '同一个轴不得产出两条'
+);
+// 资料不全、城市认不出、排盘失败——一律空手而归，绝不猜。
+assert.equal(bazi.deriveHypotheses({}, new Date()).length, 0);
+assert.equal(bazi.deriveHypotheses({ birthDate: '1998-01-15', birthTime: '08:30' }, new Date()).length, 0);
+assert.equal(
+  bazi.deriveHypotheses({ birthDate: '1998-01-15', birthTime: '08:30', birthPlace: '火星' }, new Date()).length,
+  0
+);
+// 同一份资料每次派生出同一批 id：假设账本写失败时最坏只是重派一次，不该因此
+// 产生一批新 id 把已经判过的那些顶掉。
+assert.equal(
+  bazi.deriveHypotheses(fullBirthProfile, new Date()).map((item: Record<string, any>) => item.id).join('|'),
+  derivedHypotheses.map((item: Record<string, any>) => item.id).join('|')
+);
+
+// 生命周期本身在 index.js 里。这里同样跑真的代码，只把 wx-server-sdk 挡掉。
+function loadProfileMemory() {
+  const commonJsModule = { exports: {} as Record<string, any> };
+  const dir = path.join(root, 'miniprogram/cloudfunctions/profileMemory');
+  const sandbox = {
+    module: commonJsModule,
+    exports: commonJsModule.exports,
+    process: { env: {} },
+    Buffer,
+    URL,
+    console,
+    require(request: string) {
+      if (request === 'wx-server-sdk') {
+        return { DYNAMIC_CURRENT_ENV: 'mock', init() {}, database: () => ({ command: {} }) };
+      }
+      if (request === './baziHypotheses') return bazi;
+      if (request === './locationResolver') return nodeRequire(path.join(dir, 'locationResolver.js'));
+      if (request === 'http' || request === 'https') return nodeRequire(request);
+      return nodeRequire(request);
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(
+    fs.readFileSync(path.join(dir, 'index.js'), 'utf8') +
+      '\nmodule.exports.__test = { resolveHypotheses, applyHypothesisVerdicts, livingHypotheses, aiPrompt, HYPOTHESIS_DECAY_DREAM_COUNT };',
+    sandbox
+  );
+  return commonJsModule.exports;
+}
+
+const profileMemoryModule = loadProfileMemory();
+const lifecycle = profileMemoryModule.__test;
+assert.equal(lifecycle.HYPOTHESIS_DECAY_DREAM_COUNT, 10);
+
+const birthUser = { nickname: '闰土', birthDate: '1998-01-15', birthTime: '08:30', birthPlace: '青岛' };
+const firstResolve = lifecycle.resolveHypotheses([], birthUser, 0, new Date());
+assert.equal(firstResolve.changed, true);
+assert.ok(firstResolve.list.length >= 3);
+// 已经派生过就不再重复派生，否则每次生成都会把判过的状态冲掉。
+assert.equal(lifecycle.resolveHypotheses(firstResolve.list, birthUser, 0, new Date()).changed, false);
+// 没有出生资料的用户完全不进这条路径。
+assert.equal(lifecycle.resolveHypotheses([], { nickname: '无资料' }, 0, new Date()).list.length, 0);
+
+// 判定是单向的：判过的不会回到 untested，所以假设集合一定收敛。没有这一条，
+// 模型这次说「支持」下次说「说不好」，画像会在两版之间反复横跳，而版本号是
+// 「真的变了」的唯一凭据。
+const targetId = firstResolve.list[0].id;
+const afterSupport = lifecycle.applyHypothesisVerdicts(
+  firstResolve.list,
+  [{ id: targetId, verdict: 'support', evidence: '他自己说过那件事' }],
+  new Date()
+);
+assert.equal(afterSupport.changed, true);
+assert.equal(afterSupport.list.find((item: Record<string, any>) => item.id === targetId).status, 'confirmed');
+assert.equal(
+  lifecycle.applyHypothesisVerdicts(
+    afterSupport.list,
+    [{ id: targetId, verdict: 'contradict', evidence: '反悔' }],
+    new Date()
+  ).changed,
+  false,
+  '已经定论的假设不得被后一次判定改写'
+);
+// unclear 是默认答案，不改变任何状态。
+assert.equal(
+  lifecycle.applyHypothesisVerdicts(
+    firstResolve.list,
+    [{ id: firstResolve.list[1].id, verdict: 'unclear', evidence: '' }],
+    new Date()
+  ).changed,
+  false
+);
+// 垃圾判定不得改动账本。
+assert.equal(lifecycle.applyHypothesisVerdicts(firstResolve.list, [{ id: 'nope', verdict: 'support' }], new Date()).changed, false);
+assert.equal(lifecycle.applyHypothesisVerdicts(firstResolve.list, 'not-an-array', new Date()).changed, false);
+
+// 衰减：到第 10 个梦，所有还没被证据碰过的一律作废，不管模型怎么想。被证据
+// 接住的那条不受影响——它那时已经不算八字了。
+const atDecay = lifecycle.resolveHypotheses(afterSupport.list, birthUser, 10, new Date());
+assert.equal(atDecay.changed, true);
+assert.equal(
+  atDecay.list.filter((item: Record<string, any>) => item.status === 'untested').length,
+  0,
+  '第 10 个梦之后不得再有未验证的出生盘假设'
+);
+assert.equal(atDecay.list.find((item: Record<string, any>) => item.id === targetId).status, 'confirmed');
+assert.equal(lifecycle.livingHypotheses(atDecay.list).length, 1, '只剩被证据接住的那一条');
+// 第 9 个梦时还没到期：这个数字是「我们到底多信八字」的答案，不能悄悄漂移。
+assert.ok(
+  lifecycle.resolveHypotheses(firstResolve.list, birthUser, 9, new Date()).list
+    .some((item: Record<string, any>) => item.status === 'untested')
+);
+
+// 冷启动那一版可以自报来历，此后每一版都不许再提——否则盘面就在借画像的壳
+// 复活，用户会在 V4 读到「根据你的生辰」，而那时画像本该是从梦里来的。
+const coldPrompt = lifecycle.aiPrompt({
+  user: birthUser, dreams: [], notes: [], hypotheses: firstResolve.list, priorPortrait: null,
+});
+assert.ok(coldPrompt.includes('这是第一版画像'), '无证据时走冷启动提示词');
+assert.ok(coldPrompt.includes('只是根据他的出生时间推的'), '第一版必须自报来历');
+assert.ok(!coldPrompt.includes(birthUser.birthDate), '出生日期本身不得进提示词');
+
+const warmPrompt = lifecycle.aiPrompt({
+  user: birthUser,
+  dreams: [{ text: '我梦见门口有一片湖', symbols: [], emotion: '', discussion: [], createdAt: new Date() }],
+  notes: [],
+  hypotheses: firstResolve.list,
+  priorPortrait: null,
+});
+assert.ok(!warmPrompt.includes('这是第一版画像'));
+assert.ok(warmPrompt.includes('严禁透露它们的来历'), '有证据之后不得再提盘面');
+assert.ok(warmPrompt.includes('hypothesisVerdicts'), '有存活假设时必须索取判定');
+assert.ok(!warmPrompt.includes(birthUser.birthDate) && !warmPrompt.includes(birthUser.birthPlace),
+  '出生资料不再整份塞进提示词——以前它在里面却没有任何规则说该拿它干什么');
+assert.ok(warmPrompt.includes('严禁叙述这份画像自身的沿革'), '画像不得写成修订说明');
+
+// 假设全部出局之后，判定相关的东西也要一起消失，不能留个空壳继续索取。
+const noHypothesisPrompt = lifecycle.aiPrompt({
+  user: birthUser,
+  dreams: [{ text: '我梦见门口有一片湖', symbols: [], emotion: '', discussion: [], createdAt: new Date() }],
+  notes: [],
+  hypotheses: atDecay.list.map((item: Record<string, any>) => ({ ...item, status: 'expired' })),
+  priorPortrait: null,
+});
+assert.ok(!noHypothesisPrompt.includes('hypothesisVerdicts'));
+assert.ok(!noHypothesisPrompt.includes('待验证假设'));
+
 console.log(`AI readiness checks passed across ${runtimeFiles.length} Mini Program runtime files.`);

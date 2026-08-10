@@ -31,31 +31,8 @@
         <text class="portrait-update-link">看看变了什么 ›</text>
       </view>
 
-      <textarea
-        wx:if="{{portraitEditing}}"
-        class="portrait-editor"
-        value="{{portraitEditSummary}}"
-        maxlength="500"
-        auto-height
-        bindinput="onPortraitSummaryInput"
-      />
-      <text wx:else class="portrait-summary">{{memoryState.current.summary}}</text>
-
-      <view wx:if="{{portraitEditing}}" class="portrait-actions">
-        <button class="portrait-primary" disabled="{{portraitSaving || portraitLoading}}" loading="{{portraitSaving}}" bindtap="savePortraitEdit">保存修改</button>
-        <button class="portrait-secondary" bindtap="cancelPortraitEdit">取消</button>
-      </view>
-      <!-- 「暂停用于解读」是低频但必要的控制项。放在编辑态里，默认视图就只
-           剩两个动作；用户已经在主动管理这段文字时，才需要看到它。 -->
-      <text
-        wx:if="{{portraitEditing && !portraitPaused}}"
-        class="portrait-pause-link"
-        bindtap="togglePortraitUse"
-      >暂停用于解读</text>
-
-      <block wx:if="{{!portraitEditing}}">
-        <!-- 这一版为什么和上一版不同。changeReason 每一版都存了，从没显示过。 -->
-        <text wx:if="{{portraitChangeReason}}" class="portrait-reason">{{portraitChangeReason}}</text>
+      <text class="portrait-summary">{{memoryState.current.summary}}</text>
+      <block>
 
         <!-- 「这段来自哪几个梦」。prompt 要求画像的判断能指回具体是哪个梦的
              哪一处，但界面此前不给核对入口——一个无法核对的判断会退化成星座
@@ -98,11 +75,18 @@
           </view>
         </view>
 
+        <!-- 按钮上写的就是那句异议本身，点下去直接进对话，第一句已经替他说完
+             了——开口成本和点一个「不像」按钮一样，但落在能说清楚的地方。 -->
         <view class="portrait-links-row">
-          <button class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="startPortraitEdit">修改这段理解</button>
+          <button class="portrait-link-btn is-object" disabled="{{portraitLoading}}" bindtap="openPortraitChat">这段不像我</button>
           <button wx:if="{{portraitPaused}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="togglePortraitUse">恢复用于解读</button>
           <button wx:else class="portrait-link-btn" disabled="{{portraitLoading}}" loading="{{portraitLoading}}" bindtap="refreshPortrait">重新梳理</button>
         </view>
+        <text
+          wx:if="{{!portraitPaused}}"
+          class="portrait-pause-link"
+          bindtap="togglePortraitUse"
+        >暂停用于解读</text>
 
         <view wx:if="{{portraitGenerateFailed}}" class="portrait-links-row">
           <text class="portrait-empty-retry" bindtap="refreshPortrait">重新梳理失败，点击重试</text>

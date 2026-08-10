@@ -135,14 +135,6 @@
 }
 
 /* 这一版为什么和上一版不同。字号压到最小、颜色最弱——它是脚注，不是正文。 */
-.portrait-reason {
-  display: block;
-  margin-top: 18rpx;
-  color: var(--ink-70);
-  font-size: 21rpx;
-  line-height: 1.6;
-}
-
 /* 溯源与历史两块共用一套折叠头样式：一行标签 + 右侧展开/收起。 */
 .portrait-sources,
 .portrait-history {

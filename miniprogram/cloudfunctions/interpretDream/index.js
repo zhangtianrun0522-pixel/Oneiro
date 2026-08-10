@@ -2300,6 +2300,167 @@ function parseDreamChatContent(content, userMessage) {
   };
 }
 
+// ── 画像纠偏对话 ────────────────────────────────────────────────────────
+//
+// 画像下面原来挂着两个东西：一个「不像」按钮和一个让用户自己重写的输入框。
+// 按钮只能传达「错了」，传达不了「哪里错」——系统拿到一个 bit，不够生成任何
+// 新东西。输入框信息量够了，却把写作负担丢给用户，而且他写的那句话会被当成
+// 最高权重原文照抄回画像，等于让用户自己给自己下判断，这份画像就没有存在的
+// 意义了。
+//
+// 两个都换成对话。开口成本低到一句「不对，我不是那样的」，而系统可以追问到
+// 具体；用户说出来的每一句都按原话存进 life_notes，下一版画像直接用它。
+const PORTRAIT_CHAT_SYSTEM_PROMPT = [
+  '你是 Oneiro。用户刚读完你为他写的那份阶段画像，觉得哪里不对，来跟你说。',
+  '你的目标只有一个：搞清楚哪一句不对、实际是什么样。不是安抚他，也不是为画像辩护。',
+  '他说不对，就是不对——画像是我们写的，他是当事人。不要解释我们为什么那样写，不要说「这可能是因为」，更不要试图把他的反驳解释成画像的另一种正确。',
+  '追问要落到具体的事上：问他最近实际发生的一件事、他当时怎么做的、和画像里说的差在哪。抽象的追问（「你觉得自己是个怎样的人」）拿不到任何可用的东西。',
+  '每一轮的形状不要一样，不要每条都以问题收尾。有时候把他刚说的话确认一遍、往前推一句就够了。',
+  '严禁复述整段画像，也不要逐句念给他听。要指认就只引用你正在谈的那一句。',
+  '严禁提及出生资料、生辰、八字、星座、五行或任何命理概念，即使画像里提过。用户问起画像是怎么来的，就说它来自他记录的东西和你们聊过的内容，还很粗糙，正在跟着他的反馈改。',
+  '不做医疗、创伤、人格障碍层面的诊断，不预测未来，不断吉凶。',
+  '回复 2-4 句话，说人话，不要小标题不要列点。',
+  '只返回合法 JSON，不要 markdown：{"reply":"回复正文"}。'
+].join('\n');
+
+async function loadPortraitChatBackground(openid) {
+  if (!openid) return null;
+  try {
+    const loaded = await Promise.all([
+      loadCurrentPortrait(openid),
+      loadRecentLifeNotes(openid, 6)
+    ]);
+    const portrait = loaded[0];
+    const notes = loaded[1] || [];
+    const summary = portrait ? asString(portrait.summary || portrait.profileText, '', 500) : '';
+    if (!summary && !notes.length) return null;
+    return { stagePortrait: summary, knownLifeNotes: notes };
+  } catch (error) {
+    return null;
+  }
+}
+
+// 用户在这里说的话是专程来纠正画像的，指向性比梦后闲聊强得多，所以原样存下来，
+// 不做抽取也不做改写——一改写就又变成我们的措辞了。写失败不影响这次对话：
+// 记不住是遗憾，回不上话才是故障。
+async function recordPortraitCorrection(openid, userMessage) {
+  if (!db || !openid) return false;
+  const normalized = asString(userMessage, '', 220);
+  if (!normalized) return false;
+  try {
+    const existing = await db.collection('life_notes')
+      .where({ openid: openid, source: 'portrait_correction', text: normalized })
+      .limit(1)
+      .get();
+    if (existing && existing.data && existing.data[0]) return true;
+    await db.collection('life_notes').add({ data: {
+      openid: openid,
+      text: normalized,
+      source: 'portrait_correction',
+      sourceDreamId: '',
+      createdAt: new Date()
+    } });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function runPortraitChat(event, openid) {
+  const config = providerConfig();
+  const userMessage = asString(event && event.userMessage, '', 500);
+  const history = normalizeChatHistory(event && event.messages);
+  const timeoutMs = effectiveTimeoutMs();
+  const startedAt = Date.now();
+  let i;
+
+  if (!userMessage) {
+    return { ok: false, reason: 'missing_chat_context', message: '先写下你想说的内容。' };
+  }
+  for (i = 0; i < highRiskPatterns.length; i += 1) {
+    if (highRiskPatterns[i].pattern.test(userMessage)) {
+      return { ok: false, blocked: true, reason: highRiskPatterns[i].reason, message: highRiskPatterns[i].message };
+    }
+  }
+  if (config.provider === 'static' || config.unsupported || !config.apiKey) {
+    return {
+      ok: false,
+      reason: 'ai_provider_unavailable',
+      retryable: true,
+      message: 'AI 对话暂时不可用，请稍后再试。'
+    };
+  }
+
+  const background = await loadPortraitChatBackground(openid);
+  const systemMessages = [{ role: 'system', content: PORTRAIT_CHAT_SYSTEM_PROMPT }];
+  if (background) {
+    systemMessages.push({
+      role: 'system',
+      content: '这个人当前的阶段画像与已知现实线索：' + JSON.stringify(background)
+    });
+  }
+
+  async function requestChat(useJsonFormat) {
+    const payload = {
+      model: config.model,
+      max_tokens: MAX_OUTPUT_TOKENS,
+      messages: systemMessages.concat(history).concat([{ role: 'user', content: userMessage }]),
+      temperature: 0.62
+    };
+    if (useJsonFormat) payload.response_format = { type: 'json_object' };
+    const response = await postJson(config.baseUrl + '/chat/completions', {
+      Authorization: 'Bearer ' + config.apiKey
+    }, payload, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw new Error('Portrait chat provider failed');
+    }
+    return extractMessageContent(JSON.parse(response.text));
+  }
+
+  try {
+    let extracted = await requestChat(true);
+    let content = asString(extracted.content, '', 1200);
+    if (!content) {
+      extracted = await requestChat(false);
+      content = asString(extracted.content, '', 1200);
+    }
+    if (!content) throw emptyContentError(extracted);
+    const chatContent = parseDreamChatContent(content, userMessage);
+    const recorded = await recordPortraitCorrection(openid, userMessage);
+    return {
+      ok: true,
+      provider: config.provider,
+      model: config.model || '',
+      fallback: false,
+      reply: chatContent.reply,
+      recorded: recorded
+    };
+  } catch (error) {
+    const diagnostic = decorateProviderError(error, config, startedAt);
+    return {
+      ok: false,
+      reason: 'ai_provider_error',
+      retryable: true,
+      provider: diagnostic.provider,
+      model: diagnostic.model,
+      errorCode: diagnostic.errorCode,
+      error_code: diagnostic.errorCode,
+      providerErrorCode: diagnostic.errorCode,
+      requestTimeoutMs: diagnostic.requestTimeoutMs,
+      elapsedMs: diagnostic.elapsedMs,
+      diagnostics: {
+        code: diagnostic.errorCode,
+        provider: diagnostic.provider,
+        model: diagnostic.model,
+        requestTimeoutMs: diagnostic.requestTimeoutMs,
+        elapsedMs: diagnostic.elapsedMs
+      },
+      provider_error: diagnostic.message ? diagnostic.message.slice(0, 180) : 'unknown_error',
+      message: 'AI 对话暂时不可用，请稍后再试。'
+    };
+  }
+}
+
 async function runDreamChat(event, openid) {
   const config = providerConfig();
   const dreamText = asString(event && event.dreamText, '', 1200);
@@ -2596,6 +2757,10 @@ exports.main = async function (event) {
 
   if (event && event.chatAboutDream) {
     return runDreamChat(event, wxContext && wxContext.OPENID ? wxContext.OPENID : '');
+  }
+
+  if (event && event.chatAboutPortrait) {
+    return runPortraitChat(event, wxContext && wxContext.OPENID ? wxContext.OPENID : '');
   }
 
   if (event && event.refineDream) {

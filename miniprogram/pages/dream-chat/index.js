@@ -2,7 +2,18 @@ var analytics = require('../../utils/analytics');
 var cloudBase = require('../../utils/cloudBase');
 var dreamMemory = require('../../utils/dreamMemory');
 var recorderRouter = require('../../utils/recorderRouter');
+var stagePortrait = require('../../utils/stagePortrait');
 var syncQueue = require('../../utils/syncQueue');
+
+// 画像纠偏走同一个页面，不另开一个。
+//
+// 「聊聊」是这套系统里唯一的更正通道：梦的解读不对，在梦那里聊；对你这个人的
+// 判断不对，在画像这里聊。同一个入口、同一个口吻。复制一份只有 sendMessage
+// 不同的聊天页，等于把录音那两百行也复制一份，两边迟早会漂。
+var PORTRAIT_CHAT_KEY = 'oneiro:portraitChat';
+// 入口按钮写的就是这句异议本身，所以点进来时第一句已经替用户说完了——他要
+// 付出的和点一个「不像」按钮一样多，但落在一个可以继续说下去的地方。
+var PORTRAIT_OPENING = '你说这段不像你。是哪一句最不对？或者直接说件最近的事，我照着改。';
 
 // 每条梦保留的对话条数。轮数不再设上限，但发给模型的历史仍然只取最近 12 条
 // （见 sendMessage），这里保留的是用户回来时还能读到的那份记录。
@@ -44,6 +55,21 @@ function voiceFailureMessage(result) {
   return '语音识别暂不可用，请改用文字输入';
 }
 
+function readPortraitMessages() {
+  var stored = wx.getStorageSync(PORTRAIT_CHAT_KEY);
+  return Array.isArray(stored) ? stored : [];
+}
+
+function writePortraitMessages(messages) {
+  wx.setStorageSync(PORTRAIT_CHAT_KEY, messages.slice(-MAX_STORED_MESSAGES));
+}
+
+function currentPortraitSummary() {
+  var state = stagePortrait.readCachedState();
+  var current = state && state.current;
+  return String((current && (current.summary || current.profileText)) || '').trim();
+}
+
 function findDream(id) {
   var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
   var target = decodeURIComponent(id || '');
@@ -79,6 +105,8 @@ function userTurnCount(messages) {
 Page({
   data: {
     dream: null,
+    portraitMode: false,
+    portraitSummary: '',
     messages: [],
     inputValue: '',
     sending: false,
@@ -92,6 +120,7 @@ Page({
   },
 
   onLoad: function (options) {
+    if (options && options.portrait === '1') return this.loadPortraitMode();
     var dream = findDream(options && options.id);
     var messages;
     var feedback = String(options && options.feedback || (dream && dream.feedback) || '');
@@ -166,6 +195,41 @@ Page({
     });
   },
 
+  // 埋点里的 dreamId 在画像模式下没有梦可指。给一个固定标识，好让两种对话的
+  // 录音漏斗仍然落在同一组事件里，而不是各自散成两份。
+  currentContextId: function () {
+    if (this.data.portraitMode) return 'portrait';
+    return (this.data.dream && this.data.dream.id) || '';
+  },
+
+  loadPortraitMode: function () {
+    var summary = currentPortraitSummary();
+    if (!summary) {
+      wx.showToast({ title: '还没有可以聊的画像', icon: 'none' });
+      setTimeout(function () {
+        if (getCurrentPages().length > 1) wx.navigateBack();
+        else wx.reLaunch({ url: '/pages/home/index' });
+      }, 1200);
+      return;
+    }
+    var messages = readPortraitMessages();
+    if (!messages.length) {
+      messages = [{ role: 'assistant', content: PORTRAIT_OPENING, createdAt: new Date().toISOString() }];
+      writePortraitMessages(messages);
+    }
+    wx.setNavigationBarTitle({ title: '聊聊这份画像' });
+    this.setData({
+      portraitMode: true,
+      portraitSummary: summary,
+      messages: messages,
+      turnCount: userTurnCount(messages),
+      scrollTarget: 'message-' + String(messages.length - 1)
+    });
+    this.pageActive = true;
+    recorderRouter.register(this);
+    analytics.trackEvent('portrait_chat_view', { existingMessages: messages.length });
+  },
+
   onUnload: function () {
     this.pageActive = false;
     this.clearVoiceStartTimer();
@@ -189,7 +253,7 @@ Page({
     this.stopScheduled = false;
     this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 });
     analytics.trackEvent('dream_chat_voice_error', {
-      dreamId: this.data.dream && this.data.dream.id || '',
+      dreamId: this.currentContextId(),
       errMsg: String(error && (error.errMsg || error.errCode || error.message) || '').slice(0, 180)
     });
     wx.showToast({ title: '这次没录上，再按住说一次', icon: 'none' });
@@ -252,7 +316,7 @@ Page({
     // 成功的授权被显示成功能坏掉。这里不启动录音，只说清权限已拿到。
     if (this.voiceStopAfterAuthorization) {
       this.voiceStopAfterAuthorization = false;
-      analytics.trackEvent('dream_chat_voice_skipped_after_authorize', { dreamId: this.data.dream.id });
+      analytics.trackEvent('dream_chat_voice_skipped_after_authorize', { dreamId: this.currentContextId() });
       wx.showToast({ title: '麦克风已开启，再按住「说」一次', icon: 'none', duration: 2400 });
       return;
     }
@@ -261,7 +325,7 @@ Page({
     this.voiceAutoStopped = false;
     this.setData({ recording: true, recordingSeconds: 0, recordingCountdown: 0 });
     this.startRecordingTimer();
-    analytics.trackEvent('dream_chat_voice_start', { dreamId: this.data.dream.id, mode: this.voiceStartMode || 'tap' });
+    analytics.trackEvent('dream_chat_voice_start', { dreamId: this.currentContextId(), mode: this.voiceStartMode || 'tap' });
     try {
       recorderRouter.start({ format: 'mp3', sampleRate: 16000, numberOfChannels: 1, encodeBitRate: 48000, duration: MAX_RECORD_SECONDS * 1000 });
     } catch (error) {
@@ -291,7 +355,7 @@ Page({
       return;
     }
     this.stopRecordingTimer();
-    analytics.trackEvent('dream_chat_voice_stop', { dreamId: this.data.dream.id, seconds: this.data.recordingSeconds });
+    analytics.trackEvent('dream_chat_voice_stop', { dreamId: this.currentContextId(), seconds: this.data.recordingSeconds });
     try { recorderRouter.stop(); } catch (error) { this.setData({ recording: false, recordingSeconds: 0, recordingCountdown: 0 }); }
   },
 
@@ -384,7 +448,7 @@ Page({
       this.voiceAutoStopped = true;
       this.voiceLongPressStarted = false;
       analytics.trackEvent('dream_chat_voice_limit_reached', {
-        dreamId: this.data.dream.id,
+        dreamId: this.currentContextId(),
         durationMs: Math.round(duration * 1000)
       });
       wx.showToast({ title: '已到 60 秒上限，这段收下了 · 可以接着按住说', icon: 'none', duration: 3200 });
@@ -396,7 +460,7 @@ Page({
     // 太短的片段送到 ASR 只会拿回 empty_result，用户读到的是「没有听清」，
     // 会以为是识别不准而反复重试同样短的一下。
     if (duration * 1000 < MIN_RECORD_MS) {
-      analytics.trackEvent('dream_chat_voice_failed', { dreamId: this.data.dream.id, reason: 'too_short' });
+      analytics.trackEvent('dream_chat_voice_failed', { dreamId: this.currentContextId(), reason: 'too_short' });
       wx.showToast({ title: voiceFailureMessage({ reason: 'too_short' }), icon: 'none', duration: 2400 });
       return;
     }
@@ -406,7 +470,7 @@ Page({
       that.setData({ recognizing: false });
       if (!recognizeResult || !recognizeResult.ok || !recognizeResult.text) {
         analytics.trackEvent('dream_chat_voice_failed', {
-          dreamId: that.data.dream.id,
+          dreamId: that.currentContextId(),
           reason: recognizeResult && recognizeResult.reason ? recognizeResult.reason : 'unknown',
           providerErrorCode: recognizeResult && recognizeResult.providerErrorCode ? recognizeResult.providerErrorCode : '',
           durationMs: Math.round(duration * 1000)
@@ -416,7 +480,78 @@ Page({
       }
       var text = String(recognizeResult.text).trim();
       that.setData({ inputValue: that.data.inputValue ? that.data.inputValue + '\n' + text : text });
-      analytics.trackEvent('dream_chat_voice_success', { dreamId: that.data.dream.id, duration: duration, textLength: text.length });
+      analytics.trackEvent('dream_chat_voice_success', { dreamId: that.currentContextId(), duration: duration, textLength: text.length });
+    });
+  },
+
+  // 画像纠偏的发送路径。和梦后对话的区别只有三处：不带梦上下文、对话存在本机
+  // 而不是挂在某个梦上、说完之后要立刻重新梳理画像——用户来这里就是为了改它，
+  // 改完还得他自己去点一下「重新梳理」，这件事就白做了。
+  //
+  // 云端会把他的原话按 portrait_correction 存进 life_notes，所以这里不需要
+  // 上行任何额外的东西：下一版画像自己会读到。
+  sendPortraitMessage: function (content, messages) {
+    var that = this;
+    var requestHistory = messages.slice(-12).map(function (item) {
+      return { role: item.role, content: item.content };
+    });
+    var userMessage = { role: 'user', content: content.slice(0, 500), createdAt: new Date().toISOString() };
+    var pending = messages.concat([userMessage]);
+
+    this.setData({
+      messages: pending,
+      inputValue: '',
+      sending: true,
+      turnCount: this.data.turnCount + 1,
+      scrollTarget: 'message-' + String(pending.length - 1)
+    });
+
+    cloudBase.chatAboutPortrait(requestHistory, userMessage.content, function (result) {
+      if (!result || !result.reply || result.ok === false) {
+        var reason = result && result.reason ? String(result.reason) : 'missing_reply';
+        that.setData({
+          messages: pending.slice(0, -1),
+          inputValue: content,
+          sending: false,
+          turnCount: Math.max(0, that.data.turnCount - 1),
+          scrollTarget: 'message-' + String(Math.max(0, pending.length - 2))
+        });
+        analytics.trackEvent('portrait_chat_reply_failed', { reason: reason });
+        if (result && result.blocked) {
+          wx.showModal({
+            title: '这段先不由我来接',
+            content: String(result.message || '这类内容 Oneiro 暂不解读，请先联系身边可信任的人或当地的支持资源。'),
+            confirmText: '知道了',
+            showCancel: false
+          });
+          return;
+        }
+        wx.showToast({
+          title: /timeout|cloud_call_failed|cloud_result_expired|cloud_unavailable/.test(reason)
+            ? '网络没接上，内容已放回输入框，可重试'
+            : '这次没回上来（' + reason + '），内容已放回输入框',
+          icon: 'none',
+          duration: 3000
+        });
+        return;
+      }
+      var current = that.data.messages.slice();
+      current.push({ role: 'assistant', content: String(result.reply), createdAt: new Date().toISOString() });
+      writePortraitMessages(current);
+      that.setData({
+        messages: current,
+        sending: false,
+        scrollTarget: 'message-' + String(current.length - 1)
+      });
+      analytics.trackEvent('portrait_chat_reply', { recorded: !!(result && result.recorded) });
+      // 他刚说的话已经落进 life_notes，现在让画像去读它。后台跑，不打断对话。
+      if (result && result.recorded) {
+        dreamMemory.refreshPortraitInBackground({
+          cloudBase: cloudBase,
+          reason: 'portrait_correction',
+          refreshKey: 'portrait-correction-' + String(current.length)
+        });
+      }
     });
   },
 
@@ -428,11 +563,12 @@ Page({
     var requestHistory;
     var userMessage;
 
-    if (!dream || this.data.sending || this.data.recording || this.data.recognizing) return;
+    if ((!dream && !this.data.portraitMode) || this.data.sending || this.data.recording || this.data.recognizing) return;
     if (!content) {
       wx.showToast({ title: '先写下你想说的内容', icon: 'none' });
       return;
     }
+    if (this.data.portraitMode) return this.sendPortraitMessage(content, messages);
     // 只有发给模型的历史保持 12 条：再长既贵又会让它开始泛泛而谈。存下来的
     // 那份更长，用户回来时读到的仍是完整的对话。
     requestHistory = messages.slice(-12).map(function (item) {

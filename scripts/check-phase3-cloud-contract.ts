@@ -4,6 +4,10 @@ import vm from 'node:vm';
 import http from 'node:http';
 import https from 'node:https';
 import crypto from 'node:crypto';
+import nodePath from 'node:path';
+import { createRequire } from 'node:module';
+
+const nodeRequire = createRequire(import.meta.url);
 
 type Row = Record<string, any>;
 
@@ -162,6 +166,11 @@ function loadCloudFunction(path: string, cloud: Row): (event: Row) => Promise<Ro
       if (request === 'http') return http;
       if (request === 'https') return https;
       if (request === 'crypto') return crypto;
+      // 云函数目录里的兄弟模块照常加载：它们和 index.js 一起打包部署，本来就是
+      // 同一份代码。挡在外面只会让这里测的东西和线上跑的东西不是一回事。
+      if (request.startsWith('./')) {
+        return nodeRequire(nodePath.join(nodePath.dirname(nodePath.resolve(path)), request));
+      }
       throw new Error(`Unexpected require(${request}) in ${path}`);
     },
     console,

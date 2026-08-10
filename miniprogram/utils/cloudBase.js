@@ -709,6 +709,16 @@ function chatAboutDream(dreamText, dreamResult, messages, userMessage, callback,
   }, callback, { timeoutMs: CHAT_CLIENT_TIMEOUT_MS });
 }
 
+// 画像纠偏对话。没有梦上下文——用户谈的就是那份画像本身，云端会自己把当前
+// 画像读出来，所以这里只上行他说的话和对话历史。
+function chatAboutPortrait(messages, userMessage, callback) {
+  return callCloudFunction('interpretDream', {
+    chatAboutPortrait: true,
+    messages: messages || [],
+    userMessage: userMessage || ''
+  }, callback, { timeoutMs: CHAT_CLIENT_TIMEOUT_MS });
+}
+
 function refineDream(dreamText, dreamResult, answer, callback) {
   return callCloudFunction('interpretDream', {
     refineDream: true,
@@ -850,6 +860,7 @@ module.exports = {
   recognizeSpeech: recognizeSpeech,
   SPEECH_UPLOAD_MIN_SECONDS: SPEECH_UPLOAD_MIN_SECONDS,
   chatAboutDream: chatAboutDream,
+  chatAboutPortrait: chatAboutPortrait,
   refineDream: refineDream,
   aiHealth: aiHealth,
   aiSmokeTest: aiSmokeTest,
