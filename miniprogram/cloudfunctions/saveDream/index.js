@@ -565,6 +565,15 @@ function mergedDreamWrite(record) {
 
 function atomicDreamObjectWrites(record) {
   const data = Object.assign({}, record);
+  // 合并写入是从数据库读出来的那份记录长出来的（Object.assign({}, current, …)），
+  // 所以它带着 _id 和 _openid。这两个字段是数据库自己的，出现在 update 的 data
+  // 里会让整次更新被拒绝、云函数抛异常，客户端收到的就是 cloud_call_failed。
+  //
+  // 触发条件是「同一条已解读的梦再存一次」，也就是生图完成、点裁决、选解读评价
+  // 的每一次保存——第一次写入走的是 add，不经过这里，所以现象是「梦能记下来，
+  // 之后对它做的任何事都同步不上」。
+  delete data._id;
+  delete data._openid;
   // CloudBase expands a plain object passed to update() into nested paths.
   // Legacy records can have any structured field stored as null (not only
   // result), so replace every top-level plain object atomically.

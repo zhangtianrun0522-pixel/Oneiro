@@ -253,15 +253,22 @@ function runDreamSave(dreamId, dream, callback) {
     var next;
     // 回调期间仍算「在飞」：回调里常常又会发起一次保存，那一次应该排到队尾，
     // 而不是插到已经等着的那些前面。
-    if (callback) callback(result);
-    queue = dreamSaveQueues[dreamId];
-    next = queue && queue.length ? queue.shift() : null;
-    if (next) {
-      runDreamSave(dreamId, next.dream, next.callback);
-      return;
+    //
+    // finally 不是防御性摆设：回调抛异常时如果不放行队列，这条梦之后的每一次
+    // 保存都会静静地排进一个永远不会被处理的队列——比一次失败严重得多，因为
+    // 它连失败都不会显示。
+    try {
+      if (callback) callback(result);
+    } finally {
+      queue = dreamSaveQueues[dreamId];
+      next = queue && queue.length ? queue.shift() : null;
+      if (next) {
+        runDreamSave(dreamId, next.dream, next.callback);
+      } else {
+        delete dreamSaveQueues[dreamId];
+        delete dreamSaveActive[dreamId];
+      }
     }
-    delete dreamSaveQueues[dreamId];
-    delete dreamSaveActive[dreamId];
   });
 }
 

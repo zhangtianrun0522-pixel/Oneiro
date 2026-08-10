@@ -110,6 +110,13 @@ function fakeDatabase(seed: Record<string, Row[]>): any {
             return { stats: { created: index < 0 ? 1 : 0, updated: index >= 0 ? 1 : 0 } };
           },
           async update({ data }: { data: Row }) {
+            // 线上会拒绝带 _id / _openid 的 update，整次调用抛异常，客户端只看到
+            // 一句 cloud_call_failed。mock 原来照写不误，于是「合并写入把读出来
+            // 的整行原样写回去」这个 bug 一路活到了真机上。
+            if (Object.prototype.hasOwnProperty.call(data, '_id') ||
+                Object.prototype.hasOwnProperty.call(data, '_openid')) {
+              throw new Error('update payload must not carry _id/_openid');
+            }
             const failureKey = `${name}:${id}`;
             if (failNextUpdates.has(failureKey)) {
               failNextUpdates.delete(failureKey);
