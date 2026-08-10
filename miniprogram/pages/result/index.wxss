@@ -936,10 +936,12 @@
    边距进了 flex 行会把剩余空间均分掉，几个文字链会被摊开成等距分布，
    即使容器只写了 gap。这里 .primary-action-link 显式 margin:0
    !important，避免继承内置 auto margin 把三个链的间距顶乱。 */
+/* 三个入口等宽分栏、各自居中：原来是靠固定间距左对齐排下来的，右边留出一整块
+   空白，读起来像最后一个按钮掉了，而不是一行完整的操作。 */
 .primary-actions {
   display: flex;
   align-items: center;
-  gap: 44rpx;
+  gap: 8rpx;
   margin-top: 40rpx;
   padding-top: 32rpx;
   border-top: 1rpx solid rgba(33, 29, 23, 0.08);
@@ -948,9 +950,11 @@
 .primary-action-link {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10rpx;
   margin: 0 !important;
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: var(--tap-min);
   padding: 0 4rpx;
   color: var(--ink-70);
