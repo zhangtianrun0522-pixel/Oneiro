@@ -1046,10 +1046,12 @@ exports.main = async function (event) {
 
   if (action === 'listLifeNotes') {
     try {
+      // 上限从 30 提到 200。30 条那会儿超出的记录仍然存在、仍然可能影响画像，
+      // 却在界面上看不见——用户没有任何办法清理他看不到的东西。
       const response = await db.collection('life_notes')
         .where({ openid: wxContext.OPENID })
         .orderBy('createdAt', 'desc')
-        .limit(30)
+        .limit(200)
         .get();
       return {
         ok: true,
@@ -1063,6 +1065,12 @@ exports.main = async function (event) {
             // 「从你话里提取的」，用户读到的是一句自己从没说过的话。
             source: String(note.source || ''),
             sourceDreamId: String(note.sourceDreamId || ''),
+            // 这三个字段决定界面把它放在「正在影响」还是「更早的」里。
+            // inUseAt 由 profileMemory 在每次生成时写，所以界面显示的就是上一版
+            // 画像真正喂进去的那些，不是界面自己再猜一遍。
+            inUseAt: note.inUseAt || null,
+            retiredAt: note.retiredAt || null,
+            pinnedAt: note.pinnedAt || null,
             createdAt: note.createdAt,
             updatedAt: note.updatedAt || note.createdAt
           };
@@ -1255,6 +1263,27 @@ exports.main = async function (event) {
       updatedAt: new Date()
     } });
     return { ok: true, note: { id: editNoteId, text: editNoteText } };
+  }
+
+  // 「一直重要」。哪些记录还算数，本该由用户说了算，而不是我们拿一个时间窗
+  // 替他决定——钉住的记录不参与排队，永远占一个名额。
+  if (action === 'pinLifeNote') {
+    var pinNoteId = String((event && event.noteId) || '').trim();
+    if (!pinNoteId) return { ok: false, reason: 'invalid_note_id' };
+    var pinTarget = await db.collection('life_notes')
+      .where({ openid: wxContext.OPENID, _id: pinNoteId })
+      .limit(1)
+      .get();
+    if (!pinTarget.data || !pinTarget.data.length) return { ok: false, reason: 'note_not_found' };
+    var alreadyPinned = !!pinTarget.data[0].pinnedAt;
+    var nextPinned = event && event.pinned === false ? false : !alreadyPinned;
+    await db.collection('life_notes').doc(pinNoteId).update({ data: {
+      pinnedAt: nextPinned ? new Date() : null,
+      // 钉住一条已经退休的记录，等于用户说「这条还算数」，那就让它回来。
+      retiredAt: nextPinned ? null : pinTarget.data[0].retiredAt || null,
+      updatedAt: new Date()
+    } });
+    return { ok: true, id: pinNoteId, pinned: nextPinned };
   }
 
   if (action === 'editSymbol') {

@@ -580,7 +580,10 @@ function createWxMock(): WxMock {
               id: row.id,
               text: row.text,
               source: row.source || '',
-              sourceDreamId: '',
+              sourceDreamId: row.sourceDreamId || '',
+              inUseAt: row.inUseAt || null,
+              retiredAt: row.retiredAt || null,
+              pinnedAt: row.pinnedAt || null,
               createdAt: row.createdAt || '2026-08-01T00:00:00.000Z',
               updatedAt: row.createdAt || '2026-08-01T00:00:00.000Z',
             })),
@@ -1982,55 +1985,110 @@ wx.storage['oneiro:dreamArchive'] = [
     },
   },
 ];
+const inUse = '2026-08-10T00:00:00.000Z';
+wx.lifeNoteRows = [
+  { id: 'n1', text: '我最近其实很颓废，我啥也不想干只想躺着，事实上我已经这样有两三个月了', source: '', inUseAt: inUse, sourceDreamId: 'dream-with-connection' },
+  { id: 'n2', text: '黑夜中的馈赠，呼应了你当前过渡期中那种不确定但充满可能的感觉', source: '', inUseAt: inUse },
+  { id: 'n3', text: '我在考虑出国', source: '', inUseAt: inUse },
+  { id: 'n4', text: '那句说反了，我是当场就讲', source: 'portrait_correction', inUseAt: inUse },
+  { id: 'n5', text: '这周开始每天走一万步', source: '' },
+  { id: 'n6', text: '换了个新组，还在适应', source: '', retiredAt: inUse, sourceDreamId: 'deleted-dream' },
+];
 const lifeNotePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
 lifeNotePage.onLoad();
-const spokenGroup = lifeNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === 'spoken');
-const confirmedGroup = lifeNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === 'confirmed');
+const findGroup = (key: string) =>
+  lifeNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === key);
+const spokenGroup = findGroup('spoken');
+const confirmedGroup = findGroup('confirmed');
 assert.ok(spokenGroup && confirmedGroup);
 // 画像纠偏里说的话也是他的原话，和梦后对话提取的归在一起。
 assert.equal(spokenGroup.total, 5);
 assert.equal(confirmedGroup.total, 1);
-assert.ok(!spokenGroup.notes.some((note: Record<string, any>) => note.id === 'n2'));
 assert.ok(confirmedGroup.hint.includes('Oneiro 写的'));
-assert.equal(confirmedGroup.notes[0].id, 'n2', '云端没给 source 时，本地要自己认出这是我们写的句子');
+// source 是一个旧版云函数会静默省略的字段，缺席时的默认值恰好是最糟的那个。
+// n2 故意不带 source：本地必须自己认出它逐字就是梦册里那条呼应。
+assert.equal(confirmedGroup.activeNotes[0].id, 'n2', '云端没给 source 时，本地要自己认出这是我们写的句子');
+assert.ok(!spokenGroup.activeNotes.some((note: Record<string, any>) => note.id === 'n2'));
 
-// 折叠：超过三条才出现展开入口，展开后全部可见。
-assert.equal(spokenGroup.notes.length, 3);
-assert.equal(spokenGroup.collapsible, true);
-assert.equal(spokenGroup.hiddenCount, 2);
-assert.equal(confirmedGroup.collapsible, false);
-lifeNotePage.toggleLifeNoteGroup({ currentTarget: { dataset: { group: 'spoken' } } });
-assert.equal(
-  lifeNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === 'spoken').notes.length,
-  5
+// 这一屏此前在骗人：真正影响画像的只有一部分，其余照样完整显示在一个标题写着
+// 「关于你的记录」的页面上，却一点作用都没有，也没人告诉用户哪些是摆设。
+assert.deepEqual(
+  spokenGroup.activeNotes.map((note: Record<string, any>) => note.id),
+  ['n1', 'n3', 'n4']
 );
+assert.equal(spokenGroup.dormantCount, 2, '没在用的和已退休的都归入「更早的」');
+assert.equal(spokenGroup.collapsible, true);
+// 折叠的是「更早的」，不是在用的——把在用的藏起来，这一屏又变回看不出实情的清单。
+assert.equal(spokenGroup.dormantNotes.length, 0);
+lifeNotePage.toggleLifeNoteGroup({ currentTarget: { dataset: { group: 'spoken' } } });
+assert.deepEqual(
+  findGroup('spoken').dormantNotes.map((note: Record<string, any>) => note.id),
+  ['n5', 'n6']
+);
+assert.equal(findGroup('spoken').activeNotes.length, 3, '展开更早的不该影响在用的那段');
 
 // 缩略：长句先截断，点一下看全文。
-const longNote = lifeNotePage.data.lifeNoteGroups
-  .find((group: Record<string, any>) => group.key === 'spoken')
-  .notes.find((note: Record<string, any>) => note.id === 'n1');
+const longNote = findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n1');
 assert.equal(longNote.truncated, true);
 assert.ok(longNote.displayText.endsWith('…'));
 assert.ok(longNote.displayText.length < longNote.text.length);
 lifeNotePage.toggleLifeNote({ currentTarget: { dataset: { key: 'n1' } } });
 assert.equal(
-  lifeNotePage.data.lifeNoteGroups
-    .find((group: Record<string, any>) => group.key === 'spoken')
-    .notes.find((note: Record<string, any>) => note.id === 'n1').displayText,
+  findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n1').displayText,
   wx.lifeNoteRows[0].text
 );
-// 短句不该被加上「全文」。
 assert.equal(
-  lifeNotePage.data.lifeNoteGroups
-    .find((group: Record<string, any>) => group.key === 'spoken')
-    .notes.find((note: Record<string, any>) => note.id === 'n3').truncated,
+  findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n3').truncated,
   false
 );
 
+// 每条记录一直存着「我是从哪个梦来的」，只是从来没拿出来用。一句话孤零零摆在
+// 那儿，用户看不出它是什么时候、聊什么的时候说的。
+assert.equal(findGroup('spoken').activeNotes[0].dreamLabel, '黑夜中的馈赠');
+assert.equal(findGroup('spoken').activeNotes[0].dreamOpenable, true);
+lifeNotePage.openNoteDream({ currentTarget: { dataset: { dreamId: 'dream-with-connection' } } });
+assert.equal(last(wx.navigations), '/pages/result/index?id=dream-with-connection');
+// 梦被删掉时给一句实话，不给死链接。
+const retiredNote = findGroup('spoken').dormantNotes.find((note: Record<string, any>) => note.id === 'n6');
+assert.equal(retiredNote.dreamLabel, '梦已删除');
+assert.equal(retiredNote.dreamOpenable, false);
+const navigationsBeforeDeadLink = wx.navigations.length;
+lifeNotePage.openNoteDream({ currentTarget: { dataset: { dreamId: '' } } });
+assert.equal(wx.navigations.length, navigationsBeforeDeadLink);
+// 画像纠偏里说的话不属于任何一个梦，也就没有链接。
+assert.equal(findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n4').dreamLabel, '');
+
+// 「一直重要」：哪些记录还算数由用户说了算，不是我们拿一个时间窗替他决定。
+assert.equal(findGroup('spoken').activeNotes[0].pinned, false);
+wx.lifeNoteRows = wx.lifeNoteRows.map((row: Record<string, any>) =>
+  row.id === 'n5' ? { ...row, pinnedAt: inUse } : row
+);
+lifeNotePage.togglePinLifeNote({ currentTarget: { dataset: { key: 'n5' } } });
+assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data.action === 'pinLifeNote'));
+assert.equal(
+  last(wx.cloudCalls.filter((call) => call.name === 'saveDream' && call.data.action === 'pinLifeNote')).data.pinned,
+  true
+);
+
+// 云端还没标过谁在用（老数据、或者还没生成过画像）：退回原来的显示方式，不要
+// 显示成「0 条正在影响」——那是另一句假话。
+wx.lifeNoteRows = [
+  { id: 'u1', text: '第一条还没被标记过的旧记录', source: '' },
+  { id: 'u2', text: '第二条还没被标记过的旧记录', source: '' },
+  { id: 'u3', text: '第三条还没被标记过的旧记录', source: '' },
+  { id: 'u4', text: '第四条还没被标记过的旧记录', source: '' },
+];
+const legacyNotePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+legacyNotePage.onLoad();
+const legacyGroup = legacyNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === 'spoken');
+assert.equal(legacyGroup.unknownUsage, true);
+assert.equal(legacyGroup.fallbackNotes.length, 3);
+assert.equal(legacyGroup.total, 4);
+
 // 分组之后按下标定位就不成立了——界面位置和 lifeNotes 里的位置不再对应，折叠
-// 还会让可见项少于实际项。编辑/删除必须按 id 查。
-assert.equal(lifeNotePage.findLifeNote({ currentTarget: { dataset: { key: 'n6' } } }).text, '换了个新组，还在适应');
-assert.equal(lifeNotePage.findLifeNote({ currentTarget: { dataset: { key: 'nope' } } }), null);
+// 还会让可见项少于实际项。编辑/删除/标记必须按 id 查。
+assert.equal(legacyNotePage.findLifeNote({ currentTarget: { dataset: { key: 'u4' } } }).text, '第四条还没被标记过的旧记录');
+assert.equal(legacyNotePage.findLifeNote({ currentTarget: { dataset: { key: 'nope' } } }), null);
 wx.lifeNoteRows = [];
 wx.storage['oneiro:dreamArchive'] = archiveBeforeLifeNoteCase;
 

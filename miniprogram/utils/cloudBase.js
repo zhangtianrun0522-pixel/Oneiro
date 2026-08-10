@@ -347,6 +347,15 @@ function confirmDreamConnection(dreamId, text, callback) {
   return addLifeNote(dreamId, text, 'dream_connection', callback);
 }
 
+// 「一直重要」。哪些记录还算数由用户说了算，不是我们拿一个时间窗替他决定。
+function pinLifeNote(noteId, pinned, callback) {
+  return callCloudFunction('saveDream', {
+    action: 'pinLifeNote',
+    noteId: noteId || '',
+    pinned: pinned === true
+  }, callback);
+}
+
 function deleteLifeNote(noteId, callback) {
   return callCloudFunction('saveDream', {
     action: 'deleteLifeNote',
@@ -842,6 +851,7 @@ module.exports = {
   answerRevisit: answerRevisit,
   skipRevisit: skipRevisit,
   addLifeNote: addLifeNote,
+  pinLifeNote: pinLifeNote,
   confirmDreamConnection: confirmDreamConnection,
   deleteLifeNote: deleteLifeNote,
   getLifeNotes: getLifeNotes,

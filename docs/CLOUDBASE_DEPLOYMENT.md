@@ -264,6 +264,19 @@ Rehdasu's `/v1/images/generations` endpoint is synchronous and historically take
 
 画像的纠偏入口是对话，不是输入框。「梦册」里的「这段不像我」会打开 `pages/dream-chat/index?portrait=1`，走 `interpretDream` 的 `chatAboutPortrait` 分支；用户在那里说的每一句原样存进 `life_notes`（`source: 'portrait_correction'`），下一次生成时作为高权重证据参与。手写覆盖画像的旧路径（`profileMemory` 的 `save` action）仍然受理并继续读取已存下的 `userEditedOriginal`，但客户端不再提供入口。
 
+#### 现实记录的存活规则（life_notes）
+
+记录永久保存，但只有一部分参与画像。以前的规则是「按时间取最新 10 条，第 11 条起归零」——一道切在时间顺序上的悬崖，唯一判据是谁更新。现在名额不变（画像只有 200 字，喂进四十条记录只会让模型去找它们的最大公约数），换的是选法：
+
+- **退休**：`retiredAt` 非空的记录完全不参与。退休由生成画像那次调用顺带判定（`retiredNoteIds`），只在更晚的说法确实取代了它时才发生——「我在考虑出国」之后说了「决定不去了」，前一句退休。时间顺序判断不了这件事，只有读得懂内容的才判得了。退休不可逆，所以只受理**这次真的进过名额**的 id，模型编一个或翻出一条名额外的都不作数。
+- **钉住**：`pinnedAt` 非空的记录不参与排队，永远占一个名额，并且会顺手解除退休。这是把「哪些还算数」的判断权交给用户，走 `saveDream` 的 `pinLifeNote` action。
+- **复述**：被更晚一条说了同一件事的记录排到最后（不删）——两条说同一件事同时占名额，只会让画像把它读两遍。判定用已有的二元组相似度，阈值 0.3。
+- **衰减**：其余按 `recencyWeight` 的四档阶梯（14/45/120 天）打分，反复被提起的乘以呼应加成。梦一直用着这套阶梯，此前从没用到记录上——梦是缓坡，记录是悬崖。
+
+每次生成画像时，被选中的记录写上 `inUseAt`。「我」页据此把记录分成「正在影响」和「更早的」，显示的是上一版画像**真正喂进去的那些**，不是界面自己再猜一遍。`listLifeNotes` 的上限从 30 提到 200：30 条那会儿，超出的记录仍然存在、仍然可能影响画像，却在界面上看不见，用户没有任何办法清理他看不到的东西。
+
+界面还按来源分组（用户原话 / 他点头认下的解读）。`source` 是旧版云函数会静默省略的字段，缺席时的默认值恰好最糟——我们写的句子会被标成「你说过的话」。所以客户端还有一条独立判据：`dream_connection` 的正文逐字就是某个梦的 `possible_connections`，本地梦册对得上就自己认领。
+
 #### 出生盘假设（冷启动与衰减）
 
 新用户还没有任何梦时，画像来自出生资料推出的 3-4 条假设。它们由 `profileMemory/baziHypotheses.js` 确定性生成（真太阳时校正后排四柱，只用日主、扶抑、十神偏向、五行空缺四个轴），存在 `profile_memory_state.baziHypotheses`，每条带 `untested / confirmed / rejected / expired` 状态。这个函数因此依赖 `lunar-javascript`，并保有一份与 `interpretDream` 逐字相同的 `locationResolver.js`（CI 会断言两份一致）。

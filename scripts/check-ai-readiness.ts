@@ -1576,7 +1576,7 @@ function loadProfileMemory() {
   vm.createContext(sandbox);
   vm.runInContext(
     fs.readFileSync(path.join(dir, 'index.js'), 'utf8') +
-      '\nmodule.exports.__test = { resolveHypotheses, applyHypothesisVerdicts, livingHypotheses, aiPrompt, HYPOTHESIS_DECAY_DREAM_COUNT };',
+      '\nmodule.exports.__test = { resolveHypotheses, applyHypothesisVerdicts, livingHypotheses, aiPrompt, HYPOTHESIS_DECAY_DREAM_COUNT, rankNotes, promptEvidence };',
     sandbox
   );
   return commonJsModule.exports;
@@ -1678,5 +1678,84 @@ const noHypothesisPrompt = lifecycle.aiPrompt({
 });
 assert.ok(!noHypothesisPrompt.includes('hypothesisVerdicts'));
 assert.ok(!noHypothesisPrompt.includes('待验证假设'));
+
+
+// ── 记录的存活规则 ──────────────────────────────────────────────────────
+//
+// 以前这里只有一句：按时间排序取最新的十条。上周说的话排在第十一位就直接
+// 消失，四个月前那句排在第十位就稳稳地继续影响画像——唯一的判据是谁更新。
+const day = 86400000;
+const ago = (days: number) => new Date(Date.now() - days * day).toISOString();
+const rankNotes = lifecycle.rankNotes;
+
+// 退休的完全不参与，不是排在后面，是不在了。
+assert.equal(
+  rankNotes([
+    { id: 'a', text: '我最近换了工作', createdAt: ago(1) },
+    { id: 'b', text: '我打算年底去青海', createdAt: ago(2), retiredAt: new Date() },
+  ]).length,
+  1
+);
+
+// 钉住的永远不沉，哪怕它是最老的一条。
+const pinnedRanking = rankNotes([
+  { id: 'fresh', text: '今天开始跑步', createdAt: ago(0) },
+  { id: 'pinned', text: '我妈的病是我这几年最大的事', createdAt: ago(400), pinnedAt: new Date() },
+]);
+assert.equal(pinnedRanking[0].id, 'pinned');
+
+// 反复提到的事留得比只说过一次的久。两条都很老，但一条被后来又说了一遍。
+const echoRanking = rankNotes([
+  { id: 'echo-new', text: '还是很想出国，一直在查签证的事', createdAt: ago(200) },
+  { id: 'lonely', text: '上个月把阳台重新收拾了一遍', createdAt: ago(200) },
+  { id: 'echo-old', text: '我一直在想出国的事，签证也查过了', createdAt: ago(300) },
+]);
+assert.equal(echoRanking[0].id, 'echo-new', '被后来又提起的事排在前面');
+// 而被更新说法盖掉的那条排到最后：它说的话已经有人在说了，再占一个名额只会
+// 让画像把同一件事读两遍。
+assert.equal(echoRanking[echoRanking.length - 1].id, 'echo-old');
+
+// 新的仍然默认比旧的重——衰减是缓坡，不是把时间因素扔掉。
+const decayRanking = rankNotes([
+  { id: 'old', text: '这周开始每天走一万步', createdAt: ago(200) },
+  { id: 'new', text: '我在考虑出国', createdAt: ago(1) },
+]);
+assert.equal(decayRanking[0].id, 'new');
+
+// 真正要修的那个场景：十一条记录，最新的一条不该因为排在第十一位就消失。
+const eleven = Array.from({ length: 10 }, (_, index) => ({
+  id: 'filler-' + index,
+  text: '第' + index + '件互不相干的旧事，内容各自不同互不重复',
+  createdAt: ago(200 + index),
+})).concat([{ id: 'newest', text: '我在考虑出国', createdAt: ago(1) }]);
+const selected = lifecycle.promptEvidence({
+  dreams: [],
+  notes: eleven.map((note) => ({ ...note, source: '', discussion: [] })),
+  user: null,
+}).selectedNoteIds;
+assert.ok(selected.includes('newest'), '最新的一条不得因为排在第十一位而落选');
+assert.equal(selected.length, 10, '名额仍然是十条——两百字的画像装不下四十条记录');
+
+// 落库的名额清单只给服务端用，不该混进喂给模型的证据里。
+assert.ok(
+  !lifecycle.aiPrompt({
+    user: null, dreams: [], notes: eleven.map((note) => ({ ...note, source: '', discussion: [] })), hypotheses: [], priorPortrait: null,
+  }).includes('selectedNoteIds')
+);
+
+// 退休必须是模型读内容判出来的，时间顺序判断不了「他改了主意」。
+const profileMemoryLifecycleSource = read('miniprogram/cloudfunctions/profileMemory/index.js');
+assert.ok(
+  profileMemoryLifecycleSource.includes('已经被更晚的一条替代掉了'),
+  '必须让模型判断有没有记录被更晚的说法替代'
+);
+assert.ok(
+  profileMemoryLifecycleSource.includes('退休是不可逆的'),
+  '退休不可逆这件事要写进提示词，否则模型会随手清理'
+);
+assert.ok(
+  profileMemoryLifecycleSource.includes('return selectedNoteIds.indexOf(id) >= 0;'),
+  '只有这次真的喂进去过的记录才可能被退休'
+);
 
 console.log(`AI readiness checks passed across ${runtimeFiles.length} Mini Program runtime files.`);

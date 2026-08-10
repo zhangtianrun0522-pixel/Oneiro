@@ -66,40 +66,77 @@ function noteSourceOf(note, connectionIndex) {
 }
 // 折叠后先露几条。多于这个数才出现展开入口。
 var LIFE_NOTE_COLLAPSED_COUNT = 3;
+// 「正在影响」这一段不折叠：它就是系统此刻真正在用的东西，藏起来这一屏又变回
+// 一份看不出实情的清单。inUseAt 由云端在每次生成画像时写下，所以这里显示的是
+// 上一版画像真正喂进去的那些，不是界面自己再猜一遍。
 // 单条超过这个长度就先截断，点一下看全文。手机上一行大概十六七个字，真实
 // 的线索普遍三十来字、占满三行；截到一行半，用户才看得出自己一共有多少条，
 // 而不是被两条长句糊满一屏。
 var LIFE_NOTE_PREVIEW_LENGTH = 24;
 
+function decorateNote(note, expandedNotes, dreamIndex) {
+  var body = String(note.text || '');
+  var key = note.localKey || note.id || '';
+  var noteExpanded = !!expandedNotes[key];
+  // 每条记录一直存着「我是从哪个梦来的」，只是从来没拿出来用。一句话孤零零
+  // 摆在那儿，用户看不出它是什么时候、聊什么的时候说的。
+  var dream = note.sourceDreamId ? dreamIndex[note.sourceDreamId] : null;
+  return Object.assign({}, note, {
+    localKey: key,
+    pinned: !!note.pinnedAt,
+    truncated: body.length > LIFE_NOTE_PREVIEW_LENGTH,
+    noteExpanded: noteExpanded,
+    displayText: !noteExpanded && body.length > LIFE_NOTE_PREVIEW_LENGTH
+      ? body.slice(0, LIFE_NOTE_PREVIEW_LENGTH) + '…'
+      : body,
+    dreamId: dream ? dream.id : '',
+    // 梦被删掉时给一句实话，不给死链接。
+    dreamLabel: note.sourceDreamId ? (dream ? (dream.title || '那个梦') : '梦已删除') : '',
+    dreamOpenable: !!dream
+  });
+}
+
+function buildDreamIndex(archive) {
+  var index = {};
+  (Array.isArray(archive) ? archive : []).forEach(function (dream) {
+    if (dream && dream.id) {
+      index[dream.id] = { id: dream.id, title: String((dream.result && dream.result.title) || '') };
+    }
+  });
+  return index;
+}
+
 function buildLifeNoteGroups(notes, expandedGroups, expandedNotes, archive) {
   var list = Array.isArray(notes) ? notes : [];
   var connectionIndex = buildConnectionIndex(archive);
+  var dreamIndex = buildDreamIndex(archive);
   return LIFE_NOTE_GROUPS.map(function (group) {
     var groupNotes = list.filter(function (note) {
       return group.sources.indexOf(noteSourceOf(note, connectionIndex)) >= 0;
     }).map(function (note) {
-      var text = String(note.text || '');
-      var key = note.localKey || note.id || '';
-      var noteExpanded = !!expandedNotes[key];
-      return Object.assign({}, note, {
-        localKey: key,
-        truncated: text.length > LIFE_NOTE_PREVIEW_LENGTH,
-        noteExpanded: noteExpanded,
-        displayText: !noteExpanded && text.length > LIFE_NOTE_PREVIEW_LENGTH
-          ? text.slice(0, LIFE_NOTE_PREVIEW_LENGTH) + '…'
-          : text
-      });
+      return decorateNote(note, expandedNotes, dreamIndex);
     });
+    // 这一屏此前在骗人：真正影响画像的只有云端选出的那些，其余的照样完整显示
+    // 在一个标题写着「关于你的记录」的页面上，却一点作用都没有，而且没有任何
+    // 地方告诉用户哪些是摆设。
+    var active = groupNotes.filter(function (note) { return !!note.inUseAt && !note.retiredAt; });
+    var dormant = groupNotes.filter(function (note) { return !note.inUseAt || note.retiredAt; });
     var groupExpanded = !!expandedGroups[group.key];
     return {
       key: group.key,
       label: group.label,
       hint: group.hint,
       total: groupNotes.length,
+      activeNotes: active,
+      dormantCount: dormant.length,
       expanded: groupExpanded,
-      collapsible: groupNotes.length > LIFE_NOTE_COLLAPSED_COUNT,
-      hiddenCount: Math.max(0, groupNotes.length - LIFE_NOTE_COLLAPSED_COUNT),
-      notes: groupExpanded ? groupNotes : groupNotes.slice(0, LIFE_NOTE_COLLAPSED_COUNT)
+      collapsible: dormant.length > 0,
+      dormantNotes: groupExpanded ? dormant : dormant.slice(0, 0),
+      // 云端还没写过 inUseAt 时（老数据、或者还没生成过画像），退回原来的行为：
+      // 先露几条，其余折叠。否则整组会显示成「0 条正在影响」，那是另一句假话。
+      unknownUsage: active.length === 0 && groupNotes.length > 0 &&
+        !groupNotes.some(function (note) { return note.inUseAt || note.retiredAt; }),
+      fallbackNotes: groupExpanded ? groupNotes : groupNotes.slice(0, LIFE_NOTE_COLLAPSED_COUNT)
     };
   }).filter(function (group) { return group.total > 0; });
 }
@@ -298,6 +335,37 @@ Page({
     next[key] = !next[key];
     this.setData({ lifeNoteExpandedGroups: next });
     this.renderLifeNotes();
+  },
+
+  // 「一直重要」：钉住的记录不参与排队，永远占一个名额。哪些还算数由用户说了
+  // 算，不是我们拿一个时间窗替他决定。
+  togglePinLifeNote: function (event) {
+    var that = this;
+    var note = this.findLifeNote(event);
+    if (!note || !note.id) {
+      wx.showToast({ title: '联网后可标记这条', icon: 'none' });
+      return;
+    }
+    var nextPinned = !note.pinnedAt;
+    cloudBase.pinLifeNote(note.id, nextPinned, function (result) {
+      if (!result || !result.ok) {
+        wx.showToast({ title: '暂时没成功，请稍后再试', icon: 'none' });
+        return;
+      }
+      that.loadLifeNotes();
+      that.refreshPortraitInBackground(
+        nextPinned ? '用户标记了一条一直重要的记录' : '用户取消了一条记录的标记',
+        'life-note-pin:' + note.id + ':' + String(Date.now())
+      );
+      wx.showToast({ title: nextPinned ? '已标记为一直重要' : '已取消标记', icon: 'none' });
+    });
+  },
+
+  openNoteDream: function (event) {
+    var dreamId = String(event.currentTarget.dataset.dreamId || '');
+    if (!dreamId) return;
+    analytics.trackEvent('life_note_open_dream', { dreamId: dreamId });
+    wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dreamId) });
   },
 
   toggleLifeNote: function (event) {

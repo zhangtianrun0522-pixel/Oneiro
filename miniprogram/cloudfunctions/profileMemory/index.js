@@ -327,6 +327,89 @@ function longTermPatterns(sources) {
   };
 }
 
+// ── 记录的存活规则 ──────────────────────────────────────────────────────
+//
+// 以前这里只有一句：按时间排序，取最新的十条，第十一条起扔掉。不是「越老越
+// 轻」，是「到第十一条就归零」——一道悬崖，切在时间顺序上。
+//
+// 后果很具体：上周说的「我在考虑出国」如果排在第十一位，直接消失；四个月前
+// 那句「这周开始每天走一万步」排在第十位，稳稳地继续影响画像，哪怕早就不走
+// 了。唯一的判据是谁更新，完全不看谁还成立。
+//
+// 梦其实早就有衰减（recencyWeight 的四档阶梯），只是从没用到记录上。梦是缓
+// 坡，记录是悬崖。现在把同一套阶梯接过来，再加两件时间说明不了的事：这件事
+// 后来有没有又被提起，以及用户有没有亲手说过它一直重要。
+//
+// 名额仍然是十条——画像只有两百字，装不下四十条记录，喂多了模型会去找它们
+// 的最大公约数，写出来更泛而不是更准。要改的从来不是名额，是选法。
+
+// 中文散文里，同一件事换一遍措辞的二元组相似度实测在 0.33 上下，完全不同的
+// 判断在 0.08。阈值取 0.3：宁可多认几条呼应，也不要把真的重复漏掉——漏掉的
+// 代价是两条说同一件事的记录同时占着名额。
+const NOTE_ECHO_SIMILARITY = 0.3;
+const NOTE_ECHO_BONUS = 0.6;
+const NOTE_MAX_ECHOES = 2;
+// 用户亲手钉住的记录不参与排队。「哪些还算数」应该由他说了算，而不是我们拿
+// 一个时间窗替他决定。
+const NOTE_PINNED_SCORE = 1000;
+// 被更新的说法盖过去的那条：不删，但排到最后。它说的话已经有人在说了，再占
+// 一个名额只是让画像把同一件事读两遍。
+const NOTE_RESTATED_SCORE = 0.05;
+
+function noteRetired(note) {
+  return !!(note && note.retiredAt);
+}
+
+// notes 已经是新在前。对每条记录：它复述了几条更老的（说明这件事反复出现），
+// 以及它有没有被更新的一条复述掉（说明它已经过时了）。
+function annotateNoteEchoes(notes) {
+  const restated = {};
+  const echoes = {};
+  notes.forEach(function (note, index) {
+    echoes[index] = 0;
+    for (let older = index + 1; older < notes.length; older += 1) {
+      if (textSimilarity(note.text, notes[older].text) >= NOTE_ECHO_SIMILARITY) {
+        echoes[index] += 1;
+        restated[older] = true;
+      }
+    }
+  });
+  return notes.map(function (note, index) {
+    return Object.assign({}, note, {
+      echoCount: echoes[index],
+      restatedByNewer: !!restated[index]
+    });
+  });
+}
+
+function scoreNote(note) {
+  if (noteRetired(note)) return -1;
+  if (note.pinnedAt) return NOTE_PINNED_SCORE;
+  if (note.restatedByNewer) return NOTE_RESTATED_SCORE;
+  return recencyWeight(note.createdAt) *
+    (1 + Math.min(NOTE_MAX_ECHOES, note.echoCount || 0) * NOTE_ECHO_BONUS);
+}
+
+// 排出这一类记录里谁该占名额。退休的完全不参与——它们不是排在后面，是不在了。
+function rankNotes(notes) {
+  return annotateNoteEchoes(notes || [])
+    .filter(function (note) { return !noteRetired(note); })
+    .map(function (note) { return Object.assign({}, note, { score: scoreNote(note) }); })
+    .sort(function (left, right) {
+      if (right.score !== left.score) return right.score - left.score;
+      // 同分按新的在前，保持稳定顺序。
+      return new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime();
+    });
+}
+
+function promptNote(note) {
+  return {
+    id: note.id,
+    said: text(note.text, 140),
+    on: note.createdAt ? new Date(note.createdAt).toISOString().slice(0, 10) : ''
+  };
+}
+
 function promptEvidence(sources) {
   let remainingDiscussions = MAX_PROMPT_DISCUSSIONS;
   const dreams = sources.dreams.slice(0, MAX_PROMPT_DREAMS).map(function (dream) {
@@ -351,15 +434,29 @@ function promptEvidence(sources) {
   const plainNotes = sources.notes.filter(function (note) {
     return note.source !== 'dream_connection' && note.source !== 'portrait_correction';
   });
+  // 三类各自排名额。名额没变，变的是谁占——不再是「最新的十条」，是「最该
+  // 留的十条」。selected 会被 main 拿去落库，好让界面显示的「正在影响」和
+  // 这次真正喂进去的东西严格一致，而不是界面自己再猜一遍。
+  const rankedPlain = rankNotes(plainNotes);
+  const rankedConfirmed = rankNotes(confirmedConnections);
+  const rankedCorrections = rankNotes(corrections);
+  const activePlain = rankedPlain.slice(0, MAX_PROMPT_NOTES);
+  const activeConfirmed = rankedConfirmed.slice(0, MAX_PROMPT_NOTES);
+  const activeCorrections = rankedCorrections.slice(0, MAX_PROMPT_NOTES);
   return {
     recentDreams: dreams,
-    recentLifeNotes: plainNotes.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
-    userConfirmedConnections: confirmedConnections.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
-    portraitCorrections: corrections.slice(0, MAX_PROMPT_NOTES).map(function (note) { return text(note.text, 140); }),
+    // 带上 id 和日期：没有 id 模型没法指认「是哪一条被替代了」，没有日期它
+    // 分不清谁先谁后，也就判不出替代关系。
+    recentLifeNotes: activePlain.map(promptNote),
+    userConfirmedConnections: activeConfirmed.map(promptNote),
+    portraitCorrections: activeCorrections.map(promptNote),
     longTermPatterns: longTermPatterns(sources),
     omittedDreamCount: Math.max(0, sources.dreams.length - dreams.length),
-    omittedLifeNoteCount: Math.max(0, plainNotes.length - MAX_PROMPT_NOTES),
-    omittedConfirmedConnectionCount: Math.max(0, confirmedConnections.length - MAX_PROMPT_NOTES)
+    omittedLifeNoteCount: Math.max(0, rankedPlain.length - activePlain.length),
+    omittedConfirmedConnectionCount: Math.max(0, rankedConfirmed.length - activeConfirmed.length),
+    selectedNoteIds: activePlain.concat(activeConfirmed).concat(activeCorrections)
+      .map(function (note) { return note.id; })
+      .filter(Boolean)
   };
 }
 
@@ -409,7 +506,10 @@ function sourceManifest(sources) {
         id: text(note && note.id, 80),
         text: text(note && note.text, 220),
         source: text(note && note.source, 40),
-        createdAt: dateKey(note && note.createdAt)
+        createdAt: dateKey(note && note.createdAt),
+        // 退休或钉住会改变谁占名额，也就改变了喂给画像的东西，必须进指纹。
+        retiredAt: dateKey(note && note.retiredAt),
+        pinnedAt: dateKey(note && note.pinnedAt)
       });
     }).sort(),
     hypotheses: hypothesisFingerprintPart(sources && sources.hypotheses)
@@ -593,6 +693,9 @@ async function loadSources(openid) {
       // 他自己讲出来的现实线索。两者的证据性质不同，见 promptEvidence。
       source: text(note.source, 40),
       createdAt: note.createdAt || null,
+      // 退休和钉住决定这条还占不占名额，见 rankNotes。
+      retiredAt: note.retiredAt || null,
+      pinnedAt: note.pinnedAt || null,
       ref: sourceRef('life_notes', note)
     };
   }).filter(function (item) { return item.id && item.text; });
@@ -803,7 +906,10 @@ function normalizeObservation(raw, fallback, allowOrigin) {
     baseProfile: fallback.baseProfile,
     sourceCounts: fallback.sourceCounts,
     changeReason: text(raw.changeReason, 220) || fallback.changeReason,
-    hypothesisVerdicts: normalizeVerdicts(raw.hypothesisVerdicts)
+    hypothesisVerdicts: normalizeVerdicts(raw.hypothesisVerdicts),
+    // 退休是不可逆的，所以宁可少收：只认这次真的喂进去过的那些 id，模型编一个
+    // 出来或者翻出一条早就不在名额里的，都不作数。
+    retiredNoteIds: cleanStrings(raw.retiredNoteIds, 6, 80)
   };
 }
 
@@ -839,6 +945,8 @@ function hypothesisPromptRules(hypotheses) {
 function aiPrompt(sources) {
   const profile = baseProfile(sources.user);
   const evidence = promptEvidence(sources);
+  // 名额清单是给服务端落库用的，模型不需要看，混在证据里只是噪声。
+  delete evidence.selectedNoteIds;
   const living = livingHypotheses(sources.hypotheses);
   const coldStart = !sources.dreams.length && !sources.notes.length && living.length > 0;
   const priorPortrait = sources.priorPortrait ? normalizedSnapshot(sources.priorPortrait) : null;
@@ -905,8 +1013,13 @@ function aiPrompt(sources) {
     // 用户在画像下面「聊聊」时说的话。他是冲着纠正这份画像来的，所以这些话
     // 的针对性比梦后闲聊强得多——他在直接告诉我们哪里说错了。
     'portraitCorrections 是用户读完上一版画像后，在对话里亲口说的话。它们是他对这份画像的直接回应，权重仅次于他手改过的自我描述：与画像冲突的地方以他说的为准。',
+    // 记录以前只按时间排队，说过就永远算数——他说「在考虑出国」，后来说
+    // 「决定不去了」，前一句仍然稳稳地继续影响画像。时间顺序判断不了这件事，
+    // 只有读得懂内容的才判得了，而模型这一次调用本来就把它们全看过一遍。
+    '每条记录都带 id 和日期。请顺带判断有没有哪一条已经被更晚的一条替代掉了——同一件事有了新说法、他改了主意、或者那件事已经结束。有就放进 retiredNoteIds。',
+    '只在确实冲突或确实过时的时候才退休一条。说的是不同的事、或者只是措辞相近，都不算；拿不准就不要放进去。退休是不可逆的，它以后不会再影响画像。',
   ].concat(living.length ? hypothesisPromptRules(living) : []).concat([
-    '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":""' +
+    '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":"","retiredNoteIds":[]' +
       (living.length ? ',"hypothesisVerdicts":[{"id":"","verdict":"support|contradict|unclear","evidence":""}]' : '') + '}。',
     // 出生资料从这里拿掉了。它以前整份塞在提示里，却没有任何一条规则说该拿它
     // 干什么——模型完全可以自己算出生肖星座再悄悄用来写判断，我们既没让它用
@@ -1031,6 +1144,31 @@ async function runAtomic(work) {
   return work(db);
 }
 
+// 记录的存活状态写回 life_notes 本身，不写进快照——它是一份持续演化的账本，
+// 不该跟着版本号复制三十份。两件事一起写：
+//   retiredAt  这条被更晚的说法替代了，以后不再影响画像
+//   inUseAt    这一次画像真的把它喂进去了，界面据此显示「正在影响」
+// 全部 catch 住：账本写失败不该让画像发不出去，最坏只是下次再判一遍。
+async function persistNoteLifecycle(openid, selectedIds, retiredIds) {
+  const now = new Date();
+  const retired = {};
+  const jobs = [];
+  (retiredIds || []).forEach(function (id) {
+    if (!id || retired[id]) return;
+    retired[id] = true;
+    jobs.push(db.collection('life_notes').doc(id).update({
+      data: { retiredAt: now, inUseAt: null }
+    }).catch(function () { return null; }));
+  });
+  (selectedIds || []).forEach(function (id) {
+    if (!id || retired[id]) return;
+    jobs.push(db.collection('life_notes').doc(id).update({
+      data: { inUseAt: now }
+    }).catch(function () { return null; }));
+  });
+  if (jobs.length) await Promise.all(jobs);
+}
+
 // 假设集合单独落库，不进快照。放在 state 上而不是每版快照里，是因为它是一份
 // 持续演化的账本，不该跟着版本号复制 30 份；写失败也不该让画像生成失败——
 // 最坏情况只是下次重新派生一遍，得到的是同一批 id。
@@ -1086,6 +1224,14 @@ exports.main = async function (event) {
       // 判定和画像是同一次调用返回的，所以这里不额外花一次 provider 请求。
       // 落库放在快照事务之外：判定的账本和版本号没有关系，而且它写失败时
       // 画像照发——假设留在 untested，下次再判，最坏也会在第 10 个梦到期。
+      // 只认这次真的进过名额的 id。模型翻出一条不在名额里的、或者干脆编一个，
+      // 都不能让它退休——退休不可逆，宁可漏判也不能误判。
+      const selectedNoteIds = promptEvidence(sources).selectedNoteIds || [];
+      const retiredNoteIds = (observation.retiredNoteIds || []).filter(function (id) {
+        return selectedNoteIds.indexOf(id) >= 0;
+      });
+      await persistNoteLifecycle(openid, selectedNoteIds, retiredNoteIds);
+
       const verdicts = applyHypothesisVerdicts(sources.hypotheses, observation.hypothesisVerdicts, now);
       if (verdicts.changed) {
         sources.hypotheses = verdicts.list;
