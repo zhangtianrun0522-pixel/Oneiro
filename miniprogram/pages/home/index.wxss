@@ -519,3 +519,29 @@
   line-height: 1.6;
   text-align: center;
 }
+
+/* 示例入口。刻意做成低对比度的文字块而不是按钮：主动作永远是那个圆环，这里
+   只是给第一次来的人留一条「先看看」的路。 */
+.sample-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6rpx;
+  margin-top: var(--space-group);
+  padding: 18rpx 24rpx;
+}
+
+.sample-entry-label {
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  border-bottom: 1rpx solid rgba(33, 29, 23, 0.28);
+  padding-bottom: 6rpx;
+}
+
+.sample-entry-hint {
+  color: var(--ink-55);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+}

@@ -700,6 +700,7 @@ function cardBackInsight(result) {
 Page({
   data: {
     entryReady: false,
+    sampleMode: false,
     quotaBlocked: false,
     displayTimestamp: formatCardTimestamp(new Date()),
     cardFlipped: false,
@@ -753,6 +754,10 @@ Page({
     var app = getApp();
     var requestsFixture = options && options.fixture === '1';
     var isFixture = options && options.fixture === '1' && options.devPreview === '1';
+    // 示例梦：新用户在记下第一个梦之前，用它看清「解读」到底会给出什么。用的是
+    // 验收那条月钥，走真实的结果页渲染，但不落盘、不生图、不同步——它不是这个
+    // 人的梦，不能进他的档案，也不该花掉一次生成。
+    var isSample = !!(options && options.sample === '1') && !(options && Object.prototype.hasOwnProperty.call(options, 'id'));
     var hasRouteId = !!(options && Object.prototype.hasOwnProperty.call(options, 'id'));
     var routeDreamId = hasRouteId ? normalizeDreamId(options.id) : '';
     var savedDream = hasRouteId && routeDreamId ? findDreamById(routeDreamId) : null;
@@ -763,7 +768,10 @@ Page({
     var dream;
 
     this.entryRouteId = hasRouteId ? routeDreamId : '';
-    this.entryIsFixture = isFixture && !hasRouteId;
+    // 示例和 fixture 共用「这不是一条真实记录」这个判定：入口校验、云端修复、
+    // 落盘几处的既有守卫都挂在它上面。
+    this.entryIsFixture = (isFixture || isSample) && !hasRouteId;
+    this.entryIsSample = isSample;
     this.redirectingHome = false;
     this.setData({ entryReady: false });
 
@@ -774,7 +782,7 @@ Page({
 
     if (hasRouteId) {
       dream = savedDream || matchingCurrentDream;
-    } else if (isFixture) {
+    } else if (isFixture || isSample) {
       dream = {
         dreamText: acceptanceDreamText,
         profile: wx.getStorageSync('oneiro:lastProfile') || app.globalData.lastProfile,
@@ -795,7 +803,8 @@ Page({
     // remains unavailable and cannot reach image generation.
     if (!dream.status && dream.result && typeof dream.result === 'object' && Object.keys(dream.result).length) {
       dream = Object.assign({}, dream, { status: 'ready' });
-      persistLocalDream(dream);
+      // 示例梦同样没有 status，但它绝不能借这条兼容路径写进用户的档案。
+      if (!this.entryIsFixture) persistLocalDream(dream);
     }
 
     var interpretationUnavailable = dream.status !== 'ready' ||
@@ -848,6 +857,10 @@ Page({
       metaphysicalReadingError: '',
       metaphysicalProfileMissing: false,
       interpretationUnavailable: interpretationUnavailable,
+      // 「今天用完了」和「出错了」在页面上必须长得不一样：一个是等明天，一个是
+      // 现在就该重试。
+      quotaBlocked: String(dream.interpretationErrorCode || '') === 'daily_quota_exceeded',
+      sampleMode: isSample,
       dreamTextCollapsible: isDreamTextCollapsible(dream.dreamText),
       dreamTextExpanded: false,
       entryReady: true
@@ -857,12 +870,9 @@ Page({
     }
     this.restoreSavedDreamImage(dream);
     analytics.trackEvent('result_view', {
-      // 「今天用完了」和「出错了」在页面上必须长得不一样：一个是等明天，一个是
-      // 现在就该重试。
-      quotaBlocked: String(dream.interpretationErrorCode || '') === 'daily_quota_exceeded',
       dreamId: dream.id || '',
       cardTheme: dream.result.card_theme || 'mist',
-      source: isFixture ? 'fixture' : savedDream ? 'archive_or_route' : 'current'
+      source: isSample ? 'sample' : isFixture ? 'fixture' : savedDream ? 'archive_or_route' : 'current'
     });
   },
 
@@ -874,6 +884,9 @@ Page({
       return;
     }
     if (this.data.interpretationUnavailable) return;
+    // 示例梦不进生图管线：卡面本来就是这条梦的 CSS 画面，为一条不属于用户的梦
+    // 调一次生图纯粹是白花钱。
+    if (this.data.sampleMode) return;
 
     setTimeout(function () {
       that.imagePipelineStarted = true;
@@ -957,19 +970,6 @@ Page({
         return;
       }
 
-      if (!cloudResult || !cloudResult.ok || !cloudResult.result) {
-        var failedDiagnostics = normalizeInterpretationDiagnostics(cloudResult);
-        dream.status = 'pending';
-        dream.result = null;
-        dream.interpretationError = String(
-          cloudResult && (cloudResult.reason || cloudResult.message) || 'ai_provider_error'
-        ).slice(0, 300);
-        dream.interpretationErrorCode = failedDiagnostics.code || 'ai_provider_error';
-        dream.interpretationDiagnostics = failedDiagnostics;
-        dream.updatedAt = new Date().toISOString();
-        that.pendingInterpretationDream = dream;
-        persistLocalDream(dream);
-        cloudBase.saveDream(dream, function (saveResult) {
       // 额度用完和「解读暂不可用」是两件事：后者重试就可能好，前者今天怎么点
       // 都不会好。用同一个 toast 打发，用户只会一直点。
       if (cloudResult && cloudResult.quotaExceeded) {
@@ -1006,6 +1006,19 @@ Page({
         return;
       }
 
+      if (!cloudResult || !cloudResult.ok || !cloudResult.result) {
+        var failedDiagnostics = normalizeInterpretationDiagnostics(cloudResult);
+        dream.status = 'pending';
+        dream.result = null;
+        dream.interpretationError = String(
+          cloudResult && (cloudResult.reason || cloudResult.message) || 'ai_provider_error'
+        ).slice(0, 300);
+        dream.interpretationErrorCode = failedDiagnostics.code || 'ai_provider_error';
+        dream.interpretationDiagnostics = failedDiagnostics;
+        dream.updatedAt = new Date().toISOString();
+        that.pendingInterpretationDream = dream;
+        persistLocalDream(dream);
+        cloudBase.saveDream(dream, function (saveResult) {
           dream.cloudSynced = !!(saveResult && saveResult.ok);
           persistLocalDream(dream);
           if (!dream.cloudSynced) queueDreamSync(dream);
@@ -2298,6 +2311,13 @@ Page({
 
   newDream: function () {
     analytics.trackEvent('dream_start', { source: 'result' });
+    tabNav.switchTab('pages/home/index');
+  },
+
+  // 看完示例之后唯一该有的下一步。单独埋点，这样「看了例子的人有多少真的去记了
+  // 第一个梦」是一个可以直接查的数字。
+  leaveSample: function () {
+    analytics.trackEvent('sample_exit_to_capture', {});
     tabNav.switchTab('pages/home/index');
   },
 

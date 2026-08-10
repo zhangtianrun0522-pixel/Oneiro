@@ -250,6 +250,7 @@ Page({
     voicePressed: false,
     heroCardNo: '',
     heroDate: '',
+    showSampleEntry: false,
     analysisActive: false,
     analysisPreview: '',
     analysisStageIndex: 0,
@@ -286,8 +287,17 @@ Page({
     var now = new Date();
     this.setData({
       heroCardNo: 'NO. ' + String(cardIndex).padStart(3, '0'),
-      heroDate: (now.getMonth() + 1) + '月' + now.getDate() + '日'
+      heroDate: (now.getMonth() + 1) + '月' + now.getDate() + '日',
+      // 一个梦都还没有的人，面对的是一块空白和一个圆环：他要先花一分钟说话、
+      // 再等七十秒，才第一次知道这个东西会给他什么。示例入口只在这个阶段出现，
+      // 记下第一个梦之后就消失——之后它只是噪音。
+      showSampleEntry: archive.length === 0
     });
+  },
+
+  openSample: function () {
+    analytics.trackEvent('sample_open', { source: 'home_empty' });
+    wx.navigateTo({ url: '/pages/result/index?sample=1' });
   },
 
   onUnload: function () {
@@ -970,16 +980,6 @@ Page({
           return;
         }
 
-        if (!cloudResult || !cloudResult.ok || !cloudResult.result) {
-          var diagnostics = normalizeInterpretationDiagnostics(cloudResult);
-          pendingDream.status = 'pending';
-          pendingDream.result = null;
-          pendingDream.interpretationSource = 'cloud';
-          pendingDream.interpretationProvider = cloudResult && cloudResult.provider
-            ? cloudResult.provider
-            : '';
-          pendingDream.interpretationError = String(
-            cloudResult && (cloudResult.reason || cloudResult.message) || 'ai_provider_error'
         // 当天解读次数用完。这不是失败，所以不走失败那条路：原梦此前已经存过
         // 一次，这里只把状态标清楚，然后留在首页把话说完。把人甩到一个写着
         // 「本次未生成解读」的结果页，读起来和真出错没有区别。
@@ -1015,6 +1015,16 @@ Page({
           return;
         }
 
+        if (!cloudResult || !cloudResult.ok || !cloudResult.result) {
+          var diagnostics = normalizeInterpretationDiagnostics(cloudResult);
+          pendingDream.status = 'pending';
+          pendingDream.result = null;
+          pendingDream.interpretationSource = 'cloud';
+          pendingDream.interpretationProvider = cloudResult && cloudResult.provider
+            ? cloudResult.provider
+            : '';
+          pendingDream.interpretationError = String(
+            cloudResult && (cloudResult.reason || cloudResult.message) || 'ai_provider_error'
           ).slice(0, 300);
           pendingDream.interpretationErrorCode = diagnostics.code || 'ai_provider_error';
           pendingDream.interpretationDiagnostics = diagnostics;

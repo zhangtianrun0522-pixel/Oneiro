@@ -1,4 +1,11 @@
 <view wx:if="{{entryReady}}" class="result-screen">
+  <!-- 示例必须在第一屏就自报家门。一份读起来像「系统已经很懂你」的解读，如果
+       用户过几秒才发现说的不是自己，那不是惊喜，是被骗了一下。 -->
+  <view wx:if="{{sampleMode}}" class="sample-banner">
+    <text class="sample-banner-label">示例</text>
+    <text class="sample-banner-copy">这是一个虚构的梦，用来看清解读会给出什么。它不会存进你的档案。</text>
+  </view>
+
   <block wx:if="{{!interpretationUnavailable}}">
     <view class="dream-card-stage">
       <view class="dream-card-switcher" bindtap="toggleDreamCard">
@@ -211,7 +218,7 @@
       <text class="reading-copy">{{dream.result.one_small_act}}</text>
     </view>
 
-    <view wx:if="{{!interpretationUnavailable && dream.status === 'ready'}}" class="dream-feedback">
+    <view wx:if="{{!interpretationUnavailable && dream.status === 'ready' && !sampleMode}}" class="dream-feedback">
       <text class="feedback-question">这份解读，贴合你吗</text>
       <view class="feedback-chips">
         <button wx:for="{{feedbackOptions}}" wx:key="value" class="feedback-chip {{feedback === item.value ? 'is-selected' : ''}}" data-feedback="{{item.value}}" bindtap="chooseDreamFeedback">{{item.label}}</button>
@@ -221,7 +228,7 @@
 
   <!-- 「未同步，稍后自动重试」反复出现却不说为什么，用户只能一直看着它。
        云函数其实每次都返回了失败原因，这里必须显示出来，否则无从排查。 -->
-  <view wx:if="{{cloudSyncPending}}" class="cloud-sync-notice">
+  <view wx:if="{{cloudSyncPending && !sampleMode}}" class="cloud-sync-notice">
     <view class="cloud-sync-copy">
       <text>{{cloudRepairing ? '云端同步中' : (qualitySyncPending ? '高清图待同步' : '未同步，稍后自动重试')}}</text>
       <text wx:if="{{cloudSyncReason && !cloudRepairing}}" class="cloud-sync-reason">{{cloudSyncReason}}</text>
@@ -234,7 +241,7 @@
        醒目，避免被忽略；不做成朱砂实心按钮，保持暖纸/深墨的克制调性 -->
   <!-- 被否定的呼应压过解读评价：前者指向一句具体的、用户刚刚亲手划掉的话，
        后者只是对整份解读的粗评。有更具体的东西可聊时，不该从粗评开始。 -->
-  <view wx:if="{{!interpretationUnavailable}}" class="dream-chat-entry {{connectionToCorrect || feedback === 'too_generic' || feedback === 'too_mystical' || feedback === 'not_grounded' ? 'has-feedback' : ''}}" bindtap="openDreamChat">
+  <view wx:if="{{!interpretationUnavailable && !sampleMode}}" class="dream-chat-entry {{connectionToCorrect || feedback === 'too_generic' || feedback === 'too_mystical' || feedback === 'not_grounded' ? 'has-feedback' : ''}}" bindtap="openDreamChat">
     <view class="chat-entry-copy">
       <text class="reading-label">{{connectionToCorrect ? '说说那条哪里不对' : feedback === 'too_generic' ? '从被忽略的画面聊起' : feedback === 'too_mystical' ? '只说梦里实际发生的事' : feedback === 'not_grounded' ? '从醒来后的现实联想聊起' : '聊聊这个梦'}}</text>
       <text class="chat-entry-question">{{connectionToCorrect ? '把实际的情况讲给我听，我重新理解' : feedback ? '把你的感受说具体一点' : dream.result.integration_question}}</text>
@@ -251,6 +258,14 @@
        CSS 绘制（border/transform），不再用 Unicode 字符 ◌ ↗——真机上
        iOS 会把 ↗ 渲染成彩色 emoji、◌ 渲染成不一致的字形，字宽/基线/字重
        都跟中文文本对不齐，把这一行的间距顶得不均匀。 -->
+  <!-- 示例梦没有可收藏、可分享、可删除的东西：这些按钮作用在一条不存在的记录
+       上，只会让人以为自己已经有了一个梦。这里换成唯一有意义的下一步。 -->
+  <view wx:if="{{sampleMode}}" class="sample-cta">
+    <text class="sample-cta-copy">你的解读会长成这样，但内容只来自你自己的梦。</text>
+    <button class="sample-cta-button" bindtap="leaveSample">记下我的第一个梦</button>
+  </view>
+
+  <block wx:if="{{!sampleMode}}">
   <view class="primary-actions">
     <button wx:if="{{!interpretationUnavailable}}" class="primary-action-link" bindtap="saveCard"><text class="action-icon icon-save"></text>{{cardSaved ? '已收藏梦卡' : '收藏梦卡'}}</button>
     <button wx:if="{{!interpretationUnavailable && !sharePath}}" class="primary-action-link" loading="{{sharePreparing}}" disabled="{{sharePreparing}}" bindtap="prepareShareCard"><text class="action-icon icon-share"></text>分享梦卡</button>
@@ -268,6 +283,7 @@
     <button class="text-button" bindtap="newDream">再记一个梦</button>
     <button class="text-button" bindtap="openArchive">梦境档案</button>
   </view>
+  </block>
 
   <text wx:if="{{shareImagePath}}" class="share-ready">梦卡图已准备，可保存或分享</text>
   <canvas type="2d" id="shareCanvas" class="share-canvas"></canvas>

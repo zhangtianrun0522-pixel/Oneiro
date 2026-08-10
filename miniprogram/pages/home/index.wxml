@@ -88,6 +88,17 @@
       <block wx:elif="{{dreamText}}">按住圆环可继续说 · 也可按住下滑</block>
       <block wx:else>按住说 · 或轻触文字输入</block>
     </text>
+
+    <!-- 只对一个梦都还没有、且此刻没在写的人出现。放在提示行之下、圆环之外，
+         它是一条出路，不能和主动作抢位置。 -->
+    <view
+      wx:if="{{showSampleEntry && !dreamText && !recording && !recognizing && !editingDream}}"
+      class="sample-entry"
+      bindtap="openSample"
+    >
+      <text class="sample-entry-label">先看一个例子</text>
+      <text class="sample-entry-hint">看看一个梦被解读之后是什么样</text>
+    </view>
   </view>
 
   <text wx:if="{{fromShare}}" class="share-note">你刚看到的是一张去隐私的梦卡。你也可以从一个画面开始，私密记下自己的梦。</text>

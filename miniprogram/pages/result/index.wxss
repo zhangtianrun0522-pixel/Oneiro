@@ -1211,3 +1211,59 @@
   border-color: rgba(184, 134, 59, 0.65);
   background: rgba(184, 134, 59, 0.08);
 }
+
+/* 示例梦。整块用比正文更轻的墨色 + 一条朱砂细线，读起来是「旁白」而不是内容
+   的一部分——它必须在扫一眼时就和真实解读区分开。 */
+.sample-banner {
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+  margin-bottom: var(--space-group);
+  padding: 20rpx 24rpx;
+  border-left: 4rpx solid var(--cinnabar);
+  background: var(--paper-raised);
+}
+
+.sample-banner-label {
+  flex: none;
+  color: var(--cinnabar-ink);
+  font-size: var(--fs-label);
+  font-weight: 800;
+  letter-spacing: 2rpx;
+}
+
+.sample-banner-copy {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: 1.7;
+}
+
+.sample-cta {
+  margin-top: var(--space-block);
+}
+
+.sample-cta-copy {
+  display: block;
+  margin-bottom: var(--space-tight);
+  color: var(--ink-55);
+  font-size: var(--fs-label);
+  line-height: 1.7;
+  text-align: center;
+}
+
+.sample-cta-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100% !important;
+  min-height: var(--tap-min);
+  border: 1rpx solid var(--ink);
+  border-radius: 2rpx;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: var(--fs-aux);
+  font-weight: 800;
+  letter-spacing: 1rpx;
+}

@@ -2887,6 +2887,64 @@ assert.equal(diagnosticsPage.data.smokeTest.provider, 'mock-cloud');
 assert.equal(diagnosticsPage.data.smokeTest.reason, 'provider_error');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.smokeTest));
 
+// ── 示例梦：可以被读，绝不能被存 ──
+// 它渲染在真实的结果页上，共用同一份数据结构，所以只要有一条写入路径漏掉守卫，
+// 一个虚构的梦就会出现在用户档案里，并且从此参与画像的证据统计。这里守的就是
+// 那条底线：看完之后，档案必须一字未动。
+const sampleResultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+const archiveBeforeSample = JSON.stringify(wx.storage['oneiro:dreamArchive'] ?? []);
+const cloudCallsBeforeSample = wx.cloudCalls.length;
+sampleResultPage.onLoad({ sample: '1' });
+assert.equal(sampleResultPage.data.sampleMode, true, '示例入口必须进入示例态');
+assert.equal(sampleResultPage.data.entryReady, true, '示例梦必须能正常渲染');
+assert.ok(sampleResultPage.data.dream.result.title, '示例梦必须带完整解读');
+assert.equal(
+  JSON.stringify(wx.storage['oneiro:dreamArchive'] ?? []),
+  archiveBeforeSample,
+  '示例梦不得写进本地档案'
+);
+// 埋点照常上报（要知道有多少人看了例子），但除此之外一个云调用都不许有：
+// 存梦、生图、同步修复都作用在一条不属于这个用户的记录上。
+assert.deepEqual(
+  wx.cloudCalls.slice(cloudCallsBeforeSample)
+    .map((call) => call.name)
+    .filter((name) => name !== 'trackEvent'),
+  [],
+  '示例梦除埋点外不得产生云调用'
+);
+sampleResultPage.onReady();
+assert.equal(sampleResultPage.data.imageStatus, 'idle', '示例梦不得进入生图管线');
+const resultSource = read('miniprogram/pages/result/index.js');
+assert.ok(
+  resultSource.includes('if (this.data.sampleMode) return;'),
+  'onReady 必须在示例态直接返回，不能只靠模板隐藏按钮'
+);
+// 收藏、分享、删除、聊聊这个梦作用在一条不存在的记录上；解读评价会把示例的
+// 反馈算进真实用户的反馈里。这四处必须由 sampleMode 关掉。
+const sampleTemplate = read('miniprogram/pages/result/index.wxml').replace(/<!--[\s\S]*?-->/g, '');
+assert.ok(sampleTemplate.includes('class="sample-banner"'), '示例态必须在第一屏自报家门');
+assert.ok(sampleTemplate.includes('bindtap="leaveSample"'), '示例态必须给出「去记第一个梦」的出口');
+for (const gated of ['class="primary-actions"', 'class="dream-chat-entry', 'class="dream-feedback"']) {
+  const at = sampleTemplate.indexOf(gated);
+  assert.ok(at > 0, `模板应包含 ${gated}`);
+  assert.ok(
+    sampleTemplate.slice(Math.max(0, at - 420), at).includes('sampleMode'),
+    `${gated} 必须被 sampleMode 关掉`
+  );
+}
+// 空态入口只对一个梦都没有的人出现，记下第一个梦之后必须消失。
+const homeTemplate = read('miniprogram/pages/home/index.wxml');
+assert.ok(homeTemplate.includes('bindtap="openSample"'), '首页空态应有示例入口');
+assert.ok(homeTemplate.includes('showSampleEntry'), '示例入口必须受 showSampleEntry 控制');
+homePage.refreshHeroLabel();
+assert.equal(
+  homePage.data.showSampleEntry,
+  ((wx.storage['oneiro:dreamArchive'] as unknown[]) ?? []).length === 0,
+  '有梦之后不得再显示示例入口'
+);
+homePage.openSample();
+assert.equal(last(wx.navigations), '/pages/result/index?sample=1');
+
 // ── 每天三次解读：限的是解读，不是记录 ──
 // 这条线错在任何一侧都很贵：限到记录上，用户醒来那几分钟里记不下梦，产品就没有
 // 存在的理由；限得太靠后，额度检查排在模型调用之后，钱已经花掉了。
@@ -2956,6 +3014,7 @@ for (const expected of [
   'archive_open',
   'archive_view',
   'archive_revisit',
+  'sample_open',
 ]) {
   assert.ok(eventNames.includes(expected), `expected analytics event ${expected}`);
 }
