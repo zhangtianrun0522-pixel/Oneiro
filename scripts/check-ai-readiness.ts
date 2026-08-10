@@ -1310,4 +1310,23 @@ const plainTextDreamChat = parseDreamChatContent('纯文本兼容回复', '最�
 assert.equal(plainTextDreamChat.reply, '纯文本兼容回复');
 assert.equal(plainTextDreamChat.realityClue, '');
 
+// ── 画像 prompt：必须写人，不写梦 ──
+const profileMemorySource = read('miniprogram/cloudfunctions/profileMemory/index.js');
+assert.ok(
+  profileMemorySource.includes('严禁转述、复述或改写任何一个梦的场景、角色或情节'),
+  'portrait prompt must ban dream scene retelling'
+);
+assert.ok(
+  profileMemorySource.includes('每一句话的主语应该是这个人的倾向、习惯、状态或处境，不是他的梦'),
+  'portrait prompt must require person-as-subject, not dreams'
+);
+assert.ok(
+  profileMemorySource.includes('不得复述梦境场景'),
+  'portrait prompt concise ban must also appear in the rules line'
+);
+assert.ok(
+  profileMemorySource.includes('只写推断结果，不铺垫原始场景作为佐证'),
+  'portrait prompt must ban using dream scenes as evidence padding'
+);
+
 console.log(`AI readiness checks passed across ${runtimeFiles.length} Mini Program runtime files.`);
