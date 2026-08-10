@@ -155,8 +155,10 @@ type CloudBaseModule = {
   getDreamArchive: (callback?: Function) => boolean;
   deleteDream: (dreamId: string, callback?: Function) => boolean;
   getLifeNotes: (callback?: Function) => boolean;
-  editLifeNote: (noteId: string, text: string, callback?: Function) => boolean;
   deleteLifeNote: (noteId: string, callback?: Function) => boolean;
+  // 都已废止，类型上留个位子好断言它们真的不在了。
+  editLifeNote?: undefined;
+  pinLifeNote?: undefined;
   createShareCard: (dream: Record<string, unknown>, callback?: Function) => boolean;
   getShareCard: (shareId: string, callback?: Function) => boolean;
   generateDreamImage: (prompt: string, dreamId: string, theme: string | Function, callback?: Function) => boolean;
@@ -585,7 +587,8 @@ function createWxMock(): WxMock {
               sourceDreamId: row.sourceDreamId || '',
               inUseAt: row.inUseAt || null,
               retiredAt: row.retiredAt || null,
-              pinnedAt: row.pinnedAt || null,
+              // 时间冲不掉的那类。界面据此说明一条旧记录为什么还在影响画像。
+              durable: row.durable === true,
               createdAt: row.createdAt || '2026-08-01T00:00:00.000Z',
               updatedAt: row.createdAt || '2026-08-01T00:00:00.000Z',
             })),
@@ -1225,6 +1228,10 @@ for (const [path, expected] of [
   ['miniprogram/utils/lifeNotes.js', '你认下的解读'],
   ['miniprogram/pages/life-notes/index.wxml', 'bindtap="toggleGroup"'],
   ['miniprogram/pages/life-notes/index.wxml', 'bindtap="deleteNote"'],
+  // 两组的区别不能只写在组标题上：滚过三条之后标题就出了屏幕，剩下的句子看
+  // 起来一模一样，而其中一半根本不是他说的。
+  ['miniprogram/pages/life-notes/index.wxml', '{{note.byline}}'],
+  ['miniprogram/utils/lifeNotes.js', 'Oneiro 写的'],
   ['miniprogram/pages/archive/index.wxml', '阶段画像'],
   ['miniprogram/pages/archive/index.wxml', '这段不像我'],
   ['miniprogram/pages/dream-chat/index.wxml', '{{portraitMode}}'],
@@ -1261,7 +1268,13 @@ for (const [path, unexpected] of [
   ['miniprogram/pages/archive/index.wxml', 'bindinput="onPortraitSummaryInput"'],
   // 记录的原话和逐条操作只在二级页出现。留在资料页上，这一格就又变回一份清单。
   ['miniprogram/pages/profile/index.wxml', 'bindtap="deleteLifeNote"'],
-  ['miniprogram/pages/profile/index.wxml', 'bindtap="togglePinLifeNote"'],
+  // 「标为重要」和「编辑」都废止了：前者把系统该做的判断转嫁给用户，后者与
+  // 「原样存下来，没有改写」自相矛盾。删除留着——那不是整理，那是他对自己数据
+  // 的正当控制。
+  ['miniprogram/pages/life-notes/index.wxml', '标为重要'],
+  ['miniprogram/pages/life-notes/index.wxml', 'bindtap="editNote"'],
+  ['miniprogram/utils/cloudBase.js', 'pinLifeNote'],
+  ['miniprogram/cloudfunctions/saveDream/index.js', "action === 'pinLifeNote'"],
 ] as const) {
   assertNotIncludes(path, unexpected);
 }
@@ -1289,7 +1302,6 @@ for (const [path, expected] of [
   ['miniprogram/utils/cloudBase.js', "deleteDream"],
   ['miniprogram/utils/cloudBase.js', "getDreamArchive"],
   ['miniprogram/utils/cloudBase.js', "getLifeNotes"],
-  ['miniprogram/utils/cloudBase.js', "editLifeNote"],
   ['miniprogram/utils/cloudBase.js', "chatAboutDream"],
   ['miniprogram/utils/cloudBase.js', "refineDream"],
   ['miniprogram/utils/cloudBase.js', "getProfileMemory"],
@@ -1399,8 +1411,6 @@ for (const [path, expected] of [
   ['miniprogram/pages/profile/index.js', "cloudBase.saveProfile"],
   ['miniprogram/pages/profile/index.js', "refreshPortraitInBackground"],
   ['miniprogram/pages/life-notes/index.js', "cloudBase.deleteLifeNote"],
-  ['miniprogram/pages/life-notes/index.js', "cloudBase.editLifeNote"],
-  ['miniprogram/pages/life-notes/index.js', "cloudBase.pinLifeNote"],
   // 画像的编排只有一份实现（utils/stagePortrait），梦册和「我」两页都用它。
   // 两页各自实现会立刻分叉：同一个快照在两处显示出不同的版本号或状态。
   ['miniprogram/utils/stagePortrait.js', "toggleUse"],
@@ -1999,7 +2009,7 @@ const inUse = '2026-08-10T00:00:00.000Z';
 wx.lifeNoteRows = [
   { id: 'n1', text: '我最近其实很颓废，我啥也不想干只想躺着，事实上我已经这样有两三个月了', gist: '不想干活只想躺着', source: '', inUseAt: inUse, sourceDreamId: 'dream-with-connection' },
   { id: 'n2', text: '黑夜中的馈赠，呼应了你当前过渡期中那种不确定但充满可能的感觉', source: '', inUseAt: inUse },
-  { id: 'n3', text: '我在考虑出国', gist: '在考虑出国', source: '', inUseAt: inUse },
+  { id: 'n3', text: '我在考虑出国', gist: '在考虑出国', source: '', inUseAt: inUse, durable: true },
   { id: 'n4', text: '那句说反了，我是当场就讲', source: 'portrait_correction', inUseAt: inUse },
   { id: 'n5', text: '这周开始每天走一万步', source: '' },
   { id: 'n6', text: '换了个新组，还在适应', source: '', retiredAt: inUse, sourceDreamId: 'deleted-dream' },
@@ -2082,17 +2092,23 @@ assert.equal(wx.navigations.length, navigationsBeforeDeadLink);
 // 画像纠偏里说的话不属于任何一个梦，也就没有链接。
 assert.equal(findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n4').dreamLabel, '');
 
-// 「一直重要」：哪些记录还算数由用户说了算，不是我们拿一个时间窗替他决定。
-assert.equal(findGroup('spoken').activeNotes[0].pinned, false);
-wx.lifeNoteRows = wx.lifeNoteRows.map((row: Record<string, any>) =>
-  row.id === 'n5' ? { ...row, pinnedAt: inUse } : row
-);
-lifeNotePage.togglePin({ currentTarget: { dataset: { key: 'n5' } } });
-assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data.action === 'pinLifeNote'));
-assert.equal(
-  last(wx.cloudCalls.filter((call) => call.name === 'saveDream' && call.data.action === 'pinLifeNote')).data.pinned,
-  true
-);
+// 两组的区别不能只写在组标题上：滚过三条之后标题就出了屏幕，剩下的句子看起来
+// 一模一样，而其中一半根本不是他说的。所以每一条自己也带着来历——他的原话加
+// 引号照原样呈现，我们写的句子每条都署名。
+assert.ok(findGroup('spoken').activeNotes[0].displayText.indexOf('「') === 0);
+assert.equal(findGroup('spoken').activeNotes[0].byline, '');
+assert.equal(findGroup('confirmed').activeNotes[0].displayText.indexOf('「'), -1);
+assert.ok(findGroup('confirmed').activeNotes[0].byline.includes('Oneiro'));
+assert.equal(findGroup('confirmed').activeNotes[0].kind, 'confirmed');
+
+// 「一直有效」是一句解释，不是一个开关：说明一条旧记录为什么还在影响画像。
+// 「标为重要」已经废止——让用户给自己的记录做整理，是把系统该做的判断转嫁给他。
+assert.equal(findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n3').lasting, true);
+assert.equal(findGroup('spoken').activeNotes[0].lasting, false);
+assert.equal(typeof lifeNotePage.togglePin, 'undefined');
+assert.equal(typeof lifeNotePage.editNote, 'undefined');
+assert.equal(typeof cloudBase.pinLifeNote, 'undefined');
+assert.equal(typeof cloudBase.editLifeNote, 'undefined');
 
 // 云端还没标过谁在用（老数据、或者还没生成过画像）：说不知道，不要显示成
 // 「0 条正在影响」——那是另一句假话。

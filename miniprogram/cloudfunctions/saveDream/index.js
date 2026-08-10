@@ -644,7 +644,7 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
 // 所以来源要跟着记录一起存下去，不能只在写入那一刻区分。
 const LIFE_NOTE_SOURCES = ['dream_connection'];
 
-async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText, noteSource, noteGist) {
+async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText, noteSource, noteGist, noteDurable) {
   const legacyJob = await findDeletionJob(openid, localDreamId);
   if (legacyJob) return null;
 
@@ -666,6 +666,9 @@ async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText, noteSour
     // 列表上的一行标签，不是记录。原话永远以 text 为准，画像也只读 text——
     // 概括写歪了最多是目录上的一行不准，动不了记录本身。
     gist: String(noteGist || '').replace(/\s+/g, '').slice(0, 14),
+    // 「是一个状态」还是「一件当时的事」。这一格原来是用户手点的「标为重要」，
+    // 那是把系统该做的判断转嫁给他；现在由提取那一刻判定，用户什么都不用做。
+    durable: noteDurable === true,
     source: LIFE_NOTE_SOURCES.indexOf(String(noteSource || '')) >= 0 ? String(noteSource) : '',
     sourceDreamId: localDreamId,
     createdAt: new Date()
@@ -1076,7 +1079,9 @@ exports.main = async function (event) {
             // 画像真正喂进去的那些，不是界面自己再猜一遍。
             inUseAt: note.inUseAt || null,
             retiredAt: note.retiredAt || null,
-            pinnedAt: note.pinnedAt || null,
+            // 时间冲不掉的那类。界面据此说明一条旧记录为什么还在影响画像——
+            // 这是一句解释，不是一个开关，用户不必也无法整理它。
+            durable: note.durable === true,
             createdAt: note.createdAt,
             updatedAt: note.updatedAt || note.createdAt
           };
@@ -1214,7 +1219,8 @@ exports.main = async function (event) {
 
     var noteSource = String((event && event.source) || '').trim();
     var noteGist = String((event && event.gist) || '').trim().slice(0, 14);
-    var addedNote = await addLifeNoteUnlessDeleted(wxContext.OPENID, noteDreamId, noteText, noteSource, noteGist);
+    var noteDurable = event && event.durable === true;
+    var addedNote = await addLifeNoteUnlessDeleted(wxContext.OPENID, noteDreamId, noteText, noteSource, noteGist, noteDurable);
     if (!addedNote) return { ok: false, reason: 'dream_deleted' };
 
     return { ok: true, id: addedNote._id, deduplicated: addedNote.deduplicated === true };
@@ -1274,25 +1280,6 @@ exports.main = async function (event) {
 
   // 「一直重要」。哪些记录还算数，本该由用户说了算，而不是我们拿一个时间窗
   // 替他决定——钉住的记录不参与排队，永远占一个名额。
-  if (action === 'pinLifeNote') {
-    var pinNoteId = String((event && event.noteId) || '').trim();
-    if (!pinNoteId) return { ok: false, reason: 'invalid_note_id' };
-    var pinTarget = await db.collection('life_notes')
-      .where({ openid: wxContext.OPENID, _id: pinNoteId })
-      .limit(1)
-      .get();
-    if (!pinTarget.data || !pinTarget.data.length) return { ok: false, reason: 'note_not_found' };
-    var alreadyPinned = !!pinTarget.data[0].pinnedAt;
-    var nextPinned = event && event.pinned === false ? false : !alreadyPinned;
-    await db.collection('life_notes').doc(pinNoteId).update({ data: {
-      pinnedAt: nextPinned ? new Date() : null,
-      // 钉住一条已经退休的记录，等于用户说「这条还算数」，那就让它回来。
-      retiredAt: nextPinned ? null : pinTarget.data[0].retiredAt || null,
-      updatedAt: new Date()
-    } });
-    return { ok: true, id: pinNoteId, pinned: nextPinned };
-  }
-
   if (action === 'editSymbol') {
     var symbolDreamId = String((event && event.dreamId) || '').trim();
     var oldSymbol = String((event && event.oldSymbol) || '').trim();

@@ -7,17 +7,24 @@
 // 三种来源的可信方式完全不同，界面必须分得开：dream_connection 是 Oneiro 自己
 // 写的一句呼应、用户点过「是这样」，把它标成「从你话里提取的」，用户会在自己的
 // 资料页读到一句自己从没说过的话。
+// 两组的区别必须一眼看得出来，不能只写在组标题上——滚过三条之后标题就出了
+// 屏幕，剩下的句子看起来一模一样，而其中一半根本不是他说的。所以每一条自己
+// 也带着来历：他的原话加引号照原样呈现，我们写的句子每条都标着是谁写的。
 var LIFE_NOTE_GROUPS = [
   {
     key: 'spoken',
     label: '你说过的话',
     hint: '从你在对话里说的话原样存下来，没有改写。',
+    quoted: true,
+    byline: '',
     sources: ['', 'portrait_correction']
   },
   {
     key: 'confirmed',
     label: '你认下的解读',
     hint: '这些句子是 Oneiro 写的，你在解读里点过「是这样」。',
+    quoted: false,
+    byline: 'Oneiro 写的 · 你点过「是这样」',
     sources: ['dream_connection']
   }
 ];
@@ -83,12 +90,19 @@ function usageUnknown(notes) {
   return notes.length > 0 && !notes.some(function (note) { return note.inUseAt || note.retiredAt; });
 }
 
-function decorateNote(note, dreamIndex) {
+function decorateNote(note, dreamIndex, group) {
   var dream = note && note.sourceDreamId ? dreamIndex[note.sourceDreamId] : null;
+  var body = String((note && note.text) || '');
   return Object.assign({}, note, {
     localKey: (note && (note.localKey || note.id)) || '',
     label: noteLabel(note),
-    pinned: !!(note && note.pinnedAt),
+    kind: group.key,
+    // 他的原话带引号照原样呈现；我们写的句子不加引号，另外署名。
+    displayText: group.quoted ? '「' + body + '」' : body,
+    byline: group.byline,
+    // 「一直有效」是一句解释，不是一个开关：它说明一条旧记录为什么还在影响
+    // 画像。判断在提取那一刻做完，用户不必也无法整理它。
+    lasting: !!(note && note.durable),
     retired: !!(note && note.retiredAt),
     dreamId: dream ? dream.id : '',
     // 梦被删掉时给一句实话，不给死链接。
@@ -105,7 +119,7 @@ function groupNotes(notes, archive) {
     var members = list.filter(function (note) {
       return group.sources.indexOf(noteSourceOf(note, connectionIndex)) >= 0;
     }).map(function (note) {
-      return decorateNote(note, dreamIndex);
+      return decorateNote(note, dreamIndex, group);
     });
     return {
       key: group.key,

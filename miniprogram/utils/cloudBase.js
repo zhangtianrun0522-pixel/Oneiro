@@ -325,9 +325,9 @@ function skipRevisit(dreamId, callback) {
   }, callback);
 }
 
-// source 和 gist 都是可选的尾参，老调用点仍然传 (dreamId, text, callback)
-// 或 (dreamId, text, source, callback)。
-function addLifeNote(dreamId, text, source, gist, callback) {
+// 尾部三个参数都是可选的，老调用点仍然传 (dreamId, text, callback) 或
+// (dreamId, text, source, callback)。
+function addLifeNote(dreamId, text, source, gist, durable, callback) {
   if (typeof source === 'function') {
     callback = source;
     source = '';
@@ -335,13 +335,17 @@ function addLifeNote(dreamId, text, source, gist, callback) {
   } else if (typeof gist === 'function') {
     callback = gist;
     gist = '';
+  } else if (typeof durable === 'function') {
+    callback = durable;
+    durable = false;
   }
   return callCloudFunction('saveDream', {
     action: 'addLifeNote',
     dreamId: dreamId || '',
     text: text || '',
     source: source || '',
-    gist: gist || ''
+    gist: gist || '',
+    durable: durable === true
   }, callback);
 }
 
@@ -353,15 +357,6 @@ function confirmDreamConnection(dreamId, text, callback) {
   return addLifeNote(dreamId, text, 'dream_connection', callback);
 }
 
-// 「一直重要」。哪些记录还算数由用户说了算，不是我们拿一个时间窗替他决定。
-function pinLifeNote(noteId, pinned, callback) {
-  return callCloudFunction('saveDream', {
-    action: 'pinLifeNote',
-    noteId: noteId || '',
-    pinned: pinned === true
-  }, callback);
-}
-
 function deleteLifeNote(noteId, callback) {
   return callCloudFunction('saveDream', {
     action: 'deleteLifeNote',
@@ -371,14 +366,6 @@ function deleteLifeNote(noteId, callback) {
 
 function getLifeNotes(callback) {
   return callCloudFunction('saveDream', { action: 'listLifeNotes' }, callback);
-}
-
-function editLifeNote(noteId, text, callback) {
-  return callCloudFunction('saveDream', {
-    action: 'editLifeNote',
-    noteId: noteId || '',
-    text: text || ''
-  }, callback);
 }
 
 function editSymbol(dreamId, oldSymbol, newSymbol, callback) {
@@ -857,11 +844,9 @@ module.exports = {
   answerRevisit: answerRevisit,
   skipRevisit: skipRevisit,
   addLifeNote: addLifeNote,
-  pinLifeNote: pinLifeNote,
   confirmDreamConnection: confirmDreamConnection,
   deleteLifeNote: deleteLifeNote,
   getLifeNotes: getLifeNotes,
-  editLifeNote: editLifeNote,
   editSymbol: editSymbol,
   createShareCard: createShareCard,
   getShareCard: getShareCard,

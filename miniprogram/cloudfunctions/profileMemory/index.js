@@ -349,15 +349,29 @@ function longTermPatterns(sources) {
 const NOTE_ECHO_SIMILARITY = 0.3;
 const NOTE_ECHO_BONUS = 0.6;
 const NOTE_MAX_ECHOES = 2;
-// 用户亲手钉住的记录不参与排队。「哪些还算数」应该由他说了算，而不是我们拿
-// 一个时间窗替他决定。
-const NOTE_PINNED_SCORE = 1000;
 // 被更新的说法盖过去的那条：不删，但排到最后。它说的话已经有人在说了，再占
 // 一个名额只是让画像把同一件事读两遍。
 const NOTE_RESTATED_SCORE = 0.05;
+// 时间冲不掉的那类记录。这里原来是一个「标为重要」的按钮：用户亲手钉住的不
+// 参与衰减。那是把系统该做的判断转嫁给用户——真有人认真整理，这一屏很快就
+// 变成一份永远欠着几条没归类的作业。
+//
+// 而且这道题本来就不该按「重不重要」分，该按「是一个状态，还是一件当时的
+// 事」分：「我在国外念书」一百二十天后照样成立，「昨天和我爸吵了一架」不
+// 是。前者提取那一刻就判得出来，不必问用户一句。整理靠说话完成——后来说了
+// 「回国了」，前面那条自己退休。
+const NOTE_DURABLE_WEIGHT = 1;
+// 但模型会滥用这个标签。带明确时间落点的句子一律按「当时的事」处理，不管它
+// 自己怎么标——否则一切都不衰减，选法就退回「最新的十条」。
+const MOMENT_MARKER_PATTERN = /今天|昨天|前天|明天|后天|今早|今晚|昨晚|刚才|刚刚|这周|本周|上周|下周|这个月|上个月|下个月|周[一二三四五六日末]/;
 
 function noteRetired(note) {
   return !!(note && note.retiredAt);
+}
+
+function noteDurable(note) {
+  if (!note || note.durable !== true) return false;
+  return !MOMENT_MARKER_PATTERN.test(String(note.text || ''));
 }
 
 // notes 已经是新在前。对每条记录：它复述了几条更老的（说明这件事反复出现），
@@ -384,10 +398,10 @@ function annotateNoteEchoes(notes) {
 
 function scoreNote(note) {
   if (noteRetired(note)) return -1;
-  if (note.pinnedAt) return NOTE_PINNED_SCORE;
+  // 复述和退休对持续状态照样成立：它一直有效，直到有更新的说法取代它。
   if (note.restatedByNewer) return NOTE_RESTATED_SCORE;
-  return recencyWeight(note.createdAt) *
-    (1 + Math.min(NOTE_MAX_ECHOES, note.echoCount || 0) * NOTE_ECHO_BONUS);
+  const weight = noteDurable(note) ? NOTE_DURABLE_WEIGHT : recencyWeight(note.createdAt);
+  return weight * (1 + Math.min(NOTE_MAX_ECHOES, note.echoCount || 0) * NOTE_ECHO_BONUS);
 }
 
 // 排出这一类记录里谁该占名额。退休的完全不参与——它们不是排在后面，是不在了。
@@ -403,11 +417,15 @@ function rankNotes(notes) {
 }
 
 function promptNote(note) {
-  return {
+  const entry = {
     id: note.id,
     said: text(note.text, 140),
     on: note.createdAt ? new Date(note.createdAt).toISOString().slice(0, 10) : ''
   };
+  // 半年前说的「我在国外念书」还成立，半年前说的「这周开始走一万步」不一定。
+  // 不说明这个差别，模型只能看日期，会把一条长期状态写成「他最近」。
+  if (noteDurable(note)) entry.lasting = true;
+  return entry;
 }
 
 function promptEvidence(sources) {
@@ -1018,6 +1036,7 @@ function aiPrompt(sources) {
     // 只有读得懂内容的才判得了，而模型这一次调用本来就把它们全看过一遍。
     '每条记录都带 id 和日期。请顺带判断有没有哪一条已经被更晚的一条替代掉了——同一件事有了新说法、他改了主意、或者那件事已经结束。有就放进 retiredNoteIds。',
     '只在确实冲突或确实过时的时候才退休一条。说的是不同的事、或者只是措辞相近，都不算；拿不准就不要放进去。退休是不可逆的，它以后不会再影响画像。',
+    '带 lasting 的记录是一个持续状态，不是当时发生的一件事：日期只说明他哪天讲的，不说明它已经过去。不要给它们加「最近」「那阵子」这类时间限定。',
   ].concat(living.length ? hypothesisPromptRules(living) : []).concat([
     '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":"","retiredNoteIds":[]' +
       (living.length ? ',"hypothesisVerdicts":[{"id":"","verdict":"support|contradict|unclear","evidence":""}]' : '') + '}。',

@@ -859,6 +859,19 @@ assert.equal(gistNote.ok, true);
 const storedGistNote = database.rows.life_notes.find((item: Row) => item._id === gistNote.id);
 assert.equal(storedGistNote?.gist, '最近很颓废');
 assert.equal(storedGistNote?.text, '我最近其实很颓废，什么都不想干');
+// 「是一个状态」还是「一件当时的事」，决定这条记录会不会随时间衰减。这一格
+// 原来是用户手点的「标为重要」，现在由提取那一刻判定，用户什么都不用做。
+const durableNote = await saveDreamMain({
+  action: 'addLifeNote', dreamId: 'dream-2', text: '我在国外念书，已经念了两年', gist: '在国外念书', durable: true,
+});
+assert.equal(database.rows.life_notes.find((item: Row) => item._id === durableNote.id)?.durable, true);
+// 只认显式的 true：误判的代价是一件小事永远不衰减，而用户已经没有按钮纠正它。
+const looseDurableNote = await saveDreamMain({
+  action: 'addLifeNote', dreamId: 'dream-2', text: '昨天和我爸吵了一架', durable: 'true',
+});
+assert.equal(database.rows.life_notes.find((item: Row) => item._id === looseDurableNote.id)?.durable, false);
+await saveDreamMain({ action: 'deleteLifeNote', noteId: durableNote.id });
+await saveDreamMain({ action: 'deleteLifeNote', noteId: looseDurableNote.id });
 // 超长的标签在这里就砍掉：它要放进一行小字里，不能由客户端决定多长。
 const longGistNote = await saveDreamMain({
   action: 'addLifeNote', dreamId: 'dream-2', text: '换了个新组还在适应', gist: '这是一段长得离谱、根本放不进一行小字里的所谓概括',

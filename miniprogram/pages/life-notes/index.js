@@ -5,10 +5,20 @@ var lifeNotes = require('../../utils/lifeNotes');
 
 // ── 关于你的记录（详情） ────────────────────────────────────────────────
 //
-// 这一屏原来整个塞在资料页里：两组、每条的全文、来源梦、标为重要/编辑/删除，
-// 全部铺开。资料页于是变成一份长清单，而它本来只需要回答一句「系统记着我什么」。
-// 现在资料页只留一个入口，原话、来源和所有操作都在这里——要改要删的人愿意多点
-// 一下，只想扫一眼的人不必先滚过十几条原话。
+// 这一屏原来整个塞在资料页里：两组、每条的全文、来源梦、逐条操作，全部铺开。
+// 资料页于是变成一份长清单，而它本来只需要回答一句「系统记着我什么」。现在
+// 资料页只留一个入口，原话和来源都在这里。
+//
+// 这里只剩「删除」一个操作。
+//
+// 「标为重要」去掉了：让用户给自己的记录做整理，等于把系统该做的判断转嫁给
+// 他，而且这道题本来就不该按「重不重要」分，该按「是一个状态还是一件当时的
+// 事」分——那个判断在提取那一刻就做完了（life_notes.durable），用户什么都不
+// 用做。整理靠说话完成：后来说了「回国了」，前面那条自己退休。
+//
+// 「编辑」也去掉了：这一格写着「你说的话原样存下来，没有改写」，却允许改写，
+// 自相矛盾。提取抓错了的时候，删掉比改掉诚实。删除留着——那不是整理，那是他
+// 对自己数据的正当控制。
 Page({
   data: {
     loaded: false,
@@ -81,58 +91,6 @@ Page({
       reason: reason,
       refreshKey: refreshKey,
       archive: wx.getStorageSync('oneiro:dreamArchive') || []
-    });
-  },
-
-  // 「一直重要」：钉住的记录不参与排队，永远占一个名额。哪些还算数由用户说了
-  // 算，不是我们拿一个时间窗替他决定。
-  togglePin: function (event) {
-    var that = this;
-    var note = this.findNote(event);
-    if (!note || !note.id) {
-      wx.showToast({ title: '联网后可标记这条', icon: 'none' });
-      return;
-    }
-    var nextPinned = !note.pinnedAt;
-    cloudBase.pinLifeNote(note.id, nextPinned, function (result) {
-      if (!result || !result.ok) {
-        wx.showToast({ title: '暂时没成功，请稍后再试', icon: 'none' });
-        return;
-      }
-      that.load();
-      that.refreshPortrait(
-        nextPinned ? '用户标记了一条一直重要的记录' : '用户取消了一条记录的标记',
-        'life-note-pin:' + note.id + ':' + String(Date.now())
-      );
-      wx.showToast({ title: nextPinned ? '已标记为一直重要' : '已取消标记', icon: 'none' });
-    });
-  },
-
-  editNote: function (event) {
-    var that = this;
-    var note = this.findNote(event);
-    if (!note || !note.id) {
-      wx.showToast({ title: '联网后可修改这条片段', icon: 'none' });
-      return;
-    }
-    wx.showModal({
-      title: '修改现实片段',
-      editable: true,
-      content: note.text,
-      placeholderText: note.text,
-      success: function (res) {
-        var text = String(res.content || '').trim();
-        if (!res.confirm || !text || text === note.text) return;
-        cloudBase.editLifeNote(note.id, text, function (result) {
-          if (!result || !result.ok) {
-            wx.showToast({ title: '修改失败，请稍后再试', icon: 'none' });
-            return;
-          }
-          that.load();
-          that.refreshPortrait('用户修改了现实片段', 'life-note-edit:' + note.id + ':' + String(Date.now()));
-          wx.showToast({ title: '现实片段已修改', icon: 'success' });
-        });
-      }
     });
   },
 

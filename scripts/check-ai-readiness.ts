@@ -15,6 +15,7 @@ type InterpretDreamModule = {
     realityClue: string;
     realityClues: string[];
     realityClueGists: string[];
+    realityClueDurable: boolean[];
   };
   normalizeSymbols?: (value: unknown) => string[];
   normalizeAiResult?: (
@@ -1424,6 +1425,40 @@ assert.equal(
   0
 );
 
+// ── 是一个状态，还是一件当时的事 ──
+//
+// 记录会随时间衰减，但「我在国外念书」半年后照样成立。这道题必须在提取那一刻
+// 判——事后只剩一个日期，看不出这句话说的是状态还是当时的一件事。判完了用户
+// 就不用再手点「标为重要」，那本来就是把系统该做的判断转嫁给他。
+const durableChat = parseDreamChatContent(
+  JSON.stringify({
+    reply: '好',
+    memory_candidates: [
+      { eligible: true, quote: '我在考虑出国', durable: true },
+      { eligible: true, quote: '我最近其实很颓废', durable: false },
+    ],
+  }),
+  multiClueMessage
+);
+assert.equal(durableChat.realityClueDurable.join('|'), 'true|false');
+assert.equal(durableChat.realityClueDurable.length, durableChat.realityClues.length);
+// 只认显式的 true。弄错方向的代价不对称：漏判只是让一条长期状态照常衰减，误判
+// 是让一件小事永远不衰减，而用户已经没有按钮可以纠正它了。
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"好","memory_candidate":{"eligible":true,"quote":"我在考虑出国","durable":"true"}}',
+    multiClueMessage
+  ).realityClueDurable[0],
+  false
+);
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"好","memory_candidate":{"eligible":true,"quote":"我在考虑出国"}}',
+    multiClueMessage
+  ).realityClueDurable[0],
+  false
+);
+
 const plainTextDreamChat = parseDreamChatContent('纯文本兼容回复', '最近在换工作');
 assert.equal(plainTextDreamChat.reply, '纯文本兼容回复');
 assert.equal(plainTextDreamChat.realityClue, '');
@@ -1747,12 +1782,34 @@ assert.equal(
   1
 );
 
-// 钉住的永远不沉，哪怕它是最老的一条。
-const pinnedRanking = rankNotes([
-  { id: 'fresh', text: '今天开始跑步', createdAt: ago(0) },
-  { id: 'pinned', text: '我妈的病是我这几年最大的事', createdAt: ago(400), pinnedAt: new Date() },
+// 时间冲不掉的那类不沉，哪怕它是最老的一条。这里原来是一个「标为重要」按钮
+// ——把系统该做的判断转嫁给用户。现在按「是一个状态还是一件当时的事」分，提
+// 取那一刻就判完，用户什么都不用做。
+const durableRanking = rankNotes([
+  { id: 'moment', text: '前阵子把阳台收拾了一遍', createdAt: ago(30) },
+  { id: 'state', text: '我妈生病这几年一直是我在照顾', createdAt: ago(400), durable: true },
 ]);
-assert.equal(pinnedRanking[0].id, 'pinned');
+assert.equal(durableRanking[0].id, 'state');
+// 但模型会滥用这个标签。带明确时间落点的句子一律按「当时的事」处理，不管它
+// 自己怎么标——否则一切都不衰减，选法就退回「最新的十条」。
+const abusedDurable = rankNotes([
+  { id: 'recent', text: '我在考虑出国', createdAt: ago(3) },
+  { id: 'mislabelled', text: '昨天和我爸吵了一架', createdAt: ago(400), durable: true },
+]);
+assert.equal(abusedDurable[0].id, 'recent');
+// 持续状态照样会被更晚的说法盖掉：它一直有效，直到有人说了别的。
+const restatedDurable = rankNotes([
+  { id: 'now', text: '我已经回国了，不在国外念书了', createdAt: ago(1) },
+  { id: 'then', text: '我在国外念书，已经念了两年了', createdAt: ago(400), durable: true },
+]);
+assert.equal(restatedDurable[restatedDurable.length - 1].id, 'then');
+// 用户手点的「标为重要」已经废止：这一格不再读 pinnedAt，老客户端写进来的
+// 那个字段也不该让一条记录凭空插队。
+const legacyPinned = rankNotes([
+  { id: 'plain', text: '我在考虑出国', createdAt: ago(1) },
+  { id: 'legacy-pin', text: '很久以前顺手标过的一条旧记录', createdAt: ago(400), pinnedAt: new Date() },
+]);
+assert.equal(legacyPinned[0].id, 'plain');
 
 // 反复提到的事留得比只说过一次的久。两条都很老，但一条被后来又说了一遍。
 const echoRanking = rankNotes([
@@ -1785,6 +1842,25 @@ const selected = lifecycle.promptEvidence({
 }).selectedNoteIds;
 assert.ok(selected.includes('newest'), '最新的一条不得因为排在第十一位而落选');
 assert.equal(selected.length, 10, '名额仍然是十条——两百字的画像装不下四十条记录');
+
+// 半年前说的「我在国外念书」还成立，半年前说的「这周开始走一万步」不一定。
+// 不把这个差别写进证据，模型只能看日期，会把一条长期状态写成「他最近」。
+const lastingPrompt = lifecycle.aiPrompt({
+  user: null,
+  dreams: [],
+  notes: [
+    { id: 'state', text: '我在国外念书，已经念了两年', createdAt: ago(300), durable: true, source: '', discussion: [] },
+    { id: 'moment', text: '这周开始每天走一万步', createdAt: ago(300), source: '', discussion: [] },
+  ],
+  hypotheses: [],
+  priorPortrait: null,
+});
+assert.ok(lastingPrompt.includes('"lasting":true'));
+assert.equal((lastingPrompt.match(/"lasting":true/g) || []).length, 1, '只有持续状态带这个标记');
+assert.ok(
+  profileMemorySource.includes('不要给它们加「最近」「那阵子」这类时间限定'),
+  '模型必须知道 lasting 的日期只说明他哪天讲的'
+);
 
 // 落库的名额清单只给服务端用，不该混进喂给模型的证据里。
 assert.ok(

@@ -632,14 +632,20 @@ Page({
         that.setData({ cloudSyncPending: !(saveResult && saveResult.ok) });
         // 一条消息里常常同时讲了好几件事。云端现在会把它们全部挑出来；只取
         // 第一条的旧写法，剩下的会直接蒸发，用户看到的就是「提取得不全」。
-        // gist 与 clue 同序等长，是云端给列表用的一行标签；缺席（旧云函数、
-        // 模型没给）时留空，界面那头会退回截断原话。
+        // gist 和 durable 与 clue 同序等长：一个是列表上的标签，一个说明这条
+        // 讲的是持续状态还是当时的一件事（决定它会不会随时间衰减）。缺席
+        // （旧云函数、模型没给）时按空、按 false，两边都退回原来的行为。
         var clueGists = Array.isArray(result && result.realityClueGists) ? result.realityClueGists : [];
+        var clueDurable = Array.isArray(result && result.realityClueDurable) ? result.realityClueDurable : [];
         var realityClues = (result && result.ok && Array.isArray(result.realityClues)
           ? result.realityClues
           : [result && result.realityClue]
         ).map(function (item, index) {
-          return { text: String(item || '').trim(), gist: String(clueGists[index] || '').trim() };
+          return {
+            text: String(item || '').trim(),
+            gist: String(clueGists[index] || '').trim(),
+            durable: clueDurable[index] === true
+          };
         }).filter(function (item) { return !!item.text; });
         var realityClue = (realityClues[0] && realityClues[0].text) || '';
         var refreshPortrait = function (reason, refreshKey) {
@@ -668,7 +674,7 @@ Page({
           // 补写的。画像只在最后一条回来之后刷新一次。
           var remaining = realityClues.length;
           realityClues.forEach(function (clue, clueIndex) {
-            cloudBase.addLifeNote(dream.id, clue.text, '', clue.gist, function (noteResult) {
+            cloudBase.addLifeNote(dream.id, clue.text, '', clue.gist, clue.durable, function (noteResult) {
               remaining -= 1;
               if (noteResult && noteResult.ok) {
                 analytics.trackEvent('dream_chat_life_note_extracted', {
@@ -685,6 +691,7 @@ Page({
                   dreamId: dream.id,
                   text: clue.text,
                   gist: clue.gist,
+                  durable: clue.durable,
                   refreshKey: 'life-note:' + String(dream.id) + ':' + String(current.length) + ':' + String(clueIndex)
                 });
               }

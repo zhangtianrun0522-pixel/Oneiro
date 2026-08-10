@@ -114,14 +114,27 @@
   font-size: var(--fs-label);
 }
 
-.note-pin { color: var(--ink-70); }
-.note-pin.is-on { color: var(--ink); }
+/* 我们写的句子整块往里缩，左边一条细线，和他的原话在视线上立刻分开。 */
+.note-item.is-confirmed {
+  padding-left: 20rpx;
+  border-left: 2rpx solid var(--rule);
+}
+
+.note-item.is-confirmed .note-copy { color: var(--ink-70); }
+
+.note-byline {
+  display: block;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  letter-spacing: 0.04em;
+}
+
+/* 一句解释，不是一个开关。 */
+.note-lasting { color: var(--ink-70); }
 
 /* 已经不影响画像的那些：仍然完整可读、可删，但不该和在用的看起来一样重。 */
 .notes-list.is-dormant .note-copy { color: var(--ink-70); }
 .note-copy.is-retired { text-decoration: line-through; }
-
-.note-edit { color: var(--ink-70); }
 
 /* 「删除」用危险色，--cinnabar 在小字号只有 4.29:1 不够，
    换成已校准的 --cinnabar-ink：4.69–5.03:1 */

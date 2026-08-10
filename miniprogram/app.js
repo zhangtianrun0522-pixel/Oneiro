@@ -153,7 +153,7 @@ App({
         // source 区分「梦后对话提取的现实线索」和「用户在一条呼应上点的头」。
         // 补写路径必须把它带上，否则离线时确认的呼应重放回云端就退化成一条
         // 普通生活记录，画像那头再也分不出它当初是被用户核实过的。
-        cloudBase.addLifeNote(task.dreamId, task.text, task.source || '', task.gist || '', function (result) {
+        cloudBase.addLifeNote(task.dreamId, task.text, task.source || '', task.gist || '', task.durable === true, function (result) {
           if (!result || !result.ok) {
             finishTask();
             return;

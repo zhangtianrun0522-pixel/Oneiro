@@ -2,8 +2,11 @@
      免得三份复制品各自漂移。这里显示原话全文——目录页给的是标签，愿意点进来
      的人要看的正是被存下来的那句话本身。 -->
 <template name="lifeNote">
-  <view class="note-item">
-    <text class="note-copy {{note.retired ? 'is-retired' : ''}}">{{note.text}}</text>
+  <view class="note-item is-{{note.kind}}">
+    <text class="note-copy {{note.retired ? 'is-retired' : ''}}">{{note.displayText}}</text>
+    <!-- 组标题滚出屏幕之后，剩下的句子看起来一模一样，而其中一半根本不是他说
+         的。所以每一条自己也带着来历。 -->
+    <text wx:if="{{note.byline}}" class="note-byline">{{note.byline}}</text>
     <view class="note-meta">
       <text
         wx:if="{{note.dreamLabel}}"
@@ -12,8 +15,8 @@
         bindtap="openNoteDream"
       >来自：{{note.dreamLabel}}{{note.dreamOpenable ? ' ›' : ''}}</text>
       <view class="note-actions">
-        <text data-key="{{note.localKey}}" bindtap="togglePin" class="note-pin {{note.pinned ? 'is-on' : ''}}">{{note.pinned ? '一直重要' : '标为重要'}}</text>
-        <text data-key="{{note.localKey}}" bindtap="editNote" class="note-edit">编辑</text>
+        <!-- 一句解释，不是一个开关：说明一条旧记录为什么还在影响画像。 -->
+        <text wx:if="{{note.lasting}}" class="note-lasting">一直有效</text>
         <text data-key="{{note.localKey}}" bindtap="deleteNote" class="note-delete">删除</text>
       </view>
     </view>
@@ -23,7 +26,7 @@
 <view class="screen notes-screen">
   <view class="notes-header">
     <text class="title">关于你的记录</text>
-    <text class="notes-subtitle">这些是系统真正记着的东西。改一条或删一条，下一版画像就会跟着变。</text>
+    <text class="notes-subtitle">这些是系统真正记着的东西。删掉一条，下一版画像就会跟着变。哪些还算数不用你来整理——你后来说的话会自己盖过先前的。</text>
   </view>
 
   <text wx:if="{{!loaded}}" class="notes-state">正在读取…</text>
