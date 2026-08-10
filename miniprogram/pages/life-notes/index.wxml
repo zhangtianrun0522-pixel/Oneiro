@@ -1,0 +1,64 @@
+<!-- 一条记录长什么样。三处用到（正在影响 / 兼容旧数据 / 更早的），抽成模板
+     免得三份复制品各自漂移。这里显示原话全文——目录页给的是标签，愿意点进来
+     的人要看的正是被存下来的那句话本身。 -->
+<template name="lifeNote">
+  <view class="note-item">
+    <text class="note-copy {{note.retired ? 'is-retired' : ''}}">{{note.text}}</text>
+    <view class="note-meta">
+      <text
+        wx:if="{{note.dreamLabel}}"
+        class="note-dream {{note.dreamOpenable ? 'is-openable' : ''}}"
+        data-dream-id="{{note.dreamOpenable ? note.dreamId : ''}}"
+        bindtap="openNoteDream"
+      >来自：{{note.dreamLabel}}{{note.dreamOpenable ? ' ›' : ''}}</text>
+      <view class="note-actions">
+        <text data-key="{{note.localKey}}" bindtap="togglePin" class="note-pin {{note.pinned ? 'is-on' : ''}}">{{note.pinned ? '一直重要' : '标为重要'}}</text>
+        <text data-key="{{note.localKey}}" bindtap="editNote" class="note-edit">编辑</text>
+        <text data-key="{{note.localKey}}" bindtap="deleteNote" class="note-delete">删除</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<view class="screen notes-screen">
+  <view class="notes-header">
+    <text class="title">关于你的记录</text>
+    <text class="notes-subtitle">这些是系统真正记着的东西。改一条或删一条，下一版画像就会跟着变。</text>
+  </view>
+
+  <text wx:if="{{!loaded}}" class="notes-state">正在读取…</text>
+  <text wx:elif="{{loadFailed}}" class="notes-state">这次没读上来，退出重进可以再试一次。</text>
+  <text wx:elif="{{!notes.length}}" class="notes-state">系统会从梦后对话和次日回访中提取有现实落点的线索，普通猜测不会直接成为记忆。</text>
+
+  <view wx:for="{{groups}}" wx:for-item="group" wx:key="key" class="note-group">
+    <view class="note-group-head">
+      <text class="note-group-label">{{group.label}}</text>
+      <text class="note-group-count">{{group.total}} 条</text>
+    </view>
+    <text class="note-group-hint">{{group.hint}}</text>
+
+    <!-- 系统此刻真正在用的那些。这一段不折叠：藏起来，这一屏就又变回一份
+         看不出实情的清单。 -->
+    <view wx:if="{{group.activeNotes.length}}" class="notes-list">
+      <block wx:for="{{group.activeNotes}}" wx:for-item="note" wx:key="localKey">
+        <template is="lifeNote" data="{{note: note}}" />
+      </block>
+    </view>
+
+    <!-- 云端还没标过谁在用（老数据、或还没生成过画像）：只说不知道，不说
+         「0 条正在影响」，那是另一句假话。 -->
+    <text wx:if="{{group.unknownUsage}}" class="note-group-note">这几条还没经过一次新的画像梳理，暂时看不出哪些正在影响画像。</text>
+
+    <view wx:if="{{group.visibleDormant.length}}" class="notes-list is-dormant">
+      <block wx:for="{{group.visibleDormant}}" wx:for-item="note" wx:key="localKey">
+        <template is="lifeNote" data="{{note: note}}" />
+      </block>
+    </view>
+    <text
+      wx:if="{{group.collapsible}}"
+      class="note-group-toggle"
+      data-group="{{group.key}}"
+      bindtap="toggleGroup"
+    >{{group.expanded ? '收起更早的' : '更早的 ' + group.dormantCount + ' 条（已不再影响画像）'}}</text>
+  </view>
+</view>

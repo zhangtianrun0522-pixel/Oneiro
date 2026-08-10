@@ -1,0 +1,128 @@
+/* 「关于你的记录」详情页。视觉语言沿用资料页：纯文字流 + 细线分区，
+   颜色一律走 app.wxss 里已校准对比度的 token。 */
+.notes-screen { padding-bottom: calc(64rpx + env(safe-area-inset-bottom)); }
+
+.notes-header { flex-shrink: 0; }
+
+.notes-header .title {
+  font-family: var(--font-sans);
+  font-size: 32rpx;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+.notes-subtitle {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+}
+
+.notes-state {
+  display: block;
+  margin-top: var(--space-tight);
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  line-height: 1.7;
+}
+
+.note-group {
+  margin-top: var(--space-group);
+  padding-top: var(--space-tight);
+  border-top: 1rpx solid var(--rule);
+}
+
+.note-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.note-group-label {
+  color: var(--ink);
+  font-size: var(--fs-label);
+  letter-spacing: 0.04em;
+}
+
+.note-group-count {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.note-group-hint,
+.note-group-note {
+  display: block;
+  margin-top: 6rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+}
+
+.note-group-toggle {
+  display: block;
+  margin-top: var(--space-tight);
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  margin-top: var(--space-tight);
+}
+
+/* 正文一行，来源和操作另起一行。并排放不下三样东西，正文会被挤成很窄一条。 */
+.note-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.note-copy {
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  line-height: 1.6;
+}
+
+.note-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.note-dream {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.note-dream.is-openable { color: var(--ink); }
+
+.note-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-tight);
+  font-size: var(--fs-label);
+}
+
+.note-pin { color: var(--ink-70); }
+.note-pin.is-on { color: var(--ink); }
+
+/* 已经不影响画像的那些：仍然完整可读、可删，但不该和在用的看起来一样重。 */
+.notes-list.is-dormant .note-copy { color: var(--ink-70); }
+.note-copy.is-retired { text-decoration: line-through; }
+
+.note-edit { color: var(--ink-70); }
+
+/* 「删除」用危险色，--cinnabar 在小字号只有 4.29:1 不够，
+   换成已校准的 --cinnabar-ink：4.69–5.03:1 */
+.note-delete { color: var(--cinnabar-ink); }

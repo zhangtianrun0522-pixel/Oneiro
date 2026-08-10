@@ -14,6 +14,7 @@ type InterpretDreamModule = {
     reply: string;
     realityClue: string;
     realityClues: string[];
+    realityClueGists: string[];
   };
   normalizeSymbols?: (value: unknown) => string[];
   normalizeAiResult?: (
@@ -1372,6 +1373,55 @@ assert.ok(
 assert.ok(
   chatPromptSource.includes('全都挑出来，最多三条'),
   '一条消息里的多件事必须全部挑出来'
+);
+
+// ── 目录页上的一行标签 ──
+//
+// 资料页只显示标签，原话在二级页。截断原话做不到这件事：「我最近其实很颓废，
+// 我啥都不想干只想躺着，事实上我…」既不是概括也不是原话。所以概括在提取那一刻
+// 就一起生成，和原话一同存下来——但它只是标签，永远不替代 text，也不进画像。
+const gistChat = parseDreamChatContent(
+  JSON.stringify({
+    reply: '听到了。',
+    memory_candidates: [
+      { eligible: true, quote: '我最近其实很颓废', gist: '最近很颓废' },
+      { eligible: true, quote: '我在考虑出国', gist: '在考虑出国' },
+    ],
+  }),
+  multiClueMessage
+);
+assert.equal(gistChat.realityClueGists.join('|'), '最近很颓废|在考虑出国');
+// 并行数组必须同序等长，否则标签会错配到别人的记录上。
+assert.equal(gistChat.realityClueGists.length, gistChat.realityClues.length);
+// realityClues 必须继续是字符串数组：线上还有旧客户端在 String() 它的每一项，
+// 换成对象那边会把 [object Object] 存成用户说过的话。
+assert.equal(typeof gistChat.realityClues[0], 'string');
+// 标签写得比原话还长就不是概括，宁可让界面自己截。
+assert.equal(
+  parseDreamChatContent(
+    JSON.stringify({
+      reply: '好',
+      memory_candidates: [{ eligible: true, quote: '我在考虑出国', gist: '这个人正在认真考虑出国这件事' }],
+    }),
+    multiClueMessage
+  ).realityClueGists[0],
+  ''
+);
+// 模型没给标签时留空，不在服务端编一个。
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"好","memory_candidate":{"eligible":true,"quote":"我在考虑出国"}}',
+    multiClueMessage
+  ).realityClueGists[0],
+  ''
+);
+// 引用不合格时，标签不能自己活下来——那会变成一条没有原话的「记录」。
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"好","memory_candidate":{"eligible":true,"quote":"我打算移民加拿大","gist":"打算移民"}}',
+    multiClueMessage
+  ).realityClueGists.length,
+  0
 );
 
 const plainTextDreamChat = parseDreamChatContent('纯文本兼容回复', '最近在换工作');

@@ -277,6 +277,8 @@ Rehdasu's `/v1/images/generations` endpoint is synchronous and historically take
 
 界面还按来源分组（用户原话 / 他点头认下的解读）。`source` 是旧版云函数会静默省略的字段，缺席时的默认值恰好最糟——我们写的句子会被标成「你说过的话」。所以客户端还有一条独立判据：`dream_connection` 的正文逐字就是某个梦的 `possible_connections`，本地梦册对得上就自己认领。
 
+界面分两层：「我」页只放入口（几条、大致关于什么、其中几条正在影响画像），原话、来源梦和标为重要 / 编辑 / 删除都在 `pages/life-notes`。入口上那行标签取自 `gist`——由 `interpretDream` 在提取那一刻和原话一起产出（`memory_candidates[].gist`，不超过 12 字，服务端再砍到 14 并拒收比原话还长的），随记录存进 `life_notes.gist`。**`gist` 只是标签**：画像只读 `text`，概括写歪了最多是目录上一行不准，动不了记录本身；没有 `gist` 的旧记录由界面截断，不在服务端补一个。`realityClues` 仍是字符串数组、`realityClueGists` 是同序等长的并行数组——线上还有旧客户端在 `String()` 数组的每一项，换成对象会把 `[object Object]` 存成用户说过的话。
+
 #### 出生盘假设（冷启动与衰减）
 
 新用户还没有任何梦时，画像来自出生资料推出的 3-4 条假设。它们由 `profileMemory/baziHypotheses.js` 确定性生成（真太阳时校正后排四柱，只用日主、扶抑、十神偏向、五行空缺四个轴），存在 `profile_memory_state.baziHypotheses`，每条带 `untested / confirmed / rejected / expired` 状态。这个函数因此依赖 `lunar-javascript`，并保有一份与 `interpretDream` 逐字相同的 `locationResolver.js`（CI 会断言两份一致）。

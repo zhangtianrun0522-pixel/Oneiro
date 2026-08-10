@@ -110,9 +110,13 @@ const DREAM_CHAT_SYSTEM_PROMPT = [
   // 只收一条，剩下的直接蒸发，用户看到的就是「提取得不全」。
   '用户一条消息里可能同时讲了好几件事，全都挑出来，最多三条，各自独立。没有就给空数组。',
   '每条 quote 必须逐字复制用户本条消息中的一个连续原文片段，不得改写、补全或概括。宁可多带几个字，也不要为了简洁而重新组织措辞——这些话之后会原样呈现给他看，改写过的句子他认不出是自己说的。',
+  // gist 是列表上的标签，不是记录本身。原话照存不动，gist 只负责让他在一屏
+  // 十几条里认出「这条是关于哪件事的」。截断原话做不到这件事：「我最近其实
+  // 很颓废，我啥都不想干只想躺着，事实上我…」既不是概括也不是原话。
+  '每条再给一条 gist：不超过 12 个字，用来在列表里指认这条记录讲的是哪件事，例如「在考虑出国」「不想上班」「和父亲吵架」。只能是这句话本身说到的事，不得加入解释、评价、推断或情绪修饰；不确定就把 quote 里最关键的名词短语拿出来。',
   '不做医疗、创伤、人格、关系或职业诊断，不预测命运。',
   '回复 2-4 句话。',
-  '只返回合法 JSON，不要 markdown：{"reply":"回复正文","memory_candidates":[{"eligible":true,"quote":"用户原文连续片段"}]}。'
+  '只返回合法 JSON，不要 markdown：{"reply":"回复正文","memory_candidates":[{"eligible":true,"quote":"用户原文连续片段","gist":"不超过12字的标签"}]}。'
 ].join('\n');
 
 const DREAM_REFINE_SYSTEM_PROMPT = [
@@ -2295,6 +2299,17 @@ function validatedRealityClue(value, userMessage, eligible) {
   return clue;
 }
 
+// 标签只是标签：超长就砍掉，砍完是空的就让界面回去截原话。它永远不会替代
+// 原话被存下来，也不会进画像的输入——模型概括错了，最多是列表上的一行标题
+// 不准，掀不动记录本身。
+function validatedClueGist(value, clue) {
+  const gist = asString(value, '', 40).replace(/\s+/g, '').replace(/[。！？…]+$/, '');
+  if (!gist || gist.length > 14) return '';
+  // 概括和原话一样长就不是概括，不如让界面自己截。
+  if (gist.length >= asString(clue, '', 300).length) return '';
+  return gist;
+}
+
 // 一条消息里往往同时有好几件事。老契约只收一条，剩下的直接蒸发。
 // 仍然认旧的单条字段：线上可能有正在返回旧格式的调用，也可能有缓存的响应。
 function collectRealityClues(parsed, userMessage) {
@@ -2305,8 +2320,10 @@ function collectRealityClues(parsed, userMessage) {
   raw.slice(0, 3).forEach(function (item) {
     if (!item || typeof item !== 'object') return;
     const clue = validatedRealityClue(item.quote, userMessage, item.eligible);
+    if (!clue) return;
     // 同一条消息里模型偶尔会把同一句话拆两遍报上来。
-    if (clue && clues.indexOf(clue) < 0) clues.push(clue);
+    if (clues.some(function (existing) { return existing.text === clue; })) return;
+    clues.push({ text: clue, gist: validatedClueGist(item.gist, clue) });
   });
   return clues;
 }
@@ -2321,15 +2338,19 @@ function parseDreamChatContent(content, userMessage) {
     parsed = null;
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { reply: asString(content, '', 1200), realityClue: '', realityClues: [] };
+    return { reply: asString(content, '', 1200), realityClue: '', realityClues: [], realityClueGists: [] };
   }
   reply = asString(parsed.reply, '', 1200);
   const clues = collectRealityClues(parsed, userMessage);
   return {
     reply: reply,
     // realityClue 保留给还没更新的客户端；新客户端读 realityClues。
-    realityClue: clues[0] || '',
-    realityClues: clues
+    realityClue: (clues[0] && clues[0].text) || '',
+    // realityClues 必须继续是字符串数组：线上还有旧客户端在 String() 它的每一
+    // 项，换成对象那边会存下一串 [object Object]。标签走并行数组，同序等长，
+    // 旧客户端看不见也不受影响。
+    realityClues: clues.map(function (clue) { return clue.text; }),
+    realityClueGists: clues.map(function (clue) { return clue.gist; })
   };
 }
 
@@ -2574,7 +2595,8 @@ async function runDreamChat(event, openid) {
       fallback: false,
       reply: chatContent.reply,
       realityClue: chatContent.realityClue,
-      realityClues: chatContent.realityClues || []
+      realityClues: chatContent.realityClues || [],
+      realityClueGists: chatContent.realityClueGists || []
     };
   } catch (error) {
     const diagnostic = decorateProviderError(error, config, startedAt);

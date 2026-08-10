@@ -850,6 +850,22 @@ assert.equal(
   database.rows.life_notes.find((item: Row) => item._id === confirmedConnectionNote.id)?.source,
   'dream_connection'
 );
+// gist 是目录页上的一行标签，跟着记录一起存，但永远不替代 text——画像只读
+// text，概括写歪了最多是目录上的一行不准，动不了记录本身。
+const gistNote = await saveDreamMain({
+  action: 'addLifeNote', dreamId: 'dream-2', text: '我最近其实很颓废，什么都不想干', gist: '最近很颓废',
+});
+assert.equal(gistNote.ok, true);
+const storedGistNote = database.rows.life_notes.find((item: Row) => item._id === gistNote.id);
+assert.equal(storedGistNote?.gist, '最近很颓废');
+assert.equal(storedGistNote?.text, '我最近其实很颓废，什么都不想干');
+// 超长的标签在这里就砍掉：它要放进一行小字里，不能由客户端决定多长。
+const longGistNote = await saveDreamMain({
+  action: 'addLifeNote', dreamId: 'dream-2', text: '换了个新组还在适应', gist: '这是一段长得离谱、根本放不进一行小字里的所谓概括',
+});
+assert.ok((database.rows.life_notes.find((item: Row) => item._id === longGistNote.id)?.gist || '').length <= 14);
+await saveDreamMain({ action: 'deleteLifeNote', noteId: gistNote.id });
+await saveDreamMain({ action: 'deleteLifeNote', noteId: longGistNote.id });
 // 白名单之外的 source 不落库，客户端传什么都不能变成一个新的证据类别。
 const unknownSourceNote = await saveDreamMain({
   action: 'addLifeNote', dreamId: 'dream-2', text: '来源不明的片段', source: 'whatever',

@@ -325,17 +325,23 @@ function skipRevisit(dreamId, callback) {
   }, callback);
 }
 
-// source 是可选的第三个参数，老调用点仍然传 (dreamId, text, callback)。
-function addLifeNote(dreamId, text, source, callback) {
+// source 和 gist 都是可选的尾参，老调用点仍然传 (dreamId, text, callback)
+// 或 (dreamId, text, source, callback)。
+function addLifeNote(dreamId, text, source, gist, callback) {
   if (typeof source === 'function') {
     callback = source;
     source = '';
+    gist = '';
+  } else if (typeof gist === 'function') {
+    callback = gist;
+    gist = '';
   }
   return callCloudFunction('saveDream', {
     action: 'addLifeNote',
     dreamId: dreamId || '',
     text: text || '',
-    source: source || ''
+    source: source || '',
+    gist: gist || ''
   }, callback);
 }
 

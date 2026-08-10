@@ -644,7 +644,7 @@ async function writeDreamUnlessDeleted(openid, dream, existingRecord) {
 // 所以来源要跟着记录一起存下去，不能只在写入那一刻区分。
 const LIFE_NOTE_SOURCES = ['dream_connection'];
 
-async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText, noteSource) {
+async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText, noteSource, noteGist) {
   const legacyJob = await findDeletionJob(openid, localDreamId);
   if (legacyJob) return null;
 
@@ -663,6 +663,9 @@ async function addLifeNoteUnlessDeleted(openid, localDreamId, noteText, noteSour
   const noteData = {
     openid: openid,
     text: normalizedText,
+    // 列表上的一行标签，不是记录。原话永远以 text 为准，画像也只读 text——
+    // 概括写歪了最多是目录上的一行不准，动不了记录本身。
+    gist: String(noteGist || '').replace(/\s+/g, '').slice(0, 14),
     source: LIFE_NOTE_SOURCES.indexOf(String(noteSource || '')) >= 0 ? String(noteSource) : '',
     sourceDreamId: localDreamId,
     createdAt: new Date()
@@ -1059,6 +1062,9 @@ exports.main = async function (event) {
           return {
             id: note._id,
             text: String(note.text || ''),
+            // 目录页显示 gist，详情页显示 text。没有 gist（旧记录、用户认下的
+            // 呼应、回访回答）时界面自己截断，不在这里编一个。
+            gist: String(note.gist || ''),
             // 三种来源的可信方式完全不同，此前这个字段被丢掉，界面于是把它们
             // 混成一堆叫「系统提取的现实线索」——其中 dream_connection 那些
             // 根本是我们自己写的句子，用户只是点头认下过。把我们的措辞标成
@@ -1207,7 +1213,8 @@ exports.main = async function (event) {
     }
 
     var noteSource = String((event && event.source) || '').trim();
-    var addedNote = await addLifeNoteUnlessDeleted(wxContext.OPENID, noteDreamId, noteText, noteSource);
+    var noteGist = String((event && event.gist) || '').trim().slice(0, 14);
+    var addedNote = await addLifeNoteUnlessDeleted(wxContext.OPENID, noteDreamId, noteText, noteSource, noteGist);
     if (!addedNote) return { ok: false, reason: 'dream_deleted' };
 
     return { ok: true, id: addedNote._id, deduplicated: addedNote.deduplicated === true };

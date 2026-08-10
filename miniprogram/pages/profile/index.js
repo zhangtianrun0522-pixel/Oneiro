@@ -3,144 +3,15 @@ var cloudBase = require('../../utils/cloudBase');
 var dreamMemory = require('../../utils/dreamMemory');
 var tabNav = require('../../utils/tabNav');
 var stagePortrait = require('../../utils/stagePortrait');
+var lifeNotes = require('../../utils/lifeNotes');
 
 function emptyProfile() {
   return { nickname: '', birthDate: '', birthTime: '', birthPlace: '', gender: '' };
 }
 
-// ── 现实线索的分组 ──────────────────────────────────────────────────────
-//
-// 这三种东西此前混成一堆，统一标着「系统提取的现实线索」。其中 dream_connection
-// 根本不是从用户话里提取的——那是 Oneiro 自己写的一句呼应，用户只是点了「是
-// 这样」。把我们的措辞标成「从你话里提取的」，用户会在自己的资料页读到一句
-// 自己从没说过的话，还以为是自己说的。
-//
-// 云函数早就分开存了（profileMemory 的 promptEvidence 就靠这个区分权重），
-// 只有列表接口把 source 丢掉了。
-//
-// 但光把 source 加回列表接口不够：那是一个「旧版云函数会静默省略」的字段，
-// 而它缺席时的默认值恰好是最糟的那个——我们写的句子会被归进「你说过的话」，
-// 用户在自己的资料页读到一句自己从没说过的话。所以来源不能只靠这一个字段。
-//
-// 本地有第二个、独立的证据：dream_connection 的正文逐字就是某个梦的一条
-// possible_connections，而整个梦册就在本地缓存里。对得上就是我们写的句子，
-// 不管云端返回了什么。
-var LIFE_NOTE_GROUPS = [
-  {
-    key: 'spoken',
-    label: '你说过的话',
-    hint: '从你在对话里说的话原样存下来，没有改写。',
-    sources: ['', 'portrait_correction']
-  },
-  {
-    key: 'confirmed',
-    label: '你认下的解读',
-    hint: '这些句子是 Oneiro 写的，你在解读里点过「是这样」。',
-    sources: ['dream_connection']
-  }
-];
-
-function normalizedClaim(value) {
-  return String(value || '').replace(/[\s，。、；：！？…—～·「」『』“”‘’（）()《》,.!?;:~"']/g, '');
-}
-
-// 梦册里所有被写过的呼应，连同它出自哪个梦。既用来认领来源，也用来回链梦卡。
-function buildConnectionIndex(archive) {
-  var index = {};
-  (Array.isArray(archive) ? archive : []).forEach(function (dream) {
-    var connections = dream && dream.result && dream.result.possible_connections;
-    if (!Array.isArray(connections)) return;
-    connections.forEach(function (item) {
-      var key = normalizedClaim(item);
-      if (key && !index[key]) index[key] = { dreamId: dream.id, title: String((dream.result && dream.result.title) || '') };
-    });
-  });
-  return index;
-}
-
-function noteSourceOf(note, connectionIndex) {
-  var declared = String((note && note.source) || '');
-  if (declared) return declared;
-  // 云端没说来源时自己认：对得上某条呼应，它就是我们写的句子。
-  return connectionIndex[normalizedClaim(note && note.text)] ? 'dream_connection' : '';
-}
-// 折叠后先露几条。多于这个数才出现展开入口。
-var LIFE_NOTE_COLLAPSED_COUNT = 3;
-// 「正在影响」这一段不折叠：它就是系统此刻真正在用的东西，藏起来这一屏又变回
-// 一份看不出实情的清单。inUseAt 由云端在每次生成画像时写下，所以这里显示的是
-// 上一版画像真正喂进去的那些，不是界面自己再猜一遍。
-// 单条超过这个长度就先截断，点一下看全文。手机上一行大概十六七个字，真实
-// 的线索普遍三十来字、占满三行；截到一行半，用户才看得出自己一共有多少条，
-// 而不是被两条长句糊满一屏。
-var LIFE_NOTE_PREVIEW_LENGTH = 24;
-
-function decorateNote(note, expandedNotes, dreamIndex) {
-  var body = String(note.text || '');
-  var key = note.localKey || note.id || '';
-  var noteExpanded = !!expandedNotes[key];
-  // 每条记录一直存着「我是从哪个梦来的」，只是从来没拿出来用。一句话孤零零
-  // 摆在那儿，用户看不出它是什么时候、聊什么的时候说的。
-  var dream = note.sourceDreamId ? dreamIndex[note.sourceDreamId] : null;
-  return Object.assign({}, note, {
-    localKey: key,
-    pinned: !!note.pinnedAt,
-    truncated: body.length > LIFE_NOTE_PREVIEW_LENGTH,
-    noteExpanded: noteExpanded,
-    displayText: !noteExpanded && body.length > LIFE_NOTE_PREVIEW_LENGTH
-      ? body.slice(0, LIFE_NOTE_PREVIEW_LENGTH) + '…'
-      : body,
-    dreamId: dream ? dream.id : '',
-    // 梦被删掉时给一句实话，不给死链接。
-    dreamLabel: note.sourceDreamId ? (dream ? (dream.title || '那个梦') : '梦已删除') : '',
-    dreamOpenable: !!dream
-  });
-}
-
-function buildDreamIndex(archive) {
-  var index = {};
-  (Array.isArray(archive) ? archive : []).forEach(function (dream) {
-    if (dream && dream.id) {
-      index[dream.id] = { id: dream.id, title: String((dream.result && dream.result.title) || '') };
-    }
-  });
-  return index;
-}
-
-function buildLifeNoteGroups(notes, expandedGroups, expandedNotes, archive) {
-  var list = Array.isArray(notes) ? notes : [];
-  var connectionIndex = buildConnectionIndex(archive);
-  var dreamIndex = buildDreamIndex(archive);
-  return LIFE_NOTE_GROUPS.map(function (group) {
-    var groupNotes = list.filter(function (note) {
-      return group.sources.indexOf(noteSourceOf(note, connectionIndex)) >= 0;
-    }).map(function (note) {
-      return decorateNote(note, expandedNotes, dreamIndex);
-    });
-    // 这一屏此前在骗人：真正影响画像的只有云端选出的那些，其余的照样完整显示
-    // 在一个标题写着「关于你的记录」的页面上，却一点作用都没有，而且没有任何
-    // 地方告诉用户哪些是摆设。
-    var active = groupNotes.filter(function (note) { return !!note.inUseAt && !note.retiredAt; });
-    var dormant = groupNotes.filter(function (note) { return !note.inUseAt || note.retiredAt; });
-    var groupExpanded = !!expandedGroups[group.key];
-    return {
-      key: group.key,
-      label: group.label,
-      hint: group.hint,
-      total: groupNotes.length,
-      activeNotes: active,
-      dormantCount: dormant.length,
-      expanded: groupExpanded,
-      collapsible: dormant.length > 0,
-      dormantNotes: groupExpanded ? dormant : dormant.slice(0, 0),
-      // 云端还没写过 inUseAt 时（老数据、或者还没生成过画像），退回原来的行为：
-      // 先露几条，其余折叠。否则整组会显示成「0 条正在影响」，那是另一句假话。
-      unknownUsage: active.length === 0 && groupNotes.length > 0 &&
-        !groupNotes.some(function (note) { return note.inUseAt || note.retiredAt; }),
-      fallbackNotes: groupExpanded ? groupNotes : groupNotes.slice(0, LIFE_NOTE_COLLAPSED_COUNT)
-    };
-  }).filter(function (group) { return group.total > 0; });
-}
-
+// 「关于你的记录」在这一页只是一个入口：几条、在用几条、大致关于什么。原话、
+// 来源梦和标为重要/编辑/删除全部在二级页。分组和标签的算法两页共用一份
+// （utils/lifeNotes），各写一份会立刻分叉——同一批记录在两页显示出不同的条数。
 function genderIndexFor(value) {
   var normalized = String(value || '').trim().toLowerCase();
   return normalized === 'male' ? 1 : normalized === 'female' ? 2 : 0;
@@ -185,9 +56,7 @@ Page({
     revisitSubmitting: false,
     revisitDisabled: false,
     lifeNotes: [],
-    lifeNoteGroups: [],
-    lifeNoteExpandedGroups: {},
-    lifeNoteExpandedNotes: {},
+    lifeNoteSummary: { total: 0, activeCount: 0, unknownUsage: false, labelLine: '' },
     memoryState: stagePortrait.emptyMemoryState(),
     // 画像在这一页是只读入口，编辑/重新梳理/溯源都在「梦册」顶部。这些键仍然
     // 存在是因为共享控制器（utils/stagePortrait）向它们写状态。
@@ -319,72 +188,18 @@ Page({
   },
 
   renderLifeNotes: function () {
+    var summary = lifeNotes.buildSummary(
+      this.data.lifeNotes,
+      wx.getStorageSync('oneiro:dreamArchive') || []
+    );
     this.setData({
-      lifeNoteGroups: buildLifeNoteGroups(
-        this.data.lifeNotes,
-        this.data.lifeNoteExpandedGroups,
-        this.data.lifeNoteExpandedNotes,
-        wx.getStorageSync('oneiro:dreamArchive') || []
-      )
+      lifeNoteSummary: Object.assign({}, summary, { labelLine: summary.labels.join(' · ') })
     });
   },
 
-  toggleLifeNoteGroup: function (event) {
-    var key = String(event.currentTarget.dataset.group || '');
-    var next = Object.assign({}, this.data.lifeNoteExpandedGroups);
-    next[key] = !next[key];
-    this.setData({ lifeNoteExpandedGroups: next });
-    this.renderLifeNotes();
-  },
-
-  // 「一直重要」：钉住的记录不参与排队，永远占一个名额。哪些还算数由用户说了
-  // 算，不是我们拿一个时间窗替他决定。
-  togglePinLifeNote: function (event) {
-    var that = this;
-    var note = this.findLifeNote(event);
-    if (!note || !note.id) {
-      wx.showToast({ title: '联网后可标记这条', icon: 'none' });
-      return;
-    }
-    var nextPinned = !note.pinnedAt;
-    cloudBase.pinLifeNote(note.id, nextPinned, function (result) {
-      if (!result || !result.ok) {
-        wx.showToast({ title: '暂时没成功，请稍后再试', icon: 'none' });
-        return;
-      }
-      that.loadLifeNotes();
-      that.refreshPortraitInBackground(
-        nextPinned ? '用户标记了一条一直重要的记录' : '用户取消了一条记录的标记',
-        'life-note-pin:' + note.id + ':' + String(Date.now())
-      );
-      wx.showToast({ title: nextPinned ? '已标记为一直重要' : '已取消标记', icon: 'none' });
-    });
-  },
-
-  openNoteDream: function (event) {
-    var dreamId = String(event.currentTarget.dataset.dreamId || '');
-    if (!dreamId) return;
-    analytics.trackEvent('life_note_open_dream', { dreamId: dreamId });
-    wx.navigateTo({ url: '/pages/result/index?id=' + encodeURIComponent(dreamId) });
-  },
-
-  toggleLifeNote: function (event) {
-    var key = String(event.currentTarget.dataset.key || '');
-    if (!key) return;
-    var next = Object.assign({}, this.data.lifeNoteExpandedNotes);
-    next[key] = !next[key];
-    this.setData({ lifeNoteExpandedNotes: next });
-    this.renderLifeNotes();
-  },
-
-  // 分组之后按下标定位就不成立了：界面上的位置和 lifeNotes 里的位置不再对应，
-  // 折叠状态还会让可见项少于实际项。改成按 id 查。
-  findLifeNote: function (event) {
-    var key = String(event.currentTarget.dataset.key || '');
-    var matched = this.data.lifeNotes.filter(function (note) {
-      return String(note.localKey || note.id || '') === key;
-    });
-    return matched[0] || null;
+  openLifeNotes: function () {
+    analytics.trackEvent('life_notes_open', { total: this.data.lifeNoteSummary.total });
+    wx.navigateTo({ url: '/pages/life-notes/index' });
   },
 
   refreshPortraitInBackground: function (reason, refreshKey) {
@@ -401,63 +216,6 @@ Page({
             memoryLoaded: true
           })
         ));
-      }
-    });
-  },
-
-  editLifeNote: function (event) {
-    var that = this;
-    var note = this.findLifeNote(event);
-    if (!note || !note.id) {
-      wx.showToast({ title: '联网后可修改这条片段', icon: 'none' });
-      return;
-    }
-    wx.showModal({
-      title: '修改现实片段',
-      editable: true,
-      content: note.text,
-      placeholderText: note.text,
-      success: function (res) {
-        var text = String(res.content || '').trim();
-        if (!res.confirm || !text || text === note.text) return;
-        cloudBase.editLifeNote(note.id, text, function (result) {
-          if (!result || !result.ok) {
-            wx.showToast({ title: '修改失败，请稍后再试', icon: 'none' });
-            return;
-          }
-          that.loadLifeNotes();
-          that.loadProfileMemory();
-          that.refreshPortraitInBackground('用户修改了现实片段', 'life-note-edit:' + note.id + ':' + String(Date.now()));
-          wx.showToast({ title: '现实片段已修改', icon: 'success' });
-        });
-      }
-    });
-  },
-
-  deleteLifeNote: function (event) {
-    var that = this;
-    var note = this.findLifeNote(event);
-    if (!note || !note.id) {
-      wx.showToast({ title: '联网后可删除这条片段', icon: 'none' });
-      return;
-    }
-    wx.showModal({
-      title: '删除这条现实片段？',
-      content: '删除后，它不会再用于画像和后续梦境关联。',
-      confirmText: '删除',
-      confirmColor: '#b85c54',
-      success: function (res) {
-        if (!res.confirm) return;
-        cloudBase.deleteLifeNote(note.id, function (result) {
-          if (!result || !result.ok) {
-            wx.showToast({ title: '删除失败，请稍后再试', icon: 'none' });
-            return;
-          }
-          that.loadLifeNotes();
-          that.loadProfileMemory();
-          that.refreshPortraitInBackground('用户删除了现实片段', 'life-note-delete:' + note.id + ':' + String(Date.now()));
-          wx.showToast({ title: '现实片段已删除', icon: 'success' });
-        });
       }
     });
   },

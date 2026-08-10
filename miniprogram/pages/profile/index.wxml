@@ -1,26 +1,3 @@
-<!-- 一条记录长什么样。三处用到（正在影响 / 兼容旧数据 / 更早的），抽成模板
-     免得三份复制品各自漂移。 -->
-<template name="lifeNote">
-  <text
-    class="fact-copy {{note.truncated ? 'is-tappable' : ''}} {{note.retiredAt ? 'is-retired' : ''}}"
-    data-key="{{note.localKey}}"
-    bindtap="toggleLifeNote"
-  >{{note.displayText}}<text wx:if="{{note.truncated}}" class="fact-more">{{note.noteExpanded ? ' 收起' : ' 全文'}}</text></text>
-  <view class="fact-meta">
-    <text
-      wx:if="{{note.dreamLabel}}"
-      class="fact-dream {{note.dreamOpenable ? 'is-openable' : ''}}"
-      data-dream-id="{{note.dreamOpenable ? note.dreamId : ''}}"
-      bindtap="openNoteDream"
-    >来自：{{note.dreamLabel}}{{note.dreamOpenable ? ' ›' : ''}}</text>
-    <view class="fact-actions">
-      <text data-key="{{note.localKey}}" bindtap="togglePinLifeNote" class="fact-pin {{note.pinned ? 'is-on' : ''}}">{{note.pinned ? '一直重要' : '标为重要'}}</text>
-      <text data-key="{{note.localKey}}" bindtap="editLifeNote" class="fact-edit">编辑</text>
-      <text data-key="{{note.localKey}}" bindtap="deleteLifeNote" class="fact-delete">删除</text>
-    </view>
-  </view>
-</template>
-
 <view class="screen profile-screen">
   <view class="profile-header">
     <text class="title">我的资料</text>
@@ -93,51 +70,20 @@
     <text class="recent-clues-summary">{{insights.stageSummary}}</text>
   </view>
 
-  <!-- 「你说过的话」和「你认下的解读」此前混成一堆，统一标着「系统提取的现实
-       线索」。后者根本不是从用户话里提取的——那是 Oneiro 写的一句呼应，用户
-       只是点过「是这样」。混在一起，用户会在自己的资料页读到一句自己从没说过
-       的话，还以为是自己说的。 -->
-  <view class="facts-block section-divider">
+  <!-- 这里原来把全部记录铺开：两组、每条原话、来源梦、标为重要/编辑/删除。
+       一屏读下来全是原话，而这一格要回答的只是「系统记着我什么」。原话、来源
+       和所有操作都搬进了二级页，这里只留标签和一个真实的条数。 -->
+  <view class="facts-entry section-divider" bindtap="openLifeNotes">
     <view class="section-row">
       <text class="section-label">关于你的记录</text>
-      <text class="section-meta">{{lifeNotes.length}} 条</text>
+      <text class="section-meta">{{lifeNoteSummary.total}} 条 ›</text>
     </view>
-    <text wx:if="{{!lifeNotes.length}}" class="facts-empty">系统会从梦后对话和次日回访中提取有现实落点的线索，普通猜测不会直接成为记忆。</text>
-
-    <view wx:for="{{lifeNoteGroups}}" wx:for-item="group" wx:key="key" class="fact-group">
-      <view class="fact-group-head">
-        <text class="fact-group-label">{{group.label}}</text>
-        <text class="fact-group-count">{{group.total}} 条</text>
-      </view>
-      <text class="fact-group-hint">{{group.hint}}</text>
-
-      <!-- 系统此刻真正在用的那些。这一段不折叠：藏起来，这一屏就又变回一份
-           看不出实情的清单。 -->
-      <view wx:if="{{!group.unknownUsage}}" class="facts-list">
-        <view wx:for="{{group.activeNotes}}" wx:for-item="note" wx:key="localKey" class="fact-item">
-          <template is="lifeNote" data="{{note: note}}" />
-        </view>
-      </view>
-      <!-- 云端还没标过谁在用（老数据、或还没生成过画像）：退回原来的显示方式，
-           不要显示成「0 条正在影响」，那是另一句假话。 -->
-      <view wx:else class="facts-list">
-        <view wx:for="{{group.fallbackNotes}}" wx:for-item="note" wx:key="localKey" class="fact-item">
-          <template is="lifeNote" data="{{note: note}}" />
-        </view>
-      </view>
-
-      <view wx:if="{{group.expanded && group.dormantNotes.length}}" class="facts-list is-dormant">
-        <view wx:for="{{group.dormantNotes}}" wx:for-item="note" wx:key="localKey" class="fact-item">
-          <template is="lifeNote" data="{{note: note}}" />
-        </view>
-      </view>
-      <text
-        wx:if="{{group.collapsible}}"
-        class="fact-group-toggle"
-        data-group="{{group.key}}"
-        bindtap="toggleLifeNoteGroup"
-      >{{group.expanded ? '收起更早的' : '更早的 ' + group.dormantCount + ' 条（已不再影响画像）'}}</text>
-    </view>
+    <text wx:if="{{!lifeNoteSummary.total}}" class="facts-empty">系统会从梦后对话和次日回访中提取有现实落点的线索，普通猜测不会直接成为记忆。</text>
+    <block wx:else>
+      <text class="facts-labels">{{lifeNoteSummary.labelLine}}</text>
+      <!-- 「不知道有哪些在用」和「0 条在用」是两件事，别把前者显示成后者。 -->
+      <text class="facts-usage">{{lifeNoteSummary.unknownUsage ? '下次梳理画像后，这里会显示哪几条正在影响它' : lifeNoteSummary.activeCount + ' 条正在影响画像'}}</text>
+    </block>
   </view>
 
   <view class="basic-info-block section-divider">

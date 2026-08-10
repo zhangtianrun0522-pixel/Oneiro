@@ -579,6 +579,8 @@ function createWxMock(): WxMock {
             notes: (wx.lifeNoteRows || []).map((row: Record<string, any>) => ({
               id: row.id,
               text: row.text,
+              // 目录页显示 gist，详情页显示 text。没有 gist 的旧记录由界面截断。
+              gist: row.gist || '',
               source: row.source || '',
               sourceDreamId: row.sourceDreamId || '',
               inUseAt: row.inUseAt || null,
@@ -1213,9 +1215,16 @@ for (const [path, expected] of [
   ['miniprogram/pages/profile/index.wxml', '阶段画像'],
   ['miniprogram/pages/profile/index.wxml', 'bindtap="openPortrait"'],
   ['miniprogram/pages/profile/index.wxml', '在梦册查看'],
-  ['miniprogram/pages/profile/index.wxml', '你说过的话'],
-  ['miniprogram/pages/profile/index.wxml', '你认下的解读'],
-  ['miniprogram/pages/profile/index.wxml', 'bindtap="toggleLifeNoteGroup"'],
+  // 「关于你的记录」在资料页只是入口：条数、标签、在用几条。原话、来源梦和
+  // 标为重要/编辑/删除都在二级页——把它们全铺在这一页，一屏读下来全是原话，
+  // 而这一格要回答的只是「系统记着我什么」。
+  ['miniprogram/pages/profile/index.wxml', '关于你的记录'],
+  ['miniprogram/pages/profile/index.wxml', 'bindtap="openLifeNotes"'],
+  ['miniprogram/pages/profile/index.wxml', '正在影响画像'],
+  ['miniprogram/utils/lifeNotes.js', '你说过的话'],
+  ['miniprogram/utils/lifeNotes.js', '你认下的解读'],
+  ['miniprogram/pages/life-notes/index.wxml', 'bindtap="toggleGroup"'],
+  ['miniprogram/pages/life-notes/index.wxml', 'bindtap="deleteNote"'],
   ['miniprogram/pages/archive/index.wxml', '阶段画像'],
   ['miniprogram/pages/archive/index.wxml', '这段不像我'],
   ['miniprogram/pages/dream-chat/index.wxml', '{{portraitMode}}'],
@@ -1250,6 +1259,9 @@ for (const [path, unexpected] of [
   // 回去，等于让用户自己给自己下判断。纠偏只走对话。
   ['miniprogram/pages/archive/index.wxml', 'portrait-editor'],
   ['miniprogram/pages/archive/index.wxml', 'bindinput="onPortraitSummaryInput"'],
+  // 记录的原话和逐条操作只在二级页出现。留在资料页上，这一格就又变回一份清单。
+  ['miniprogram/pages/profile/index.wxml', 'bindtap="deleteLifeNote"'],
+  ['miniprogram/pages/profile/index.wxml', 'bindtap="togglePinLifeNote"'],
 ] as const) {
   assertNotIncludes(path, unexpected);
 }
@@ -1386,7 +1398,9 @@ for (const [path, expected] of [
   ['miniprogram/pages/dream-chat/index.js', "chatAboutDream"],
   ['miniprogram/pages/profile/index.js', "cloudBase.saveProfile"],
   ['miniprogram/pages/profile/index.js', "refreshPortraitInBackground"],
-  ['miniprogram/pages/profile/index.js', "deleteLifeNote"],
+  ['miniprogram/pages/life-notes/index.js', "cloudBase.deleteLifeNote"],
+  ['miniprogram/pages/life-notes/index.js', "cloudBase.editLifeNote"],
+  ['miniprogram/pages/life-notes/index.js', "cloudBase.pinLifeNote"],
   // 画像的编排只有一份实现（utils/stagePortrait），梦册和「我」两页都用它。
   // 两页各自实现会立刻分叉：同一个快照在两处显示出不同的版本号或状态。
   ['miniprogram/utils/stagePortrait.js', "toggleUse"],
@@ -1550,6 +1564,9 @@ const stagePortrait = loadCommonJS<Record<string, any>>(
   { wx, setTimeout, clearTimeout },
   { './analytics': analytics, './syncQueue': mainSyncQueue }
 );
+// 「关于你的记录」的分组和标签两页共用一份：各写一份会立刻分叉，同一批记录
+// 在资料页和二级页显示出不同的条数。
+const lifeNotesUtil = loadCommonJS<Record<string, any>>('miniprogram/utils/lifeNotes.js', {});
 analytics.clearEvents();
 assert.equal(analytics.STORAGE_KEY, 'oneiro:events');
 assert.equal(cloudBase.CLOUD_STATUS_KEY, 'oneiro:cloudStatus');
@@ -1604,6 +1621,7 @@ const pageModules = {
   '../../utils/syncQueue': mainSyncQueue,
   '../../utils/recorderRouter': recorderRouter,
   '../../utils/stagePortrait': stagePortrait,
+  '../../utils/lifeNotes': lifeNotesUtil,
 };
 
 const homePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);
@@ -1957,7 +1975,7 @@ assert.equal(wx.storage['oneiro:lastProfile'].gender, 'male');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveProfile'));
 assert.equal(profilePage.data.memoryState.current.version, 1);
 
-// ── 关于你的记录：按来源分组，折叠，可展开 ──────────────────────────────
+// ── 关于你的记录：资料页只是入口，清单在二级页 ──────────────────────────
 //
 // 此前三种来源混成一堆，统一标着「系统提取的现实线索」。dream_connection 根本
 // 不是从用户话里提取的——那是我们写的一句呼应，他只是点过「是这样」。混在
@@ -1966,14 +1984,6 @@ assert.equal(profilePage.data.memoryState.current.version, 1);
 // source 是一个「旧版云函数会静默省略」的字段，而它缺席时的默认值恰好是最糟
 // 的那个。所以 n2 这里故意不带 source：本地必须能自己认出来它是我们写的句子
 // ——它逐字就是梦册里那条呼应。
-wx.lifeNoteRows = [
-  { id: 'n1', text: '我最近其实很颓废，我啥也不想干只想躺着，事实上我已经这样有两三个月了', source: '' },
-  { id: 'n2', text: '黑夜中的馈赠，呼应了你当前过渡期中那种不确定但充满可能的感觉', source: '' },
-  { id: 'n3', text: '我在考虑出国', source: '' },
-  { id: 'n4', text: '那句说反了，我是当场就讲', source: 'portrait_correction' },
-  { id: 'n5', text: '这周开始每天走一万步', source: '' },
-  { id: 'n6', text: '换了个新组，还在适应', source: '' },
-];
 const archiveBeforeLifeNoteCase = wx.storage['oneiro:dreamArchive'];
 wx.storage['oneiro:dreamArchive'] = [
   {
@@ -1987,17 +1997,41 @@ wx.storage['oneiro:dreamArchive'] = [
 ];
 const inUse = '2026-08-10T00:00:00.000Z';
 wx.lifeNoteRows = [
-  { id: 'n1', text: '我最近其实很颓废，我啥也不想干只想躺着，事实上我已经这样有两三个月了', source: '', inUseAt: inUse, sourceDreamId: 'dream-with-connection' },
+  { id: 'n1', text: '我最近其实很颓废，我啥也不想干只想躺着，事实上我已经这样有两三个月了', gist: '不想干活只想躺着', source: '', inUseAt: inUse, sourceDreamId: 'dream-with-connection' },
   { id: 'n2', text: '黑夜中的馈赠，呼应了你当前过渡期中那种不确定但充满可能的感觉', source: '', inUseAt: inUse },
-  { id: 'n3', text: '我在考虑出国', source: '', inUseAt: inUse },
+  { id: 'n3', text: '我在考虑出国', gist: '在考虑出国', source: '', inUseAt: inUse },
   { id: 'n4', text: '那句说反了，我是当场就讲', source: 'portrait_correction', inUseAt: inUse },
   { id: 'n5', text: '这周开始每天走一万步', source: '' },
   { id: 'n6', text: '换了个新组，还在适应', source: '', retiredAt: inUse, sourceDreamId: 'deleted-dream' },
 ];
-const lifeNotePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+
+// 资料页：只回答「一共几条、大致关于什么、其中几条正在影响画像」。原话和逐条
+// 操作全部搬走了——留在这里，这一格就又变回一份读不完的清单。
+const lifeNoteEntryPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+lifeNoteEntryPage.onLoad();
+const noteSummary = () => lifeNoteEntryPage.data.lifeNoteSummary;
+assert.equal(noteSummary().total, 6);
+assert.equal(noteSummary().activeCount, 4);
+assert.equal(noteSummary().unknownUsage, false);
+// 入口上的标签只取用户自己说过的那些：Oneiro 写的句子摆在「关于你的记录」的
+// 门面上，读起来像是他讲的。
+assert.ok(!noteSummary().labelLine.includes('黑夜中的馈赠'));
+// 有 gist 就用 gist——截断不是概括，「我最近其实很颓废，我啥也不想干只想躺着，
+// 事实上我…」既不是概括也不是原话。
+assert.ok(noteSummary().labelLine.includes('不想干活只想躺着'));
+assert.ok(noteSummary().labelLine.includes('在考虑出国'));
+// 没有 gist 的旧记录退回截断，但不许把整条原话贴到入口上。
+assert.ok(noteSummary().labelLine.length < 60);
+assert.equal(typeof lifeNoteEntryPage.deleteLifeNote, 'undefined');
+assert.equal(typeof lifeNoteEntryPage.togglePinLifeNote, 'undefined');
+lifeNoteEntryPage.openLifeNotes();
+assert.equal(last(wx.navigations), '/pages/life-notes/index');
+
+// 二级页：完整清单、原话、来源梦、逐条操作。
+const lifeNotePage = loadPage('miniprogram/pages/life-notes/index.js', pageModules, wx, app);
 lifeNotePage.onLoad();
 const findGroup = (key: string) =>
-  lifeNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === key);
+  lifeNotePage.data.groups.find((group: Record<string, any>) => group.key === key);
 const spokenGroup = findGroup('spoken');
 const confirmedGroup = findGroup('confirmed');
 assert.ok(spokenGroup && confirmedGroup);
@@ -2019,28 +2053,17 @@ assert.deepEqual(
 assert.equal(spokenGroup.dormantCount, 2, '没在用的和已退休的都归入「更早的」');
 assert.equal(spokenGroup.collapsible, true);
 // 折叠的是「更早的」，不是在用的——把在用的藏起来，这一屏又变回看不出实情的清单。
-assert.equal(spokenGroup.dormantNotes.length, 0);
-lifeNotePage.toggleLifeNoteGroup({ currentTarget: { dataset: { group: 'spoken' } } });
+assert.equal(spokenGroup.visibleDormant.length, 0);
+lifeNotePage.toggleGroup({ currentTarget: { dataset: { group: 'spoken' } } });
 assert.deepEqual(
-  findGroup('spoken').dormantNotes.map((note: Record<string, any>) => note.id),
+  findGroup('spoken').visibleDormant.map((note: Record<string, any>) => note.id),
   ['n5', 'n6']
 );
 assert.equal(findGroup('spoken').activeNotes.length, 3, '展开更早的不该影响在用的那段');
 
-// 缩略：长句先截断，点一下看全文。
+// 详情页给的是原话本身，不是标签：愿意点进来的人要看的正是被存下来的那句。
 const longNote = findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n1');
-assert.equal(longNote.truncated, true);
-assert.ok(longNote.displayText.endsWith('…'));
-assert.ok(longNote.displayText.length < longNote.text.length);
-lifeNotePage.toggleLifeNote({ currentTarget: { dataset: { key: 'n1' } } });
-assert.equal(
-  findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n1').displayText,
-  wx.lifeNoteRows[0].text
-);
-assert.equal(
-  findGroup('spoken').activeNotes.find((note: Record<string, any>) => note.id === 'n3').truncated,
-  false
-);
+assert.equal(longNote.text, wx.lifeNoteRows[0].text);
 
 // 每条记录一直存着「我是从哪个梦来的」，只是从来没拿出来用。一句话孤零零摆在
 // 那儿，用户看不出它是什么时候、聊什么的时候说的。
@@ -2049,9 +2072,10 @@ assert.equal(findGroup('spoken').activeNotes[0].dreamOpenable, true);
 lifeNotePage.openNoteDream({ currentTarget: { dataset: { dreamId: 'dream-with-connection' } } });
 assert.equal(last(wx.navigations), '/pages/result/index?id=dream-with-connection');
 // 梦被删掉时给一句实话，不给死链接。
-const retiredNote = findGroup('spoken').dormantNotes.find((note: Record<string, any>) => note.id === 'n6');
+const retiredNote = findGroup('spoken').visibleDormant.find((note: Record<string, any>) => note.id === 'n6');
 assert.equal(retiredNote.dreamLabel, '梦已删除');
 assert.equal(retiredNote.dreamOpenable, false);
+assert.equal(retiredNote.retired, true);
 const navigationsBeforeDeadLink = wx.navigations.length;
 lifeNotePage.openNoteDream({ currentTarget: { dataset: { dreamId: '' } } });
 assert.equal(wx.navigations.length, navigationsBeforeDeadLink);
@@ -2063,32 +2087,38 @@ assert.equal(findGroup('spoken').activeNotes[0].pinned, false);
 wx.lifeNoteRows = wx.lifeNoteRows.map((row: Record<string, any>) =>
   row.id === 'n5' ? { ...row, pinnedAt: inUse } : row
 );
-lifeNotePage.togglePinLifeNote({ currentTarget: { dataset: { key: 'n5' } } });
+lifeNotePage.togglePin({ currentTarget: { dataset: { key: 'n5' } } });
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream' && call.data.action === 'pinLifeNote'));
 assert.equal(
   last(wx.cloudCalls.filter((call) => call.name === 'saveDream' && call.data.action === 'pinLifeNote')).data.pinned,
   true
 );
 
-// 云端还没标过谁在用（老数据、或者还没生成过画像）：退回原来的显示方式，不要
-// 显示成「0 条正在影响」——那是另一句假话。
+// 云端还没标过谁在用（老数据、或者还没生成过画像）：说不知道，不要显示成
+// 「0 条正在影响」——那是另一句假话。
 wx.lifeNoteRows = [
   { id: 'u1', text: '第一条还没被标记过的旧记录', source: '' },
   { id: 'u2', text: '第二条还没被标记过的旧记录', source: '' },
   { id: 'u3', text: '第三条还没被标记过的旧记录', source: '' },
   { id: 'u4', text: '第四条还没被标记过的旧记录', source: '' },
 ];
-const legacyNotePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+const legacyNotePage = loadPage('miniprogram/pages/life-notes/index.js', pageModules, wx, app);
 legacyNotePage.onLoad();
-const legacyGroup = legacyNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === 'spoken');
+const legacyGroup = legacyNotePage.data.groups.find((group: Record<string, any>) => group.key === 'spoken');
 assert.equal(legacyGroup.unknownUsage, true);
-assert.equal(legacyGroup.fallbackNotes.length, 3);
 assert.equal(legacyGroup.total, 4);
+// 不知道谁在用的时候一条都不许藏：折叠的前提是「这些已经不影响画像了」，
+// 而这里恰恰不知道。
+assert.equal(legacyGroup.visibleDormant.length, 4);
+assert.equal(legacyGroup.collapsible, false);
+const legacyEntryPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+legacyEntryPage.onLoad();
+assert.equal(legacyEntryPage.data.lifeNoteSummary.unknownUsage, true);
 
-// 分组之后按下标定位就不成立了——界面位置和 lifeNotes 里的位置不再对应，折叠
+// 分组之后按下标定位就不成立了——界面位置和 notes 里的位置不再对应，折叠
 // 还会让可见项少于实际项。编辑/删除/标记必须按 id 查。
-assert.equal(legacyNotePage.findLifeNote({ currentTarget: { dataset: { key: 'u4' } } }).text, '第四条还没被标记过的旧记录');
-assert.equal(legacyNotePage.findLifeNote({ currentTarget: { dataset: { key: 'nope' } } }), null);
+assert.equal(legacyNotePage.findNote({ currentTarget: { dataset: { key: 'u4' } } }).text, '第四条还没被标记过的旧记录');
+assert.equal(legacyNotePage.findNote({ currentTarget: { dataset: { key: 'nope' } } }), null);
 wx.lifeNoteRows = [];
 wx.storage['oneiro:dreamArchive'] = archiveBeforeLifeNoteCase;
 

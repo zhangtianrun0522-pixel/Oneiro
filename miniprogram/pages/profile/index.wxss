@@ -252,52 +252,23 @@
   line-height: 1.75;
 }
 
-/* ── 关于你的记录 ── */
-/* 两组的可信方式不一样：一组是他的原话，一组是我们写的、他点头认下的句子。
-   分组标题和说明就是这个区别本身，不是装饰。 */
-.fact-group {
-  margin-top: var(--space-tight);
-  padding-top: var(--space-tight);
-}
-
-.fact-group + .fact-group {
-  border-top: 1rpx solid var(--rule);
-}
-
-.fact-group-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.fact-group-label {
+/* ── 关于你的记录（入口） ── */
+/* 这一格原来铺开全部记录，一屏读下来全是原话。现在只回答三件事：一共几条、
+   大致关于什么、其中几条正在影响画像。原话和操作都在二级页。 */
+.facts-labels {
+  display: block;
+  margin-top: 10rpx;
   color: var(--ink);
-  font-size: var(--fs-label);
-  letter-spacing: 0.04em;
+  font-size: var(--fs-aux);
+  line-height: 1.6;
 }
 
-.fact-group-count {
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-}
-
-.fact-group-hint {
+.facts-usage {
   display: block;
   margin-top: 6rpx;
   color: var(--ink-70);
   font-size: var(--fs-label);
-  line-height: 1.6;
-}
-
-.fact-group-toggle {
-  display: block;
-  margin-top: var(--space-tight);
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-}
-
-.fact-more {
-  color: var(--ink-70);
+  line-height: 1.5;
 }
 
 .facts-empty {
@@ -307,67 +278,6 @@
   font-size: var(--fs-aux);
   line-height: 1.7;
 }
-
-.facts-list {
-  display: flex;
-  flex-direction: column;
-  gap: 24rpx;
-  margin-top: var(--space-tight);
-}
-
-/* 正文一行，来源和操作另起一行。原来正文和操作并排，加上「来自：某个梦」之后
-   一行塞不下三样东西，正文会被挤成很窄的一条。 */
-.fact-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-}
-
-.fact-copy {
-  min-width: 0;
-  color: var(--ink);
-  font-size: var(--fs-aux);
-  line-height: 1.6;
-}
-
-.fact-meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 20rpx;
-}
-
-.fact-dream {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-}
-
-.fact-dream.is-openable { color: var(--ink); }
-
-.fact-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: var(--space-tight);
-  font-size: var(--fs-label);
-}
-
-.fact-pin { color: var(--ink-70); }
-.fact-pin.is-on { color: var(--ink); }
-
-/* 已经不影响画像的那些：仍然完整可读、可删，但不该和在用的看起来一样重。 */
-.facts-list.is-dormant .fact-copy { color: var(--ink-70); }
-.fact-copy.is-retired { text-decoration: line-through; }
-
-.fact-edit { color: var(--ink-70); }
-
-/* 「删除」用危险色，--cinnabar 在小字号只有 4.29:1 不够，
-   换成已校准的 --cinnabar-ink：4.69–5.03:1 */
-.fact-delete { color: var(--cinnabar-ink); }
 
 /* ── 基础资料：产品决定保留现有内联表单交互（input + picker +
    底部保存按钮），这里只对齐标题/说明文案/分隔线的视觉规格。
