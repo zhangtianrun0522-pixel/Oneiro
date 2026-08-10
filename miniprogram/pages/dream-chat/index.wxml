@@ -35,59 +35,43 @@
   <view class="chat-composer">
     <text wx:if="{{cloudSyncPending}}" class="cloud-sync-hint">聊天记录待同步</text>
 
-    <!-- 聊满 6 轮后，输入框、语音、发送三个控件同时变灰，页面上却没有任何一句
-         话解释发生了什么——用户读到的就是「卡死了、发不出去」。这是内测里
-         「无法发送」反馈的直接来源。轮次上限本身是刻意的设计（这不是一个无限
-         陪聊的产品），但它必须自己说出口，并且给出下一步。 -->
-    <view wx:if="{{turnCount >= maxTurns}}" class="chat-ended">
-      <text class="chat-ended-title">这个梦这次先聊到这里</text>
-      <text class="chat-ended-copy">一次对话最多 {{maxTurns}} 轮，是为了让它停在你还记得住的地方。刚才说到的现实线索已经存进你的记录。</text>
-      <view class="chat-ended-actions">
-        <button class="chat-ended-primary" bindtap="backToReading">回到这个梦的解读</button>
-        <button class="chat-ended-secondary" bindtap="startNewDream">记下新的梦</button>
-      </view>
+    <!-- 轻量提示：只在还没开口时出现，点一下填进输入框 -->
+    <scroll-view wx:if="{{!inputValue}}" class="guide-list" scroll-x show-scrollbar="{{false}}">
+      <text class="guide-chip" data-prompt="梦里最清楚的画面是：" bindtap="useGuide">梦里最清楚的画面</text>
+      <text class="guide-chip" data-prompt="醒来以后，我最明显的情绪是：" bindtap="useGuide">醒来后的情绪</text>
+      <text class="guide-chip" data-prompt="这让我想到现实里的：" bindtap="useGuide">现实里的对应</text>
+    </scroll-view>
+    <view class="composer-row">
+      <textarea
+        class="chat-input"
+        value="{{inputValue}}"
+        maxlength="500"
+        auto-height
+        cursor-spacing="24"
+        disabled="{{sending || recognizing}}"
+        bindinput="onInput"
+        placeholder="说说梦里的画面或醒来后的感受…"
+        placeholder-class="muted"
+      />
+      <button
+        class="{{recording ? 'voice-button recording' : 'voice-button'}}"
+        aria-label="按住说话"
+        disabled="{{sending || recognizing}}"
+        bindtap="onVoiceTap"
+        bindtouchstart="onVoiceTouchStart"
+        bindtouchend="onVoiceTouchEnd"
+        bindtouchcancel="onVoiceTouchCancel"
+      >{{recording ? recordingSeconds + 's' : '说'}}</button>
+      <!-- 设计稿没有画语音功能，只画了发送圆钮里的「↑」；语音是真实的
+           按住说话/识别链路，这里保留功能，只把两个按钮都改成设计稿的
+           正圆造型（见下方 wxss），发送按钮的可见内容换成设计稿的箭头，
+           用 aria-label 补回"发送"给辅助功能 -->
+      <button class="send-button" aria-label="发送" disabled="{{sending || recording || recognizing}}" bindtap="sendMessage">↑</button>
     </view>
-
-    <block wx:else>
-      <!-- 轻量提示：只在还没开口时出现，点一下填进输入框 -->
-      <scroll-view wx:if="{{!inputValue}}" class="guide-list" scroll-x show-scrollbar="{{false}}">
-        <text class="guide-chip" data-prompt="梦里最清楚的画面是：" bindtap="useGuide">梦里最清楚的画面</text>
-        <text class="guide-chip" data-prompt="醒来以后，我最明显的情绪是：" bindtap="useGuide">醒来后的情绪</text>
-        <text class="guide-chip" data-prompt="这让我想到现实里的：" bindtap="useGuide">现实里的对应</text>
-      </scroll-view>
-      <view class="composer-row">
-        <textarea
-          class="chat-input"
-          value="{{inputValue}}"
-          maxlength="500"
-          auto-height
-          cursor-spacing="24"
-          disabled="{{sending || recognizing}}"
-          bindinput="onInput"
-          placeholder="说说梦里的画面或醒来后的感受…"
-          placeholder-class="muted"
-        />
-        <button
-          class="{{recording ? 'voice-button recording' : 'voice-button'}}"
-          aria-label="按住说话"
-          disabled="{{sending || recognizing}}"
-          bindtap="onVoiceTap"
-          bindtouchstart="onVoiceTouchStart"
-          bindtouchend="onVoiceTouchEnd"
-          bindtouchcancel="onVoiceTouchCancel"
-        >{{recording ? recordingSeconds + 's' : '说'}}</button>
-        <!-- 设计稿没有画语音功能，只画了发送圆钮里的「↑」；语音是真实的
-             按住说话/识别链路，这里保留功能，只把两个按钮都改成设计稿的
-             正圆造型（见下方 wxss），发送按钮的可见内容换成设计稿的箭头，
-             用 aria-label 补回"发送"给辅助功能 -->
-        <button class="send-button" aria-label="发送" disabled="{{sending || recording || recognizing}}" bindtap="sendMessage">↑</button>
-      </view>
-      <view class="composer-foot">
-        <!-- 只剩最后一轮时先说出来。上限到得毫无预兆，才会被读成故障。录音的
-             60 秒上限同理：最后十几秒改成倒数，而不是数到 60 就凭空结束。 -->
-        <text class="voice-note {{recordingCountdown ? 'is-limit' : ''}}">{{recognizing ? '正在整理刚才的话…' : (recording ? (recordingCountdown ? '还剩 ' + recordingCountdown + ' 秒 · 到点这段也会收下' : '松开后转成文字') : (turnCount === maxTurns - 1 ? '还剩最后一轮' : '按住「说」可以直接讲'))}}</text>
-        <text class="turn-limit">{{turnCount}} / {{maxTurns}}</text>
-      </view>
-    </block>
+    <view class="composer-foot">
+      <!-- 录音的 60 秒上限最后十几秒改成倒数，而不是数到 60 就凭空结束：
+           上限到得毫无预兆，就会被读成故障。 -->
+      <text class="voice-note {{recordingCountdown ? 'is-limit' : ''}}">{{recognizing ? '正在整理刚才的话…' : (recording ? (recordingCountdown ? '还剩 ' + recordingCountdown + ' 秒 · 到点这段也会收下' : '松开后转成文字') : '按住「说」可以直接讲')}}</text>
+    </view>
   </view>
 </view>

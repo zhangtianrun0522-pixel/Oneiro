@@ -5,6 +5,9 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
 const db = cloud.database();
 
+// 与 pages/dream-chat 的 MAX_STORED_MESSAGES 对齐。
+const MAX_STORED_CHAT_MESSAGES = 60;
+
 function safeDream(dream) {
   const status = ['pending', 'ready', 'blocked'].indexOf(dream && dream.status) >= 0
     ? dream.status
@@ -24,7 +27,9 @@ function safeDream(dream) {
   }
 
   function chatMessages(value) {
-    return Array.isArray(value) ? value.slice(-12).map(function (item) {
+    // 对话轮数不再设上限，云端保留的条数要跟着客户端一起放宽，否则用户换台
+    // 设备回来时，一段长对话会被砍成最后 12 条。
+    return Array.isArray(value) ? value.slice(-MAX_STORED_CHAT_MESSAGES).map(function (item) {
       return {
         role: item && item.role === 'assistant' ? 'assistant' : 'user',
         content: String((item && item.content) || '').trim().slice(0, 800),
@@ -391,7 +396,7 @@ function mergedChatMessages(currentMessages, incomingMessages) {
   merged.sort(function (left, right) {
     return new Date(left && left.createdAt || 0).getTime() - new Date(right && right.createdAt || 0).getTime();
   });
-  return merged.slice(-12);
+  return merged.slice(-MAX_STORED_CHAT_MESSAGES);
 }
 
 function nonEmptyString(value) {

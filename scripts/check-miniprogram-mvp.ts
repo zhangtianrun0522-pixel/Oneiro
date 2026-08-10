@@ -210,6 +210,7 @@ type WxMock = {
   // 一次性的 failNextDreamSave 只能模拟「重试就好」；验证「自动重试只跑一次」
   // 需要一个持续失败的开关。
   failEveryDreamSave: boolean;
+  blockNextDreamChat: boolean;
   deferSaveDream: boolean;
   deferredSaveDreams: Array<() => void>;
   failNextReadyDreamSave: boolean;
@@ -311,6 +312,7 @@ function createWxMock(): WxMock {
     failNextInterpret: false,
     failNextDreamSave: false,
     failEveryDreamSave: false,
+    blockNextDreamChat: false,
     deferSaveDream: false,
     deferredSaveDreams: [],
     failNextReadyDreamSave: false,
@@ -600,6 +602,18 @@ function createWxMock(): WxMock {
               final_title: '期限门',
               final_card_insight: '你的回答让学校与追逐落在了现实期限上。',
               personal_connection: '这次梦更像在整理你对截止时间与被评价的感受。',
+            },
+          });
+          return;
+        }
+        if (options.data?.chatAboutDream && wx.blockNextDreamChat) {
+          wx.blockNextDreamChat = false;
+          options.success({
+            result: {
+              ok: false,
+              blocked: true,
+              reason: 'self_harm',
+              message: '这个梦里有很重的痛感。请先联系身边可信任的人，或当地紧急支持。',
             },
           });
           return;
@@ -1150,10 +1164,6 @@ for (const [path, expected] of [
   ['miniprogram/pages/home/index.wxml', 'bindtap="onSubmitTap"'],
   ['miniprogram/pages/home/index.wxml', '解读这个梦'],
   ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="sendMessage"'],
-  ['miniprogram/pages/dream-chat/index.wxml', '{{turnCount}} / {{maxTurns}}'],
-  // 轮次用尽后必须解释原因并给出出口，不能只是三个变灰的控件。
-  ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="backToReading"'],
-  ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="startNewDream"'],
   ['miniprogram/pages/profile/index.wxml', 'bindtap="saveProfile"'],
   ['miniprogram/pages/profile/index.wxml', '可随时修改或清空'],
   // 阶段画像的完整面板已经搬到「梦册」顶部：「我」是一整页表单，把产品里最有
@@ -1324,7 +1334,7 @@ for (const [path, expected] of [
   ['miniprogram/pages/archive/index.js', "archive_revisit"],
   ['miniprogram/pages/archive/index.js', "!item.id"],
   ['miniprogram/pages/archive/index.js', "isNaN(date.getTime())"],
-  ['miniprogram/pages/dream-chat/index.js', "MAX_USER_TURNS"],
+  ['miniprogram/pages/dream-chat/index.js', "MAX_STORED_MESSAGES"],
   ['miniprogram/pages/dream-chat/index.js', "chatAboutDream"],
   ['miniprogram/pages/profile/index.js', "cloudBase.saveProfile"],
   ['miniprogram/pages/profile/index.js', "refreshPortraitInBackground"],
@@ -2547,22 +2557,30 @@ assert.equal(
   (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>).find((item) => item.id === archiveAfterDream[0].id)?.chatMessages.length,
   3
 );
-// 聊满轮次上限后，输入框/语音/发送三个控件同时变灰，页面上却没有任何一句话
-// 解释发生了什么——用户读到的就是「卡死了、发不出去」（内测反馈：「根据梦再
-// 聊一聊那块卡死无法发送」）。上限本身是刻意的，但它必须自己说出口并给出口。
-dreamChatPage.data.turnCount = dreamChatPage.data.maxTurns;
-const chatToastsBeforeLimit = wx.toasts.length;
-const chatMessagesAtLimit = dreamChatPage.data.messages.length;
-dreamChatPage.onInput({ detail: { value: '还想再说一句' } });
+// 轮数不再设上限：一个梦可以一直聊下去。之前聊满 6 轮会把输入框、语音、发送
+// 三个控件一起变灰（内测反馈里那句「卡死无法发送」就是它），现在这条路没有了。
+dreamChatPage.data.turnCount = 12;
+const chatMessagesAfterManyTurns = dreamChatPage.data.messages.length;
+dreamChatPage.onInput({ detail: { value: '聊了很多轮之后我还想再说一句' } });
 dreamChatPage.sendMessage();
-assert.equal(dreamChatPage.data.messages.length, chatMessagesAtLimit);
-assert.ok(wx.toasts.length > chatToastsBeforeLimit);
-assert.ok(last(wx.toasts).includes(String(dreamChatPage.data.maxTurns)));
-// 结束态必须有出口。一个不能再输入、又走不出去的界面和卡死没有区别。
-assert.equal(typeof dreamChatPage.backToReading, 'function');
-assert.equal(typeof dreamChatPage.startNewDream, 'function');
-dreamChatPage.startNewDream();
-assert.equal(last(wx.navigations), '/pages/home/index');
+assert.ok(
+  dreamChatPage.data.messages.length > chatMessagesAfterManyTurns,
+  '聊过很多轮之后仍然必须能继续发'
+);
+
+// 被安全规则拦下时，云端返回的是一句为这种处境写好的话。它原来和网络故障共用
+// 同一条 toast，于是一个刚说出很重的事的人，收到的是一句「这次没回上来」。
+const modalsBeforeBlockedChat = wx.modals.length;
+const toastsBeforeBlockedChat = wx.toasts.length;
+wx.blockNextDreamChat = true;
+dreamChatPage.onInput({ detail: { value: '这一句会被安全规则拦下' } });
+dreamChatPage.sendMessage();
+assert.equal(wx.modals.length, modalsBeforeBlockedChat + 1, '被拦下的内容必须原样把回应送到');
+assert.ok(
+  String(last(wx.modals).content || '').includes('联系身边可信任的人'),
+  '云端写好的那句话不能被通用错误盖掉'
+);
+assert.equal(wx.toasts.length, toastsBeforeBlockedChat, '这不是一次可以重试的故障，不该再弹故障提示');
 
 // ── 画像 ↔「与你有关」的双向闭环 ──
 //

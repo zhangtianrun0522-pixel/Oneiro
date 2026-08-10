@@ -3,9 +3,10 @@ var cloudBase = require('../../utils/cloudBase');
 var dreamMemory = require('../../utils/dreamMemory');
 var recorderRouter = require('../../utils/recorderRouter');
 var syncQueue = require('../../utils/syncQueue');
-var tabNav = require('../../utils/tabNav');
 
-var MAX_USER_TURNS = 6;
+// 每条梦保留的对话条数。轮数不再设上限，但发给模型的历史仍然只取最近 12 条
+// （见 sendMessage），这里保留的是用户回来时还能读到的那份记录。
+var MAX_STORED_MESSAGES = 60;
 // 与首页同一套录音下限，见 pages/home/index.js 的注释：低于 MIN_RECORD_MS
 // 的片段送到 ASR 必然是 empty_result；start 之后 MIN_RECORD_LIFETIME_MS 内
 // stop 会拿到 0 字节文件。
@@ -87,7 +88,6 @@ Page({
     recordingCountdown: 0,
     recognizing: false,
     turnCount: 0,
-    maxTurns: MAX_USER_TURNS,
     scrollTarget: ''
   },
 
@@ -138,7 +138,7 @@ Page({
         content: connectionCorrectionOpening(correction),
         createdAt: new Date().toISOString()
       }]);
-      dream.chatMessages = messages.slice(-12);
+      dream.chatMessages = messages.slice(-MAX_STORED_MESSAGES);
     }
 
     if (correctionPending) {
@@ -197,21 +197,6 @@ Page({
 
   onInput: function (event) {
     this.setData({ inputValue: event.detail.value });
-  },
-
-  // 轮次用尽后的两个出口。没有出口的结束态和卡死没有区别。
-  backToReading: function () {
-    analytics.trackEvent('dream_chat_ended_exit', { dreamId: this.data.dream && this.data.dream.id || '', to: 'result' });
-    if (getCurrentPages().length > 1) {
-      wx.navigateBack();
-      return;
-    }
-    wx.redirectTo({ url: '/pages/result/index?id=' + encodeURIComponent(this.data.dream && this.data.dream.id || '') });
-  },
-
-  startNewDream: function () {
-    analytics.trackEvent('dream_chat_ended_exit', { dreamId: this.data.dream && this.data.dream.id || '', to: 'home' });
-    tabNav.switchTab('pages/home/index');
   },
 
   useGuide: function (event) {
@@ -448,11 +433,8 @@ Page({
       wx.showToast({ title: '先写下你想说的内容', icon: 'none' });
       return;
     }
-    if (this.data.turnCount >= MAX_USER_TURNS) {
-      wx.showToast({ title: '这个梦这次已经聊满 ' + MAX_USER_TURNS + ' 轮', icon: 'none' });
-      return;
-    }
-
+    // 只有发给模型的历史保持 12 条：再长既贵又会让它开始泛泛而谈。存下来的
+    // 那份更长，用户回来时读到的仍是完整的对话。
     requestHistory = messages.slice(-12).map(function (item) {
       return { role: item.role, content: item.content };
     });
@@ -481,21 +463,34 @@ Page({
           dreamId: dream.id,
           reason: reason
         });
+        // 内容被安全规则拦下时，云端返回的是一句为这种处境写好的话。它原来和
+        // 别的失败一样被这条 toast 盖掉，用户只看到「这次没回上来」——一个刚
+        // 说出很重的事的人，收到的是一句系统故障。这类回应必须原样送到，而且
+        // 不能说成「可重试」。
+        if (result && result.blocked) {
+          wx.showModal({
+            title: '这段先不由我来接',
+            content: String(result.message || '这类内容 Oneiro 暂不解读，请先联系身边可信任的人或当地的支持资源。'),
+            confirmText: '知道了',
+            showCancel: false
+          });
+          return;
+        }
         // 「没发出去」三个字对所有失败一视同仁，用户既不知道是网络还是服务，
         // 也不知道再点一次有没有用。至少要分出「重试就能好」和「先换文字/
-        // 稍后再来」这两类。
+        // 稍后再来」这两类，并且带上原因码——上一轮同步问题就是靠它一次定位的。
         wx.showToast({
           title: /timeout|cloud_call_failed|cloud_result_expired|cloud_unavailable/.test(reason)
             ? '网络没接上，内容已放回输入框，可重试'
-            : '这次没回上来，内容已放回输入框',
+            : '这次没回上来（' + reason + '），内容已放回输入框',
           icon: 'none',
-          duration: 2600
+          duration: 3000
         });
         return;
       }
       var current = that.data.messages.slice();
       current.push({ role: 'assistant', content: String(result.reply), createdAt: new Date().toISOString() });
-      dream.chatMessages = current.slice(-12);
+      dream.chatMessages = current.slice(-MAX_STORED_MESSAGES);
       dream.updatedAt = new Date().toISOString();
       persistDream(dream, function (saveResult) {
         that.setData({ cloudSyncPending: !(saveResult && saveResult.ok) });
