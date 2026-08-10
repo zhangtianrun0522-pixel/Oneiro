@@ -82,18 +82,28 @@ const BRANCH_RELATION_PAIRS = {
 };
 
 const DREAM_CHAT_SYSTEM_PROMPT = [
-  '你是 Oneiro，正在和用户只围绕当前这个梦继续对话。',
+  '你是 Oneiro，正在和用户围绕当前这个梦继续对话。',
   '核心意图：把梦里的画面、醒来后的感受与用户愿意确认的现实线索连接起来，帮助用户继续观察，而不是补写一套更大的象征解释。',
   '全局红线：只引用梦中真实出现的内容；没有现实证据就提问而不是断言；不确定就明说不确定。',
   '必须具体回应用户刚说的内容和当前解读中的已知细节，不要转成泛用陪聊。',
-  '按这个顺序灵活推进：先追问一个可观察的梦中细节，再问醒来时的身体或情绪感受，最后才邀请用户联系最近现实中的一件具体小事。',
-  '每次只问一个容易回答的问题，优先问“发生了什么、你感到什么、最近有没有类似场景”，不要连续追问“为什么”。',
+  // 原来这里写的是一条固定三步阶梯（先问梦中细节、再问醒来感受、最后问现实），
+  // 并且要求「每次都以一个问题收尾」。两条加在一起，模型每一轮都长成同一个
+  // 形状：复述—可能性—提问。用户读到的是一台按流程走的机器在依次执行步骤，
+  // 而不是一个在听他说话的人。方向仍然是从梦走向现实，但不能是刻度。
+  '推进方向是从梦里走向现实：早期多停留在梦中的具体画面和醒来时的感受，聊开之后再邀请用户连接现实中一件具体的小事。这是方向，不是必须逐格走完的流程。',
+  '每一轮的形状必须不同。不要每条都用「复述—可能理解—提问」这一个句式，也不要每条都以问题收尾：有时候一句确认、一个观察、或者把用户刚说的话往前推一步就够了。连着两轮问同类问题（尤其是连续追问「为什么」）是失败。',
+  '要提问时只问一个容易回答的问题，优先问「发生了什么、你感到什么、最近有没有类似场景」。',
+  // 这段是「聊一聊」和画像之间的接缝。以前这里什么长期信息都拿不到，于是它
+  // 每次都从零认识用户一遍——同一个人聊了三个月，第一句和第一天没有区别。
+  '上下文里可能给出这个人的长期背景：阶段画像、他确认过的现实线索、反复出现的梦境意象。你已经认识他，说话要像认识他的人：当背景里的某一条和他此刻说的话或这个梦里的某处细节具体对上时，自然地说出来（例：「你上次说到那阵子一直在替别人兜底，这次梦里你还是没松手」）。',
+  '但严禁把背景当成谈资：没有具体呼应时一个字都不要提，不得罗列意象或主题词，不得说「根据你的画像」「你的关键词是」这类元话语，不得把长期背景复述成对他的定义。用户可以随时否定这些背景，它们是线索不是结论。',
+  '聊到后段（大约五六轮之后），从提问转向收束：把这次对话里他确认过的东西说回给他一句，让对话有个可以停下来的地方，而不是无限追问下去。他想继续时再继续。',
   '可以提出一种可能理解，但必须标注为可能性，区分梦中事实、用户感受和待确认的现实关联，不得虚构用户的现实经历或历史记忆。',
   '同时判断用户本条消息里是否有可自动记入资料的现实事实：只有用户明确自述的、现实生活中已经发生、正在发生或已经决定的事实才 eligible=true。',
   '问题、猜测、假设、否定、梦中发生的事、单纯情绪联想和你的推断都必须 eligible=false。',
   'memory_candidate.quote 必须逐字复制用户本条消息中的一个连续原文片段，不得改写、补全或概括；eligible=false 时 quote 必须为空。',
   '不做医疗、创伤、人格、关系或职业诊断，不预测命运。',
-  '回复 2-4 句话，先复述一个具体线索，再给出一层克制的可能理解，最后最多只问一个容易回答的问题。',
+  '回复 2-4 句话。',
   '只返回合法 JSON，不要 markdown：{"reply":"回复正文","memory_candidate":{"eligible":true或false,"quote":"用户原文连续片段或空字符串"}}。'
 ].join('\n');
 
@@ -2162,6 +2172,69 @@ async function runMetaphysicalReading(event, profile, baziChart) {
   }
 }
 
+async function loadRecentLifeNotes(openid, limit) {
+  if (!db || !openid) return [];
+  try {
+    const response = await db.collection('life_notes')
+      .where({ openid: openid })
+      .orderBy('createdAt', 'desc')
+      .limit(Math.max(1, Number(limit) || 6))
+      .get();
+    return (response && Array.isArray(response.data) ? response.data : [])
+      .map(function (item) { return asString(item && item.text, '', 160); })
+      .filter(Boolean);
+  } catch (error) {
+    return [];
+  }
+}
+
+// 「聊一聊」此前是整个系统里唯一读不到长期记忆的地方：解梦能看到画像、现实线索
+// 和反复出现的意象，对话却每次都从零认识这个人一遍。同一个用户聊了三个月，
+// 对话的第一句和第一天没有区别——割裂感就是从这里来的。
+//
+// 拿不到就返回 null，让对话照常进行：认不出这个人是遗憾，聊不了才是故障。
+async function loadChatBackground(openid, dreamText) {
+  if (!openid) return null;
+
+  let portrait = null;
+  let notes = [];
+  let memory = null;
+
+  try {
+    const loaded = await Promise.all([
+      loadCurrentPortrait(openid),
+      loadRecentLifeNotes(openid, 6),
+      loadDreamMemory(openid)
+    ]);
+    portrait = loaded[0];
+    notes = loaded[1];
+    memory = loaded[2];
+  } catch (error) {
+    return null;
+  }
+
+  // 反复出现的意象只取这次这个梦里真的出现了的那几个。全量塞进去，对每个梦
+  // 都是同一份背景板，模型要么闭嘴要么硬提——两种都不是「记得」。
+  const echoes = buildMemoryEchoes(memory, dreamText)
+    .slice(0, 3)
+    .map(function (echo) {
+      return {
+        symbol: asString(echo && echo.symbol, '', 30),
+        count: Math.max(0, Number(echo && echo.count) || 0)
+      };
+    })
+    .filter(function (echo) { return echo.symbol; });
+
+  const portraitSummary = portrait ? asString(portrait.summary || portrait.profileText, '', 500) : '';
+  if (!portraitSummary && !notes.length && !echoes.length) return null;
+
+  return {
+    stagePortrait: portraitSummary,
+    confirmedLifeNotes: notes,
+    recurringSymbolsAlsoInThisDream: echoes
+  };
+}
+
 function normalizeChatHistory(value) {
   return Array.isArray(value) ? value.slice(-12).map(function (item) {
     return {
@@ -2227,7 +2300,7 @@ function parseDreamChatContent(content, userMessage) {
   };
 }
 
-async function runDreamChat(event) {
+async function runDreamChat(event, openid) {
   const config = providerConfig();
   const dreamText = asString(event && event.dreamText, '', 1200);
   const userMessage = asString(event && event.userMessage, '', 500);
@@ -2255,25 +2328,46 @@ async function runDreamChat(event) {
     };
   }
 
-  try {
-    const response = await postJson(config.baseUrl + '/chat/completions', {
-      Authorization: 'Bearer ' + config.apiKey
-    }, {
+  const background = await loadChatBackground(openid, dreamText);
+  const systemMessages = [
+    { role: 'system', content: DREAM_CHAT_SYSTEM_PROMPT },
+    { role: 'system', content: '当前梦境原文：' + dreamText + '\n当前解读上下文：' + JSON.stringify(summary) }
+  ];
+  if (background) {
+    systemMessages.push({
+      role: 'system',
+      content: '这个人的长期背景（只在与他此刻说的话或这个梦有具体呼应时才提起）：' + JSON.stringify(background)
+    });
+  }
+
+  async function requestChat(useJsonFormat) {
+    const payload = {
       model: config.model,
       max_tokens: MAX_OUTPUT_TOKENS,
-      messages: [
-        { role: 'system', content: DREAM_CHAT_SYSTEM_PROMPT },
-        { role: 'system', content: '当前梦境原文：' + dreamText + '\n当前解读上下文：' + JSON.stringify(summary) }
-      ].concat(history).concat([{ role: 'user', content: userMessage }]),
-      temperature: 0.62,
-      response_format: { type: 'json_object' }
-    }, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
-    const data = JSON.parse(response.text);
-    const extracted = extractMessageContent(data);
-    const content = asString(extracted.content, '', 1200);
-
+      messages: systemMessages.concat(history).concat([{ role: 'user', content: userMessage }]),
+      temperature: 0.62
+    };
+    if (useJsonFormat) payload.response_format = { type: 'json_object' };
+    const response = await postJson(config.baseUrl + '/chat/completions', {
+      Authorization: 'Bearer ' + config.apiKey
+    }, payload, Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw new Error('Dream chat provider failed');
+    }
+    return extractMessageContent(JSON.parse(response.text));
+  }
+
+  try {
+    let extracted = await requestChat(true);
+    let content = asString(extracted.content, '', 1200);
+
+    // JSON 模式偶尔会回一具空壳（思考型模型尤其容易：推理吃掉输出预算，正文
+    // 返回空串）。那本来只让 memory_candidate 落空，却把整条回复也一起废掉——
+    // 用户看到的是「这次没回上来」。回复是必需品，JSON 只是为了顺带取一条现实
+    // 线索，不该由可选项决定必需项的成败：空了就退回纯文本再要一次。
+    if (!content) {
+      extracted = await requestChat(false);
+      content = asString(extracted.content, '', 1200);
     }
     if (!content) {
       throw emptyContentError(extracted);
@@ -2501,7 +2595,7 @@ exports.main = async function (event) {
   }
 
   if (event && event.chatAboutDream) {
-    return runDreamChat(event);
+    return runDreamChat(event, wxContext && wxContext.OPENID ? wxContext.OPENID : '');
   }
 
   if (event && event.refineDream) {

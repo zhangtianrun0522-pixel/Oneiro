@@ -1329,4 +1329,29 @@ assert.ok(
   'portrait prompt must ban using dream scenes as evidence padding'
 );
 
+const interpretSourceForChat = read('miniprogram/cloudfunctions/interpretDream/index.js');
+// 「聊一聊」曾经是整个系统里唯一读不到长期记忆的地方：解梦看得到画像、现实线索
+// 和反复出现的意象，对话却每次都从零认识这个人一遍。
+assert.ok(
+  interpretSourceForChat.includes('async function loadChatBackground'),
+  '梦后对话必须能读到这个人的长期背景'
+);
+assert.ok(
+  /runDreamChat\(event, wxContext/.test(interpretSourceForChat),
+  '对话必须拿到 openid，否则背景无从加载'
+);
+assert.ok(
+  interpretSourceForChat.includes('每一轮的形状必须不同'),
+  '对话不得每轮都长成同一个句式'
+);
+assert.ok(
+  interpretSourceForChat.includes('严禁把背景当成谈资'),
+  '长期背景只能在有具体呼应时提起，不能罗列'
+);
+// 回复是必需品，memory_candidate 只是顺带；空的 JSON 不该把整条回复一起废掉。
+assert.ok(
+  interpretSourceForChat.includes('extracted = await requestChat(false)'),
+  'JSON 模式回空时必须退回纯文本再要一次'
+);
+
 console.log(`AI readiness checks passed across ${runtimeFiles.length} Mini Program runtime files.`);
