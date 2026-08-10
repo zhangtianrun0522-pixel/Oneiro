@@ -1329,6 +1329,42 @@ assert.ok(
   'portrait prompt must ban using dream scenes as evidence padding'
 );
 
+// 画像读起来「云里雾里」有具体来源：模糊限定词、没有所指的抽象名词、对偶排比，
+// 以及一个把普适句当填充料的字数下限。这几条是针对它们的，不是风格偏好。
+assert.ok(
+  profileMemorySource.includes('字数是上限，不是目标'),
+  '字数下限会逼出车轱辘话，必须是上限'
+);
+// 注释里会引用旧值来解释为什么改，所以只看真正发给模型的那些行。
+const profileMemoryPromptLines = profileMemorySource
+  .split('\n')
+  .filter((line) => !line.trim().startsWith('//'))
+  .join('\n');
+assert.ok(
+  !/约\s*150\s*-\s*200\s*字/.test(profileMemoryPromptLines),
+  '画像不得再有字数下限'
+);
+assert.ok(
+  profileMemoryPromptLines.includes('summary 是一段连续的话，最多 200 字'),
+  '画像字数必须写成上限'
+);
+assert.ok(
+  profileMemorySource.includes('这类模糊限定词整段最多用一次'),
+  '模糊限定词必须限量'
+);
+assert.ok(
+  profileMemorySource.includes('不许用没有具体所指的抽象名词充当判断的核心'),
+  '判断不得建立在读者无法指认的抽象名词上'
+);
+assert.ok(
+  profileMemorySource.includes('能不能用他自己的话复述出'),
+  '必须有可复述性检验——读完说不出它讲了自己什么，就是没写好'
+);
+assert.ok(
+  profileMemorySource.includes('要禁止的是含糊，不是善意'),
+  '限制的是含糊而不是温度：被准确说中本身就是情绪价值'
+);
+
 const interpretSourceForChat = read('miniprogram/cloudfunctions/interpretDream/index.js');
 // 「聊一聊」曾经是整个系统里唯一读不到长期记忆的地方：解梦看得到画像、现实线索
 // 和反复出现的意象，对话却每次都从零认识这个人一遍。
