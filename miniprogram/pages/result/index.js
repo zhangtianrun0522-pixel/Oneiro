@@ -700,6 +700,7 @@ function cardBackInsight(result) {
 Page({
   data: {
     entryReady: false,
+    quotaBlocked: false,
     displayTimestamp: formatCardTimestamp(new Date()),
     cardFlipped: false,
     cardBackInsight: '',
@@ -856,6 +857,9 @@ Page({
     }
     this.restoreSavedDreamImage(dream);
     analytics.trackEvent('result_view', {
+      // 「今天用完了」和「出错了」在页面上必须长得不一样：一个是等明天，一个是
+      // 现在就该重试。
+      quotaBlocked: String(dream.interpretationErrorCode || '') === 'daily_quota_exceeded',
       dreamId: dream.id || '',
       cardTheme: dream.result.card_theme || 'mist',
       source: isFixture ? 'fixture' : savedDream ? 'archive_or_route' : 'current'
@@ -966,6 +970,42 @@ Page({
         that.pendingInterpretationDream = dream;
         persistLocalDream(dream);
         cloudBase.saveDream(dream, function (saveResult) {
+      // 额度用完和「解读暂不可用」是两件事：后者重试就可能好，前者今天怎么点
+      // 都不会好。用同一个 toast 打发，用户只会一直点。
+      if (cloudResult && cloudResult.quotaExceeded) {
+        dream.status = 'pending';
+        dream.result = null;
+        dream.interpretationError = 'daily_quota_exceeded';
+        dream.interpretationErrorCode = 'daily_quota_exceeded';
+        dream.interpretationDiagnostics = null;
+        dream.updatedAt = new Date().toISOString();
+        that.pendingInterpretationDream = dream;
+        persistLocalDream(dream);
+        cloudBase.saveDream(dream, function (saveResult) {
+          dream.cloudSynced = !!(saveResult && saveResult.ok);
+          persistLocalDream(dream);
+          if (!dream.cloudSynced) queueDreamSync(dream);
+          else removeDreamSync(dream);
+        });
+        that.setData({
+          retryingInterpretation: false,
+          interpretationError: dream.interpretationError,
+          interpretationErrorCode: dream.interpretationErrorCode,
+          interpretationDiagnostics: null
+        });
+        analytics.trackEvent('interpretation_quota_exceeded', {
+          dreamId: dream.id || '',
+          dailyLimit: cloudResult.dailyLimit || 0
+        });
+        wx.showModal({
+          title: '今天的解读用完了',
+          content: cloudResult.message || '这个梦已经收好，明天可以接着解读它。',
+          confirmText: '知道了',
+          showCancel: false
+        });
+        return;
+      }
+
           dream.cloudSynced = !!(saveResult && saveResult.ok);
           persistLocalDream(dream);
           if (!dream.cloudSynced) queueDreamSync(dream);

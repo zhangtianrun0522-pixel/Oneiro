@@ -980,6 +980,41 @@ Page({
             : '';
           pendingDream.interpretationError = String(
             cloudResult && (cloudResult.reason || cloudResult.message) || 'ai_provider_error'
+        // 当天解读次数用完。这不是失败，所以不走失败那条路：原梦此前已经存过
+        // 一次，这里只把状态标清楚，然后留在首页把话说完。把人甩到一个写着
+        // 「本次未生成解读」的结果页，读起来和真出错没有区别。
+        if (cloudResult && cloudResult.quotaExceeded) {
+          pendingDream.status = 'pending';
+          pendingDream.result = null;
+          pendingDream.interpretationError = 'daily_quota_exceeded';
+          pendingDream.interpretationErrorCode = 'daily_quota_exceeded';
+          pendingDream.interpretationDiagnostics = null;
+          pendingDream.updatedAt = new Date().toISOString();
+          app.globalData.currentDream = pendingDream;
+          upsertLocalDream(pendingDream);
+          cloudBase.saveDream(pendingDream);
+          analytics.trackEvent('interpretation_quota_exceeded', {
+            dreamId: dreamId,
+            dailyLimit: cloudResult.dailyLimit || 0
+          });
+          that.stopAnalysisProgress();
+          // 梦已经是一条记录了，草稿必须清空——否则输入区里还留着全文，看起来
+          // 像是根本没提交成功，用户会再按一次。
+          if (wx.removeStorageSync) wx.removeStorageSync('oneiro:pendingDreamText');
+          that.setData({ dreamText: '', editingDream: false });
+          wx.showModal({
+            title: '今天的解读用完了',
+            content: cloudResult.message || '这个梦已经收好，明天可以接着解读它。',
+            confirmText: '去梦册看看',
+            cancelText: '知道了',
+            success: function (modalResult) {
+              if (modalResult && modalResult.confirm) tabNav.switchTab('pages/archive/index');
+            }
+          });
+          that.submitting = false;
+          return;
+        }
+
           ).slice(0, 300);
           pendingDream.interpretationErrorCode = diagnostics.code || 'ai_provider_error';
           pendingDream.interpretationDiagnostics = diagnostics;

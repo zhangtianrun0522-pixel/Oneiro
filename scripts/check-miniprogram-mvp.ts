@@ -2887,6 +2887,38 @@ assert.equal(diagnosticsPage.data.smokeTest.provider, 'mock-cloud');
 assert.equal(diagnosticsPage.data.smokeTest.reason, 'provider_error');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.smokeTest));
 
+// ── 每天三次解读：限的是解读，不是记录 ──
+// 这条线错在任何一侧都很贵：限到记录上，用户醒来那几分钟里记不下梦，产品就没有
+// 存在的理由；限得太靠后，额度检查排在模型调用之后，钱已经花掉了。
+const interpretSource = read('miniprogram/cloudfunctions/interpretDream/index.js');
+assert.ok(interpretSource.includes('DAILY_INTERPRETATION_LIMIT'), '云函数必须有每日解读上限');
+assert.ok(
+  interpretSource.indexOf('quota.limited') < interpretSource.indexOf('await interpretWithAi('),
+  '额度检查必须发生在调用模型之前'
+);
+assert.ok(
+  interpretSource.includes("status: 'ready'"),
+  '额度只能按已产出结果的梦计数——失败的调用不该吃掉用户的额度'
+);
+assert.ok(
+  interpretSource.includes('startOfDayInChina'),
+  '一天的边界必须按北京时间算，否则凌晨记的梦会被算进前一天'
+);
+const homeSource = read('miniprogram/pages/home/index.js');
+const quotaBranchAt = homeSource.indexOf('cloudResult.quotaExceeded');
+assert.ok(quotaBranchAt > 0, '首页必须单独处理额度用尽');
+assert.ok(
+  quotaBranchAt < homeSource.indexOf('!cloudResult || !cloudResult.ok'),
+  '额度用尽必须在通用失败分支之前拦下，否则会被当成解读失败'
+);
+const quotaBranch = homeSource.slice(quotaBranchAt, quotaBranchAt + 1800);
+assert.ok(quotaBranch.includes('upsertLocalDream(pendingDream)'), '额度用尽时原梦必须仍然保存');
+assert.ok(quotaBranch.includes("dreamText: ''"), '额度用尽时必须清空草稿，否则看起来像没提交成功');
+assert.ok(
+  read('miniprogram/pages/result/index.wxml').includes('quotaBlocked'),
+  '结果页必须把「今天用完了」和「解读出错了」显示成两件事'
+);
+
 // 本地事件缓冲区上限 120 条（analytics.MAX_EVENTS），一次完整验收跑出的事件
 // 早就超过了这个数，最早的 app_start 会被正常挤出去——那是生产行为，不是
 // 缺陷。所以这里合并每条事件当时发出的 trackEvent 云调用，它不设上限，

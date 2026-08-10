@@ -1136,6 +1136,40 @@ function evaluateMemoryEcho(memory, dreamText, result) {
   };
 }
 
+// 每天放行的解读次数。限的是解读，不是记录——梦在醒来几分钟内就会忘，所以
+// 超额时客户端照常把原梦存下来，第二天可以补解读。只有真正产出了结果的梦
+// （status: 'ready'）才计数：一次失败的调用不该吃掉用户当天的额度。
+const DAILY_INTERPRETATION_LIMIT = Math.max(1, Number(process.env.INTERPRET_DAILY_LIMIT || 3));
+
+// 云函数按 UTC 运行，用户过的是北京时间的一天。不做这个偏移，凌晨记的梦会被
+// 算进前一天的额度里，而那正是最容易记梦的时间段。
+function startOfDayInChina(now) {
+  const shifted = new Date(now.getTime() + 8 * 3600 * 1000);
+  shifted.setUTCHours(0, 0, 0, 0);
+  return new Date(shifted.getTime() - 8 * 3600 * 1000);
+}
+
+async function readInterpretationQuota(openid) {
+  const limit = DAILY_INTERPRETATION_LIMIT;
+
+  // 没有 openid（登录降级成本地 id）时无法按人计数。这里放行：把认不出来的人
+  // 挡在门外，代价是他的梦永远解不了，比多花几次调用严重得多。
+  if (!db || !openid) return { limited: false, used: 0, limit: limit };
+
+  try {
+    const counted = await db.collection('dream_entries').where({
+      openid: openid,
+      status: 'ready',
+      createdAt: db.command.gte(startOfDayInChina(new Date()))
+    }).count();
+    const used = counted && Number.isFinite(Number(counted.total)) ? Number(counted.total) : 0;
+    return { limited: used >= limit, used: used, limit: limit };
+  } catch (error) {
+    // 计数本身失败时同样放行，理由同上：宁可多花一次调用。
+    return { limited: false, used: 0, limit: limit };
+  }
+}
+
 async function loadDreamMemory(openid) {
   if (!db || !openid) return buildDreamMemory([], true);
 
@@ -2486,6 +2520,21 @@ exports.main = async function (event) {
       blocked: true,
       reason: safety.reason,
       message: safety.message
+    };
+  }
+
+  const quota = await readInterpretationQuota(wxContext && wxContext.OPENID ? wxContext.OPENID : '');
+  if (quota.limited) {
+    return {
+      ok: false,
+      blocked: false,
+      quotaExceeded: true,
+      reason: 'daily_quota_exceeded',
+      // 明天才会变，重试不会有别的结果。客户端据此不显示「重试就能好」那类文案。
+      retryable: false,
+      dailyLimit: quota.limit,
+      dailyUsed: quota.used,
+      message: '今天的解读已经用完 ' + quota.limit + ' 次。这个梦已经存下来了，明天可以接着解读它。'
     };
   }
 

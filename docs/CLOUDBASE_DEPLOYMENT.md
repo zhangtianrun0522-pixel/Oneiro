@@ -91,6 +91,24 @@ OPENAI_COMPATIBLE_MODEL=<model-name>
 
 Compatibility aliases are also accepted for the OpenAI-compatible path: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, or `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`.
 
+### Daily interpretation ceiling
+
+`interpretDream` refuses more than `INTERPRET_DAILY_LIMIT` successful readings per
+openid per day (default `3`, day boundary in Beijing time). Set it only if you
+want a different ceiling:
+
+```text
+INTERPRET_DAILY_LIMIT=3
+```
+
+What it does **not** limit is recording. A dream is saved before interpretation
+runs, so an over-quota user still keeps the dream and can interpret it the next
+day from 梦册. Only dreams that actually produced a reading (`status: 'ready'`)
+count, so failed or retried calls never consume a user's quota. The count is
+read from `dream_entries`; if that query fails, or the caller has no openid
+(login degraded to a local id), the request is allowed through — a miscounted
+quota must never be the reason someone cannot interpret their dream.
+
 Keep provider keys server-side in CloudBase only. Do not put them in Mini Program source files, `project.config.json`, or frontend storage. Dream semantics are model-only: if the provider is unavailable, missing a key, times out, or returns malformed JSON, `interpretDream` returns a retryable error without `result`. The original dream remains saved, and the result page offers “重新解读”. No local keyword classifier generates substitute symbols or interpretations.
 
 The deployed `interpretDream` function keeps the CloudBase platform timeout at
