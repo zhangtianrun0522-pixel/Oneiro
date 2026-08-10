@@ -184,6 +184,9 @@ function syncFailureDetails(response) {
 function queueDreamSync(dream) {
   if (!dream || !dream.id) return;
   syncQueue.enqueue('dream_sync', { dream: dream });
+  // 入队之后必须立刻推一次，否则这条任务要等到下一次冷启动才有人处理，而页面
+  // 上那句「稍后自动重试」承诺的正是马上会重试。
+  if (getApp && getApp().flushPendingSyncTasks) getApp().flushPendingSyncTasks();
 }
 
 function removeDreamSync(dream) {
@@ -1276,6 +1279,7 @@ Page({
     // 出来的那份记录，不是这里的 this.data.dream，所以标记要主动取回来——否则
     // 底部入口会继续催用户去说一件他刚说完的事。放在所有生图 early-return 之前。
     this.refreshConnectionCorrection();
+    this.refreshCloudSyncState();
     // 首次进入时 onShow 排在 onReady 之前，这时补偿会和 onReady 里的首次请求
     // 撞在一起、生成两张图。只有 onReady 已经跑过（= 真的是「离开后又回来」）
     // 才需要补偿。
@@ -1299,6 +1303,30 @@ Page({
     if (!result.image_prompt && !result.image && !result.visual_plan) return;
     this.setData({ imageStatus: 'generating', imageErrorMessage: '', imageLoadError: '' });
     this.requestDreamImage();
+  },
+
+  // app.js 在补写成功后调用。三个 pending 标记来自同一件事（这条梦有没有写进
+  // 云端），所以一起清，否则横幅文案会退化成另一条同样过时的提示。
+  onDreamSynced: function (dreamId) {
+    var dream = this.data.dream;
+    if (!dream || !dreamId || String(dream.id || '') !== String(dreamId)) return;
+    dream.cloudSynced = true;
+    this.setData({
+      dream: dream,
+      cloudSyncPending: false,
+      qualitySyncPending: false,
+      imageSyncPending: false,
+      cloudSyncReason: ''
+    });
+  },
+
+  // 页面被盖住的时候补写可能已经成功了（另一个页面触发了 flush）。回到这一页时
+  // 以落盘的记录为准，而不是继续相信进入时的那份快照。
+  refreshCloudSyncState: function () {
+    var dream = this.data.dream;
+    var stored = dream && dream.id ? findDreamById(dream.id) : null;
+    if (!stored || stored.cloudSynced !== true) return;
+    this.onDreamSynced(dream.id);
   },
 
   refreshConnectionCorrection: function () {

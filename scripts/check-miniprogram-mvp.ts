@@ -2887,6 +2887,36 @@ assert.equal(diagnosticsPage.data.smokeTest.provider, 'mock-cloud');
 assert.equal(diagnosticsPage.data.smokeTest.reason, 'provider_error');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.smokeTest));
 
+// ── 补写成功之后，横幅必须消失 ──
+// 补写队列此前只在冷启动被消费，成功后又只改 storage 不通知页面，两件事叠起来
+// 的效果是：一条早就同步好的梦，页面一整个会话都挂着「未同步／高清图待同步」。
+const appSource = read('miniprogram/app.js');
+assert.ok(appSource.includes('onShow: function'), 'App 必须在回到前台时消费补写队列');
+assert.ok(
+  appSource.indexOf('notifyDreamSynced(task.dream.id)') > 0,
+  '补写成功后必须通知页面，否则页面继续显示已经完成的同步'
+);
+assert.ok(
+  read('miniprogram/pages/result/index.js').includes('getApp().flushPendingSyncTasks();\n}'),
+  '入队后必须立刻推一次，「稍后自动重试」不能等到下次冷启动'
+);
+resultPage.setData({
+  cloudSyncPending: true,
+  qualitySyncPending: true,
+  imageSyncPending: true,
+  cloudSyncReason: 'mock_failure',
+});
+resultPage.onDreamSynced(resultPage.data.dream.id);
+assert.equal(resultPage.data.cloudSyncPending, false, '同步完成后不得再显示未同步');
+assert.equal(resultPage.data.qualitySyncPending, false, '三个标记来自同一件事，必须一起清');
+assert.equal(resultPage.data.imageSyncPending, false);
+assert.equal(resultPage.data.cloudSyncReason, '');
+assert.equal(resultPage.data.dream.cloudSynced, true);
+resultPage.setData({ cloudSyncPending: true });
+resultPage.onDreamSynced('another-dream-entirely');
+assert.equal(resultPage.data.cloudSyncPending, true, '别的梦同步完成不得清掉这一页的状态');
+resultPage.setData({ cloudSyncPending: false });
+
 // ── 示例梦：可以被读，绝不能被存 ──
 // 它渲染在真实的结果页上，共用同一份数据结构，所以只要有一条写入路径漏掉守卫，
 // 一个虚构的梦就会出现在用户档案里，并且从此参与画像的证据统计。这里守的就是

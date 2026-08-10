@@ -25,6 +25,19 @@ function applyPortraitSnapshot(snapshot, refreshKey) {
   wx.setStorageSync('oneiro:profileMemory', state);
 }
 
+// 告诉栈里任何一个关心这条梦的页面：它已经同步好了。页面自己决定要不要更新，
+// 没实现这个钩子的页面不受影响。
+function notifyDreamSynced(dreamId) {
+  var pages = typeof getCurrentPages === 'function' ? getCurrentPages() : [];
+  var index;
+  if (!dreamId) return;
+  for (index = 0; index < pages.length; index += 1) {
+    if (pages[index] && typeof pages[index].onDreamSynced === 'function') {
+      pages[index].onDreamSynced(dreamId);
+    }
+  }
+}
+
 App({
   onLaunch: function () {
     var that = this;
@@ -54,6 +67,17 @@ App({
         that.flushPendingSyncTasks();
       });
     });
+  },
+
+  // 补写队列此前只在冷启动那一次被消费：onLaunch 拿到身份后 flush 一次，其余
+  // 调用点都写成「本次保存已经成功才 flush」，也就是只在没什么可补的时候才跑。
+  // 于是一次失败的保存会把任务留在队列里，页面上那条「未同步／高清图待同步」
+  // 一整个会话都不会消失，用户只能一直按「重试同步」。回到前台时补一次。
+  onShow: function () {
+    // 冷启动时 onShow 排在拿到身份之前，这时补写只会白白失败一次并耗掉重试。
+    if (!this.globalData.identity) return;
+    this.flushPendingDreamDeletes();
+    this.flushPendingSyncTasks();
   },
 
   flushPendingSyncTasks: function () {
@@ -116,6 +140,9 @@ App({
               wx.setStorageSync('oneiro:dreamArchive', archive.map(function (item) {
                 return item.id === task.dream.id ? Object.assign({}, item, { cloudSynced: true }) : item;
               }));
+              // 补写成功只改了 storage，正在看的那一页仍然拿着 cloudSynced:false
+              // 的那份记录，于是它继续显示「未同步」——同步其实已经完成了。
+              notifyDreamSynced(task.dream.id);
             }
           }
           finishTask();
