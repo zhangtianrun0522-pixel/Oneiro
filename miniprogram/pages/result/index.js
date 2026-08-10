@@ -1833,6 +1833,24 @@ Page({
   //   · 是这样 → 上行：这条呼应成为画像证据（仿 life_note 那条已通的管子）
   //   · 不太像 → 下行到底部「聊聊这个梦」：把这条设成待纠偏，驱动一次校准对话
   // 再点同一个按钮＝取消这次表态。
+  // 停在入口上方一点，让被否定的那句话和入口同时在屏幕里——直接把入口顶到屏幕
+  // 最上面，用户会失去「我刚才划掉的是哪句」这个上下文。
+  scrollToChatEntry: function () {
+    var query = wx.createSelectorQuery ? wx.createSelectorQuery().in(this) : null;
+    if (!query) return;
+    query.select('.dream-chat-entry').boundingClientRect();
+    query.selectViewport().scrollOffset();
+    query.exec(function (res) {
+      var rect = res && res[0];
+      var viewport = res && res[1];
+      if (!rect || !viewport) return;
+      wx.pageScrollTo({
+        scrollTop: Math.max(0, viewport.scrollTop + rect.top - 120),
+        duration: 300
+      });
+    });
+  },
+
   onConnectionVerdict: function (event) {
     var that = this;
     var dream = this.data.dream;
@@ -1877,6 +1895,11 @@ Page({
       verdict: nextVerdict || 'cleared',
       connectionLength: item.text.length
     });
+
+    // 点了「不太像」之后，纠偏这件事只发生在页面更下面的对话入口里。用户刚划掉
+    // 一句话，此刻是他最有话要说的时候，但那个入口在屏幕外——不带他过去，这次
+    // 否定就只是一个没有下文的标记。滚动本身也是在说「这里还有下一步」。
+    if (nextVerdict === 'rejected') this.scrollToChatEntry();
 
     // 上行只在「确认」时发生，并且走 life_note 那条已经通了的管子：写进
     // life_notes → 进入画像证据 → 触发一次画像重算。梦后对话提取现实线索时

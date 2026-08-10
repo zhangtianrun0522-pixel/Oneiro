@@ -246,6 +246,8 @@ type WxMock = {
   showLoading: (options: { title: string }) => void;
   hideLoading: () => void;
   createSelectorQuery: () => any;
+  pageScrollTo: (options: Record<string, any>) => void;
+  pageScrolls: Array<Record<string, any>>;
   canvasToTempFilePath: (options: Record<string, any>) => void;
   canvasExports: Array<{ width: number; height: number }>;
   getImageInfo: (options: Record<string, any>) => void;
@@ -347,6 +349,7 @@ function createWxMock(): WxMock {
     profilePortraitSummary: '近期梦境反复出现学校、追逐与期限感。',
     canvasTexts: [],
     canvasExports: [],
+    pageScrolls: [],
     getStorageSync(key) {
       return this.storage[key];
     },
@@ -429,20 +432,46 @@ function createWxMock(): WxMock {
         },
       };
 
+      // 同一个查询器既服务于分享卡的 canvas 取节点，也服务于「滚到对话入口」的
+      // 位置计算。按实际排队的查询类型回结果，两条路才不会互相顶掉。
       return {
+        queued: [] as string[],
         in() {
           return this;
         },
         select() {
           return this;
         },
+        selectViewport() {
+          return this;
+        },
         fields() {
+          this.queued.push('fields');
+          return this;
+        },
+        boundingClientRect() {
+          this.queued.push('rect');
+          return this;
+        },
+        scrollOffset() {
+          this.queued.push('scroll');
           return this;
         },
         exec(callback: Function) {
-          callback([{ node: canvas, size: { width: 375, height: 667 } }]);
+          if (!this.queued.length) {
+            callback([{ node: canvas, size: { width: 375, height: 667 } }]);
+            return;
+          }
+          callback(this.queued.map((kind: string) => {
+            if (kind === 'rect') return { top: 900, height: 120 };
+            if (kind === 'scroll') return { scrollTop: 200 };
+            return { node: canvas, size: { width: 375, height: 667 } };
+          }));
         },
       };
+    },
+    pageScrollTo(options) {
+      this.pageScrolls.push(options);
     },
     canvasToTempFilePath(options) {
       // 导出尺寸是「转发缩略图有没有被微信裁坏」的唯一可断言信号：微信按 5:4
@@ -2570,6 +2599,31 @@ resultPage.onConnectionVerdict({ currentTarget: { dataset: { index: 1, verdict: 
 assert.equal(resultPage.data.possibleConnections[1].verdict, 'rejected');
 assert.equal(addLifeNoteCalls().length, lifeNoteCallsBeforeVerdict + 1);
 assert.equal(resultPage.data.connectionToCorrect, rejectedConnection);
+// 划掉一句话之后，纠偏这件事只发生在页面更下面的对话入口里。用户此刻最有话要
+// 说，而那个入口在屏幕外——不带他过去，这次否定就只是一个没有下文的标记。
+const scrollAfterReject = last(wx.pageScrolls);
+assert.ok(scrollAfterReject, '「不太像」必须把用户带到对话入口');
+assert.ok(
+  scrollAfterReject.scrollTop > 0 && scrollAfterReject.scrollTop < 900 + 200,
+  '停在入口上方一点，被否定的那句话要和入口同时在屏幕里'
+);
+// 「是这样」是确认，不需要下一步，滚动只会把人从他正在读的地方推走。
+const scrollsBeforeConfirm = wx.pageScrolls.length;
+resultPage.onConnectionVerdict({ currentTarget: { dataset: { index: 0, verdict: 'confirmed' } } });
+assert.equal(wx.pageScrolls.length, scrollsBeforeConfirm, '「是这样」不得滚动页面');
+resultPage.onConnectionVerdict({ currentTarget: { dataset: { index: 0, verdict: 'confirmed' } } });
+
+// 有呼应可以裁决时，底部那块「这份解读，贴合你吗」问的是同一件事，只是更粗。
+// 两个反馈控件隔着几十像素同时问「对不对」，结果是两个都被略过。
+const feedbackTemplate = read('miniprogram/pages/result/index.wxml').replace(/<!--[\s\S]*?-->/g, '');
+const feedbackBlockAt = feedbackTemplate.indexOf('class="dream-feedback"');
+assert.ok(feedbackBlockAt > 0, '模板应保留整份解读的反馈块');
+assert.ok(
+  feedbackTemplate.slice(Math.max(0, feedbackBlockAt - 260), feedbackBlockAt)
+    .includes('!possibleConnections.length'),
+  '有逐条裁决时不得再问一遍整份解读贴不贴合'
+);
+
 // 裁决以呼应原文为键存盘。重新解读会打乱条目顺序，用下标存就会把用户当时点的
 // 那次表态挂到另一条呼应上。
 const verdictDream = (wx.storage['oneiro:dreamArchive'] as Array<Record<string, any>>)

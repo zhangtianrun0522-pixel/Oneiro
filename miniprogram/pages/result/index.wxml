@@ -218,7 +218,13 @@
       <text class="reading-copy">{{dream.result.one_small_act}}</text>
     </view>
 
-    <view wx:if="{{!interpretationUnavailable && dream.status === 'ready' && !sampleMode}}" class="dream-feedback">
+    <!-- 「与你有关」每条都有自己的是这样／不太像时，这一整块问的是同一件事，
+         只是更粗：两个反馈控件隔着几十像素同时问「对不对」，结果是两个都被
+         略过。有呼应可以裁决时就不再问一遍，把表态集中到那几条具体的句子上
+         ——它们才是能上行成画像证据的那一个。
+         没有呼应的梦（模型这次没找到关联，是允许的）保留这块，否则那些梦一个
+         反馈出口都没有。 -->
+    <view wx:if="{{!interpretationUnavailable && dream.status === 'ready' && !sampleMode && !possibleConnections.length}}" class="dream-feedback">
       <text class="feedback-question">这份解读，贴合你吗</text>
       <view class="feedback-chips">
         <button wx:for="{{feedbackOptions}}" wx:key="value" class="feedback-chip {{feedback === item.value ? 'is-selected' : ''}}" data-feedback="{{item.value}}" bindtap="chooseDreamFeedback">{{item.label}}</button>
