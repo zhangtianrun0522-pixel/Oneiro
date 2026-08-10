@@ -237,8 +237,43 @@ function restoreProfilePortrait(snapshotId, callback) {
   return profileMemory('restore', { snapshotId: snapshotId || '' }, callback);
 }
 
+// 同一条梦的保存必须排队。结果页在很短的时间里会为同一条梦连着保存好几次
+// （生图开始、高清图就绪、裁决、解读评价、分享卡），云函数那边是「先读出已有
+// 记录、再写回去」，两次保存重叠时后写的那次基于的是过期快照，事务会冲突，
+// 客户端收到的就是一次没有任何解释的保存失败——「高清图待同步」最可能来自这里。
+// 队列只在真的撞上时才生效：没有同一条梦的保存在飞时，这里和从前一样直接发出去，
+// 不引入任何延迟。
+var dreamSaveActive = {};
+var dreamSaveQueues = {};
+
+function runDreamSave(dreamId, dream, callback) {
+  dreamSaveActive[dreamId] = true;
+  return callCloudFunction('saveDream', { dream: dream }, function (result) {
+    var queue;
+    var next;
+    // 回调期间仍算「在飞」：回调里常常又会发起一次保存，那一次应该排到队尾，
+    // 而不是插到已经等着的那些前面。
+    if (callback) callback(result);
+    queue = dreamSaveQueues[dreamId];
+    next = queue && queue.length ? queue.shift() : null;
+    if (next) {
+      runDreamSave(dreamId, next.dream, next.callback);
+      return;
+    }
+    delete dreamSaveQueues[dreamId];
+    delete dreamSaveActive[dreamId];
+  });
+}
+
 function saveDream(dream, callback) {
-  return callCloudFunction('saveDream', { dream: dream }, callback);
+  var dreamId = String((dream && dream.id) || '');
+  if (!dreamId) return callCloudFunction('saveDream', { dream: dream }, callback);
+  if (dreamSaveActive[dreamId]) {
+    dreamSaveQueues[dreamId] = dreamSaveQueues[dreamId] || [];
+    dreamSaveQueues[dreamId].push({ dream: dream, callback: callback });
+    return null;
+  }
+  return runDreamSave(dreamId, dream, callback);
 }
 
 function getDreamArchive(callback) {

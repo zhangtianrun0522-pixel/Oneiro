@@ -234,7 +234,11 @@
 
   <!-- 「未同步，稍后自动重试」反复出现却不说为什么，用户只能一直看着它。
        云函数其实每次都返回了失败原因，这里必须显示出来，否则无从排查。 -->
-  <view wx:if="{{cloudSyncPending && !sampleMode}}" class="cloud-sync-notice">
+  <!-- 保存进行中不算失败。原来点一次「是这样」、选一次解读评价、或者后台存一次
+       高清图，页面会在保存刚发出的那一刻就显示「未同步，稍后自动重试」，等一两秒
+       云函数返回才消失——云函数冷启动时能顶十几秒。绝大多数「一直同步不上」看到
+       的其实是这个：那句话是在保存中说的，不是保存失败了。 -->
+  <view wx:if="{{cloudSyncPending && !cloudSyncSaving && !sampleMode}}" class="cloud-sync-notice">
     <view class="cloud-sync-copy">
       <text>{{cloudRepairing ? '云端同步中' : (qualitySyncPending ? '高清图待同步' : '未同步，稍后自动重试')}}</text>
       <text wx:if="{{cloudSyncReason && !cloudRepairing}}" class="cloud-sync-reason">{{cloudSyncReason}}</text>

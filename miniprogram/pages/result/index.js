@@ -732,6 +732,9 @@ Page({
     feedbackOptions: FEEDBACK_OPTIONS,
     feedback: '',
     cloudSyncPending: false,
+    // 「正在保存」和「保存失败了」是两回事，横幅只说后者。少了这个区分，每一次
+    // 正常的后台保存都会先显示一遍失败文案。
+    cloudSyncSaving: false,
     // 同步失败的原因码。横幅只说「未同步」时，用户和我都无从判断是网络、
     // 权限还是这条记录已被删除。
     cloudSyncReason: '',
@@ -1188,7 +1191,7 @@ Page({
         metaphysicalEntryVisible: false,
         metaphysicalReadingError: '',
         metaphysicalProfileMissing: false,
-        cloudSyncPending: true
+        cloudSyncSaving: true
       });
       analytics.trackEvent('metaphysical_reading_done', {
         dreamId: dream.id || '',
@@ -1201,6 +1204,7 @@ Page({
         persistLocalDream(updatedDream);
         that.setData({
           dream: updatedDream,
+          cloudSyncSaving: false,
           cloudSyncPending: !synced,
           cloudSyncReason: synced ? '' : syncFailureDetails(saveResult).reason
         });
@@ -1314,6 +1318,7 @@ Page({
     this.setData({
       dream: dream,
       cloudSyncPending: false,
+      cloudSyncSaving: false,
       qualitySyncPending: false,
       imageSyncPending: false,
       cloudSyncReason: ''
@@ -1888,7 +1893,7 @@ Page({
       dream: dream,
       possibleConnections: decorateConnections(dream),
       connectionToCorrect: pendingConnectionCorrection(dream),
-      cloudSyncPending: true
+      cloudSyncSaving: true
     });
     analytics.trackEvent('dream_connection_verdict', {
       dreamId: dream.id || '',
@@ -1916,7 +1921,7 @@ Page({
     cloudBase.saveDream(dream, function (saveResult) {
       dream.cloudSynced = !!(saveResult && saveResult.ok);
       persistLocalDream(dream);
-      that.setData({ dream: dream, cloudSyncPending: !dream.cloudSynced });
+      that.setData({ dream: dream, cloudSyncSaving: false, cloudSyncPending: !dream.cloudSynced });
       if (!dream.cloudSynced) queueDreamSync(dream);
       else removeDreamSync(dream);
       if (dream.cloudSynced && getApp && getApp().flushPendingSyncTasks) getApp().flushPendingSyncTasks();
@@ -1966,7 +1971,7 @@ Page({
     dream.feedbackAt = new Date().toISOString();
     dream.cloudSynced = false;
     persistLocalDream(dream);
-    this.setData({ dream: dream, feedback: feedback, cloudSyncPending: true });
+    this.setData({ dream: dream, feedback: feedback, cloudSyncSaving: true });
     analytics.trackEvent('dream_feedback', {
       dreamId: dream.id || '',
       feedback: feedback,
@@ -1975,11 +1980,13 @@ Page({
     cloudBase.saveDream(dream, function (saveResult) {
       dream.cloudSynced = !!(saveResult && saveResult.ok);
       persistLocalDream(dream);
-            that.setData({
-              dream: dream,
-              cloudSyncPending: !dream.cloudSynced,
-              qualitySyncPending: !dream.cloudSynced
-            });
+      // 这里保存的是「这份解读贴不贴合」，和高清图没有任何关系。原来一并置位
+      // qualitySyncPending，于是一次普通的评价保存失败会显示成「高清图待同步」。
+      that.setData({
+        dream: dream,
+        cloudSyncSaving: false,
+        cloudSyncPending: !dream.cloudSynced
+      });
       if (!dream.cloudSynced) queueDreamSync(dream);
       else removeDreamSync(dream);
       if (dream.cloudSynced && getApp && getApp().flushPendingSyncTasks) getApp().flushPendingSyncTasks();

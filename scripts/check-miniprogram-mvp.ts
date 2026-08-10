@@ -210,6 +210,8 @@ type WxMock = {
   // 一次性的 failNextDreamSave 只能模拟「重试就好」；验证「自动重试只跑一次」
   // 需要一个持续失败的开关。
   failEveryDreamSave: boolean;
+  deferSaveDream: boolean;
+  deferredSaveDreams: Array<() => void>;
   failNextReadyDreamSave: boolean;
   failDreamSaveIds: string[];
   failDreamSaveTitles: string[];
@@ -309,6 +311,8 @@ function createWxMock(): WxMock {
     failNextInterpret: false,
     failNextDreamSave: false,
     failEveryDreamSave: false,
+    deferSaveDream: false,
+    deferredSaveDreams: [],
     failNextReadyDreamSave: false,
     failDreamSaveIds: [],
     failDreamSaveTitles: [],
@@ -518,6 +522,12 @@ function createWxMock(): WxMock {
       }
       if (options.name === 'saveDream' && options.data?.action === 'internalStats') {
         options.success({ result: wx.adminStatsResult ? wx.internalStatsResult : { ok: false, reason: 'not_admin' } });
+        return;
+      }
+      // 真机上保存是异步的，mock 默认同步回调，于是「同一条梦的两次保存有没有
+      // 重叠」在测试里根本无法发生。这个开关把回调扣住，用来观察排队。
+      if (options.name === 'saveDream' && wx.deferSaveDream && options.data?.dream) {
+        wx.deferredSaveDreams.push(() => options.success({ result: { ok: true } }));
         return;
       }
       if (options.name === 'saveDream' && wx.failEveryDreamSave) {
@@ -2940,6 +2950,52 @@ assert.equal(diagnosticsPage.data.smokeLoading, false);
 assert.equal(diagnosticsPage.data.smokeTest.provider, 'mock-cloud');
 assert.equal(diagnosticsPage.data.smokeTest.reason, 'provider_error');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'interpretDream' && call.data.smokeTest));
+
+// ── 同一条梦的保存必须排队 ──
+// 结果页在很短的时间里会为同一条梦连着保存好几次（生图开始、高清图就绪、裁决、
+// 解读评价）。云函数是「先读出已有记录、再写回去」，两次保存重叠时后写的那次基于
+// 的是过期快照，事务冲突，客户端收到一次没有任何解释的保存失败。
+const savesBeforeSerial = () => wx.cloudCalls.filter((call) => call.name === 'saveDream').length;
+const serialBaseline = savesBeforeSerial();
+const serialResults: string[] = [];
+wx.deferSaveDream = true;
+cloudBase.saveDream({ id: 'serial-dream', dreamText: '第一次' }, () => serialResults.push('first'));
+cloudBase.saveDream({ id: 'serial-dream', dreamText: '第二次' }, () => serialResults.push('second'));
+assert.equal(savesBeforeSerial(), serialBaseline + 1, '前一次还没回来时，第二次保存必须排队而不是并发发出');
+// 不同的梦之间没有冲突，不该互相等待。
+cloudBase.saveDream({ id: 'serial-other-dream', dreamText: '另一条梦' }, () => serialResults.push('other'));
+assert.equal(savesBeforeSerial(), serialBaseline + 2, '不同的梦不得互相排队');
+while (wx.deferredSaveDreams.length) {
+  const release = wx.deferredSaveDreams.shift();
+  if (release) release();
+}
+assert.equal(savesBeforeSerial(), serialBaseline + 3, '前一次回来之后，排队的那次必须自己发出去');
+assert.deepEqual(serialResults, ['first', 'other', 'second'], '每一次保存都必须拿到自己的回调');
+wx.deferSaveDream = false;
+
+// ── 保存进行中不是保存失败 ──
+// 「未同步，稍后自动重试」原来在保存刚发出的那一刻就显示出来，等云函数返回才消失
+// ——冷启动时能顶十几秒。用户看到的「一直同步不上」大多是这一句在保存中说的话。
+wx.deferSaveDream = true;
+resultPage.chooseDreamFeedback({ currentTarget: { dataset: { feedback: 'inspiring' } } });
+assert.equal(resultPage.data.cloudSyncSaving, true, '保存中要标成保存中');
+assert.equal(resultPage.data.cloudSyncPending, false, '保存还没回来，不能显示成同步失败');
+while (wx.deferredSaveDreams.length) {
+  const release = wx.deferredSaveDreams.shift();
+  if (release) release();
+}
+assert.equal(resultPage.data.cloudSyncSaving, false);
+assert.equal(resultPage.data.cloudSyncPending, false, '保存成功后不得留下未同步');
+// 存的是「这份解读贴不贴合」，和高清图没有任何关系。
+assert.equal(resultPage.data.qualitySyncPending, false, '评价保存失败不得显示成高清图待同步');
+wx.deferSaveDream = false;
+const syncTemplate = read('miniprogram/pages/result/index.wxml').replace(/<!--[\s\S]*?-->/g, '');
+const syncNoticeAt = syncTemplate.indexOf('class="cloud-sync-notice"');
+assert.ok(syncNoticeAt > 0, '模板应保留同步横幅');
+assert.ok(
+  syncTemplate.slice(Math.max(0, syncNoticeAt - 200), syncNoticeAt).includes('!cloudSyncSaving'),
+  '保存进行中不得显示同步失败横幅'
+);
 
 // ── 补写成功之后，横幅必须消失 ──
 // 补写队列此前只在冷启动被消费，成功后又只改 storage 不通知页面，两件事叠起来
