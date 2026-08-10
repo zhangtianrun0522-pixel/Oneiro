@@ -1921,7 +1921,14 @@ Page({
     cloudBase.saveDream(dream, function (saveResult) {
       dream.cloudSynced = !!(saveResult && saveResult.ok);
       persistLocalDream(dream);
-      that.setData({ dream: dream, cloudSyncSaving: false, cloudSyncPending: !dream.cloudSynced });
+      that.setData({
+        dream: dream,
+        cloudSyncSaving: false,
+        cloudSyncPending: !dream.cloudSynced,
+        // 这条路径原来只置位不记原因，于是它失败时横幅是一句光秃秃的「未同步」，
+        // 用户和我都无从判断是网络、权限、还是这条记录已被删除。
+        cloudSyncReason: dream.cloudSynced ? '' : syncFailureDetails(saveResult).reason
+      });
       if (!dream.cloudSynced) queueDreamSync(dream);
       else removeDreamSync(dream);
       if (dream.cloudSynced && getApp && getApp().flushPendingSyncTasks) getApp().flushPendingSyncTasks();
@@ -1985,7 +1992,8 @@ Page({
       that.setData({
         dream: dream,
         cloudSyncSaving: false,
-        cloudSyncPending: !dream.cloudSynced
+        cloudSyncPending: !dream.cloudSynced,
+        cloudSyncReason: dream.cloudSynced ? '' : syncFailureDetails(saveResult).reason
       });
       if (!dream.cloudSynced) queueDreamSync(dream);
       else removeDreamSync(dream);

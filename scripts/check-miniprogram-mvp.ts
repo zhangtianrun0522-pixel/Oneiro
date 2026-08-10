@@ -2989,6 +2989,15 @@ assert.equal(resultPage.data.cloudSyncPending, false, '保存成功后不得留�
 // 存的是「这份解读贴不贴合」，和高清图没有任何关系。
 assert.equal(resultPage.data.qualitySyncPending, false, '评价保存失败不得显示成高清图待同步');
 wx.deferSaveDream = false;
+// 真失败时横幅必须说得出是什么失败了。裁决和解读评价这两条路径原来只置位不记
+// 原因，横幅就是一句光秃秃的「未同步」——用户看不懂，我也无从排查。
+wx.failEveryDreamSave = true;
+resultPage.onConnectionVerdict({ currentTarget: { dataset: { index: 1, verdict: 'rejected' } } });
+assert.equal(resultPage.data.cloudSyncPending, true, '真的保存失败时必须显示');
+assert.ok(resultPage.data.cloudSyncReason, '同步失败必须带上原因码');
+wx.failEveryDreamSave = false;
+resultPage.setData({ cloudSyncPending: false, cloudSyncReason: '' });
+
 const syncTemplate = read('miniprogram/pages/result/index.wxml').replace(/<!--[\s\S]*?-->/g, '');
 const syncNoticeAt = syncTemplate.indexOf('class="cloud-sync-notice"');
 assert.ok(syncNoticeAt > 0, '模板应保留同步横幅');
