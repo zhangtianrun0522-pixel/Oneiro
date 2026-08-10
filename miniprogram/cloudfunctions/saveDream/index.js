@@ -1057,6 +1057,11 @@ exports.main = async function (event) {
           return {
             id: note._id,
             text: String(note.text || ''),
+            // 三种来源的可信方式完全不同，此前这个字段被丢掉，界面于是把它们
+            // 混成一堆叫「系统提取的现实线索」——其中 dream_connection 那些
+            // 根本是我们自己写的句子，用户只是点头认下过。把我们的措辞标成
+            // 「从你话里提取的」，用户读到的是一句自己从没说过的话。
+            source: String(note.source || ''),
             sourceDreamId: String(note.sourceDreamId || ''),
             createdAt: note.createdAt,
             updatedAt: note.updatedAt || note.createdAt

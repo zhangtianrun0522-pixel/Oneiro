@@ -211,6 +211,7 @@ type WxMock = {
   // 需要一个持续失败的开关。
   failEveryDreamSave: boolean;
   blockNextDreamChat: boolean;
+  lifeNoteRows: Array<Record<string, any>>;
   deferSaveDream: boolean;
   deferredSaveDreams: Array<() => void>;
   failNextReadyDreamSave: boolean;
@@ -316,6 +317,7 @@ function createWxMock(): WxMock {
     failEveryDreamSave: false,
     blockNextDreamChat: false,
     navigationBarTitle: '',
+    lifeNoteRows: [] as Array<Record<string, any>>,
     deferSaveDream: false,
     deferredSaveDreams: [],
     failNextReadyDreamSave: false,
@@ -568,6 +570,24 @@ function createWxMock(): WxMock {
       // 识别要真的还回一段文字。原来这里落到最后那句只有 ok:true 的兜底上，
       // 于是每次语音都走了失败分支——「转出来的字有没有真的进到草稿里」这件事
       // 从来没被验证过。
+      // 三种来源的可信方式不一样，界面必须分得开：dream_connection 是我们
+      // 自己写的句子，用户只是点过「是这样」。
+      if (options.name === 'saveDream' && options.data?.action === 'listLifeNotes') {
+        options.success({
+          result: {
+            ok: true,
+            notes: (wx.lifeNoteRows || []).map((row: Record<string, any>) => ({
+              id: row.id,
+              text: row.text,
+              source: row.source || '',
+              sourceDreamId: '',
+              createdAt: row.createdAt || '2026-08-01T00:00:00.000Z',
+              updatedAt: row.createdAt || '2026-08-01T00:00:00.000Z',
+            })),
+          },
+        });
+        return;
+      }
       if (options.name === 'speechRecognize') {
         if (wx.failNextSpeechRecognize) {
           wx.failNextSpeechRecognize = false;
@@ -1190,7 +1210,9 @@ for (const [path, expected] of [
   ['miniprogram/pages/profile/index.wxml', '阶段画像'],
   ['miniprogram/pages/profile/index.wxml', 'bindtap="openPortrait"'],
   ['miniprogram/pages/profile/index.wxml', '在梦册查看'],
-  ['miniprogram/pages/profile/index.wxml', '系统提取的现实线索'],
+  ['miniprogram/pages/profile/index.wxml', '你说过的话'],
+  ['miniprogram/pages/profile/index.wxml', '你认下的解读'],
+  ['miniprogram/pages/profile/index.wxml', 'bindtap="toggleLifeNoteGroup"'],
   ['miniprogram/pages/archive/index.wxml', '阶段画像'],
   ['miniprogram/pages/archive/index.wxml', '这段不像我'],
   ['miniprogram/pages/dream-chat/index.wxml', '{{portraitMode}}'],
@@ -1931,6 +1953,69 @@ assert.equal(wx.storage['oneiro:lastProfile'].birthPlace, 'Shanghai');
 assert.equal(wx.storage['oneiro:lastProfile'].gender, 'male');
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveProfile'));
 assert.equal(profilePage.data.memoryState.current.version, 1);
+
+// ── 关于你的记录：按来源分组，折叠，可展开 ──────────────────────────────
+//
+// 此前三种来源混成一堆，统一标着「系统提取的现实线索」。dream_connection 根本
+// 不是从用户话里提取的——那是我们写的一句呼应，他只是点过「是这样」。混在
+// 一起，用户会在自己的资料页读到一句自己从没说过的话，还以为是自己说的。
+wx.lifeNoteRows = [
+  { id: 'n1', text: '我最近其实很颓废，我啥也不想干只想躺着，事实上我已经这样有两三个月了', source: '' },
+  { id: 'n2', text: '黑夜中的馈赠，呼应了你当前过渡期中那种不确定但充满可能的感觉', source: 'dream_connection' },
+  { id: 'n3', text: '我在考虑出国', source: '' },
+  { id: 'n4', text: '那句说反了，我是当场就讲', source: 'portrait_correction' },
+  { id: 'n5', text: '这周开始每天走一万步', source: '' },
+  { id: 'n6', text: '换了个新组，还在适应', source: '' },
+];
+const lifeNotePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+lifeNotePage.onLoad();
+const spokenGroup = lifeNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === 'spoken');
+const confirmedGroup = lifeNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === 'confirmed');
+assert.ok(spokenGroup && confirmedGroup);
+// 画像纠偏里说的话也是他的原话，和梦后对话提取的归在一起。
+assert.equal(spokenGroup.total, 5);
+assert.equal(confirmedGroup.total, 1);
+assert.ok(!spokenGroup.notes.some((note: Record<string, any>) => note.id === 'n2'));
+assert.ok(confirmedGroup.hint.includes('Oneiro 写的'));
+
+// 折叠：超过三条才出现展开入口，展开后全部可见。
+assert.equal(spokenGroup.notes.length, 3);
+assert.equal(spokenGroup.collapsible, true);
+assert.equal(spokenGroup.hiddenCount, 2);
+assert.equal(confirmedGroup.collapsible, false);
+lifeNotePage.toggleLifeNoteGroup({ currentTarget: { dataset: { group: 'spoken' } } });
+assert.equal(
+  lifeNotePage.data.lifeNoteGroups.find((group: Record<string, any>) => group.key === 'spoken').notes.length,
+  5
+);
+
+// 缩略：长句先截断，点一下看全文。
+const longNote = lifeNotePage.data.lifeNoteGroups
+  .find((group: Record<string, any>) => group.key === 'spoken')
+  .notes.find((note: Record<string, any>) => note.id === 'n1');
+assert.equal(longNote.truncated, true);
+assert.ok(longNote.displayText.endsWith('…'));
+assert.ok(longNote.displayText.length < longNote.text.length);
+lifeNotePage.toggleLifeNote({ currentTarget: { dataset: { key: 'n1' } } });
+assert.equal(
+  lifeNotePage.data.lifeNoteGroups
+    .find((group: Record<string, any>) => group.key === 'spoken')
+    .notes.find((note: Record<string, any>) => note.id === 'n1').displayText,
+  wx.lifeNoteRows[0].text
+);
+// 短句不该被加上「全文」。
+assert.equal(
+  lifeNotePage.data.lifeNoteGroups
+    .find((group: Record<string, any>) => group.key === 'spoken')
+    .notes.find((note: Record<string, any>) => note.id === 'n3').truncated,
+  false
+);
+
+// 分组之后按下标定位就不成立了——界面位置和 lifeNotes 里的位置不再对应，折叠
+// 还会让可见项少于实际项。编辑/删除必须按 id 查。
+assert.equal(lifeNotePage.findLifeNote({ currentTarget: { dataset: { key: 'n6' } } }).text, '换了个新组，还在适应');
+assert.equal(lifeNotePage.findLifeNote({ currentTarget: { dataset: { key: 'nope' } } }), null);
+wx.lifeNoteRows = [];
 
 // 「我」页只剩一个只读入口：完整面板在「梦册」顶部。这一页是一整页表单，把
 // 产品里最有辨识度的产出摆在表单上方，它会被读成一个用户自己填的字段。入口

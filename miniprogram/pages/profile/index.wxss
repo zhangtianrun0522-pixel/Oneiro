@@ -252,7 +252,54 @@
   line-height: 1.75;
 }
 
-/* ── 系统提取的现实线索 ── */
+/* ── 关于你的记录 ── */
+/* 两组的可信方式不一样：一组是他的原话，一组是我们写的、他点头认下的句子。
+   分组标题和说明就是这个区别本身，不是装饰。 */
+.fact-group {
+  margin-top: var(--space-tight);
+  padding-top: var(--space-tight);
+}
+
+.fact-group + .fact-group {
+  border-top: 1rpx solid var(--rule);
+}
+
+.fact-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.fact-group-label {
+  color: var(--ink);
+  font-size: var(--fs-label);
+  letter-spacing: 0.04em;
+}
+
+.fact-group-count {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.fact-group-hint {
+  display: block;
+  margin-top: 6rpx;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+}
+
+.fact-group-toggle {
+  display: block;
+  margin-top: var(--space-tight);
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.fact-more {
+  color: var(--ink-70);
+}
+
 .facts-empty {
   display: block;
   margin-top: var(--space-tight);

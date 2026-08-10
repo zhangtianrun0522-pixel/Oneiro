@@ -13,6 +13,7 @@ type InterpretDreamModule = {
   parseDreamChatContent?: (text: string, userMessage: string) => {
     reply: string;
     realityClue: string;
+    realityClues: string[];
   };
   normalizeSymbols?: (value: unknown) => string[];
   normalizeAiResult?: (
@@ -1306,6 +1307,73 @@ assert.equal(
   ).realityClue,
   ''
 );
+// 一条消息里往往同时讲了好几件事。老契约只收一条，剩下的直接蒸发——用户在
+// 资料页看到的就是「提取得不全」。
+const multiClueMessage = '我最近其实很颓废，什么也不想干，而且我在考虑出国。';
+const multiClueChat = parseDreamChatContent(
+  JSON.stringify({
+    reply: '两件事都听到了。',
+    memory_candidates: [
+      { eligible: true, quote: '我最近其实很颓废' },
+      { eligible: true, quote: '我在考虑出国' },
+    ],
+  }),
+  multiClueMessage
+);
+assert.equal(multiClueChat.realityClues.length, 2);
+assert.equal(multiClueChat.realityClues[1], '我在考虑出国');
+// 旧客户端读的仍然是单条字段。
+assert.equal(multiClueChat.realityClue, '我最近其实很颓废');
+// 最多三条，防止模型把整段话拆成碎片灌进资料。
+assert.equal(
+  parseDreamChatContent(
+    JSON.stringify({
+      reply: '好',
+      memory_candidates: [1, 2, 3, 4, 5].map(() => ({ eligible: true, quote: '我在考虑出国' })),
+    }),
+    multiClueMessage
+  ).realityClues.length,
+  1,
+  '同一句重复报上来只算一条'
+);
+// 旧的单条格式必须继续认。
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"好","memory_candidate":{"eligible":true,"quote":"我在考虑出国"}}',
+    multiClueMessage
+  ).realityClues[0],
+  '我在考虑出国'
+);
+// 逐字校验不能被标点卡住：模型顺手把句中的逗号补成句号，原本合格的引用会被
+// 静默丢掉，看起来就像模型没提取——而且没有任何地方说发生过什么。
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"好","memory_candidate":{"eligible":true,"quote":"我最近其实很颓废。什么也不想干"}}',
+    multiClueMessage
+  ).realityClues[0],
+  '我最近其实很颓废。什么也不想干'
+);
+// 但改写仍然要拦住：这是防止模型把自己的话记成用户的话，这条不能松。
+assert.equal(
+  parseDreamChatContent(
+    '{"reply":"好","memory_candidate":{"eligible":true,"quote":"我打算移民加拿大"}}',
+    multiClueMessage
+  ).realityClues.length,
+  0
+);
+
+// 「还没发生」不再是排除理由。计划和正在考虑的选择是这个人现实处境的一部分，
+// 往往比已经发生的事更能说明他现在在哪。
+const chatPromptSource = read('miniprogram/cloudfunctions/interpretDream/index.js');
+assert.ok(
+  chatPromptSource.includes('还没发生不是排除理由'),
+  '打算、计划、正在考虑的事必须可以记进资料'
+);
+assert.ok(
+  chatPromptSource.includes('全都挑出来，最多三条'),
+  '一条消息里的多件事必须全部挑出来'
+);
+
 const plainTextDreamChat = parseDreamChatContent('纯文本兼容回复', '最近在换工作');
 assert.equal(plainTextDreamChat.reply, '纯文本兼容回复');
 assert.equal(plainTextDreamChat.realityClue, '');

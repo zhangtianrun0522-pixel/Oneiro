@@ -70,20 +70,42 @@
     <text class="recent-clues-summary">{{insights.stageSummary}}</text>
   </view>
 
+  <!-- 「你说过的话」和「你认下的解读」此前混成一堆，统一标着「系统提取的现实
+       线索」。后者根本不是从用户话里提取的——那是 Oneiro 写的一句呼应，用户
+       只是点过「是这样」。混在一起，用户会在自己的资料页读到一句自己从没说过
+       的话，还以为是自己说的。 -->
   <view class="facts-block section-divider">
     <view class="section-row">
-      <text class="section-label">系统提取的现实线索</text>
+      <text class="section-label">关于你的记录</text>
       <text class="section-meta">{{lifeNotes.length}} 条</text>
     </view>
     <text wx:if="{{!lifeNotes.length}}" class="facts-empty">系统会从梦后对话和次日回访中提取有现实落点的线索，普通猜测不会直接成为记忆。</text>
-    <view wx:else class="facts-list">
-      <view wx:for="{{lifeNotes}}" wx:for-item="note" wx:for-index="noteIndex" wx:key="localKey" class="fact-item">
-        <text class="fact-copy">{{note.text}}</text>
-        <view class="fact-actions">
-          <text data-index="{{noteIndex}}" bindtap="editLifeNote" class="fact-edit">编辑</text>
-          <text data-index="{{noteIndex}}" bindtap="deleteLifeNote" class="fact-delete">删除</text>
+
+    <view wx:for="{{lifeNoteGroups}}" wx:for-item="group" wx:key="key" class="fact-group">
+      <view class="fact-group-head">
+        <text class="fact-group-label">{{group.label}}</text>
+        <text class="fact-group-count">{{group.total}} 条</text>
+      </view>
+      <text class="fact-group-hint">{{group.hint}}</text>
+      <view class="facts-list">
+        <view wx:for="{{group.notes}}" wx:for-item="note" wx:key="localKey" class="fact-item">
+          <text
+            class="fact-copy {{note.truncated ? 'is-tappable' : ''}}"
+            data-key="{{note.localKey}}"
+            bindtap="toggleLifeNote"
+          >{{note.displayText}}<text wx:if="{{note.truncated}}" class="fact-more">{{note.noteExpanded ? ' 收起' : ' 全文'}}</text></text>
+          <view class="fact-actions">
+            <text data-key="{{note.localKey}}" bindtap="editLifeNote" class="fact-edit">编辑</text>
+            <text data-key="{{note.localKey}}" bindtap="deleteLifeNote" class="fact-delete">删除</text>
+          </view>
         </view>
       </view>
+      <text
+        wx:if="{{group.collapsible}}"
+        class="fact-group-toggle"
+        data-group="{{group.key}}"
+        bindtap="toggleLifeNoteGroup"
+      >{{group.expanded ? '收起' : '还有 ' + group.hiddenCount + ' 条，展开'}}</text>
     </view>
   </view>
 

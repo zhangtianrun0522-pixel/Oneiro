@@ -630,7 +630,13 @@ Page({
       dream.updatedAt = new Date().toISOString();
       persistDream(dream, function (saveResult) {
         that.setData({ cloudSyncPending: !(saveResult && saveResult.ok) });
-        var realityClue = result && result.ok ? String(result.realityClue || '').trim() : '';
+        // 一条消息里常常同时讲了好几件事。云端现在会把它们全部挑出来；只取
+        // 第一条的旧写法，剩下的会直接蒸发，用户看到的就是「提取得不全」。
+        var realityClues = (result && result.ok && Array.isArray(result.realityClues)
+          ? result.realityClues
+          : [result && result.realityClue]
+        ).map(function (item) { return String(item || '').trim(); }).filter(Boolean);
+        var realityClue = realityClues[0] || '';
         var refreshPortrait = function (reason, refreshKey) {
           dreamMemory.refreshPortraitInBackground({
             cloudBase: cloudBase,
@@ -652,27 +658,36 @@ Page({
           }
         }
 
-        if (realityClue && saveResult && saveResult.ok) {
-          cloudBase.addLifeNote(dream.id, realityClue, function (noteResult) {
-            if (noteResult && noteResult.ok) {
-              refreshPortrait(
-                '梦后对话提取了新的现实线索',
-                'life-note:' + String(noteResult.id || dream.id + ':' + current.length)
-              );
-              analytics.trackEvent('dream_chat_life_note_extracted', {
-                dreamId: dream.id,
-                deduplicated: !!noteResult.deduplicated
-              });
-              return;
-            }
-            analytics.trackEvent('dream_chat_life_note_failed', {
-              dreamId: dream.id,
-              reason: noteResult && noteResult.reason ? noteResult.reason : 'unknown'
-            });
-            syncQueue.enqueue('life_note', {
-              dreamId: dream.id,
-              text: realityClue,
-              refreshKey: 'life-note:' + String(dream.id) + ':' + String(current.length)
+        if (realityClues.length && saveResult && saveResult.ok) {
+          // 每条各写各的：一条失败不该把其他几条一起拖掉，所以失败是逐条排队
+          // 补写的。画像只在最后一条回来之后刷新一次。
+          var remaining = realityClues.length;
+          realityClues.forEach(function (clue, clueIndex) {
+            cloudBase.addLifeNote(dream.id, clue, function (noteResult) {
+              remaining -= 1;
+              if (noteResult && noteResult.ok) {
+                analytics.trackEvent('dream_chat_life_note_extracted', {
+                  dreamId: dream.id,
+                  deduplicated: !!noteResult.deduplicated,
+                  batchSize: realityClues.length
+                });
+              } else {
+                analytics.trackEvent('dream_chat_life_note_failed', {
+                  dreamId: dream.id,
+                  reason: noteResult && noteResult.reason ? noteResult.reason : 'unknown'
+                });
+                syncQueue.enqueue('life_note', {
+                  dreamId: dream.id,
+                  text: clue,
+                  refreshKey: 'life-note:' + String(dream.id) + ':' + String(current.length) + ':' + String(clueIndex)
+                });
+              }
+              if (remaining <= 0) {
+                refreshPortrait(
+                  '梦后对话提取了新的现实线索',
+                  'life-note:' + String(dream.id) + ':' + String(current.length)
+                );
+              }
             });
           });
           return;

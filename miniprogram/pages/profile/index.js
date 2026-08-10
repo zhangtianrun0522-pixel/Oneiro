@@ -8,6 +8,68 @@ function emptyProfile() {
   return { nickname: '', birthDate: '', birthTime: '', birthPlace: '', gender: '' };
 }
 
+// ── 现实线索的分组 ──────────────────────────────────────────────────────
+//
+// 这三种东西此前混成一堆，统一标着「系统提取的现实线索」。其中 dream_connection
+// 根本不是从用户话里提取的——那是 Oneiro 自己写的一句呼应，用户只是点了「是
+// 这样」。把我们的措辞标成「从你话里提取的」，用户会在自己的资料页读到一句
+// 自己从没说过的话，还以为是自己说的。
+//
+// 云函数早就分开存了（profileMemory 的 promptEvidence 就靠这个区分权重），
+// 只有列表接口把 source 丢掉了。
+var LIFE_NOTE_GROUPS = [
+  {
+    key: 'spoken',
+    label: '你说过的话',
+    hint: '从你在对话里说的话原样存下来，没有改写。',
+    sources: ['', 'portrait_correction']
+  },
+  {
+    key: 'confirmed',
+    label: '你认下的解读',
+    hint: '这些句子是 Oneiro 写的，你在解读里点过「是这样」。',
+    sources: ['dream_connection']
+  }
+];
+// 折叠后先露几条。多于这个数才出现展开入口。
+var LIFE_NOTE_COLLAPSED_COUNT = 3;
+// 单条超过这个长度就先截断，点一下看全文。手机上一行大概十六七个字，真实
+// 的线索普遍三十来字、占满三行；截到一行半，用户才看得出自己一共有多少条，
+// 而不是被两条长句糊满一屏。
+var LIFE_NOTE_PREVIEW_LENGTH = 24;
+
+function buildLifeNoteGroups(notes, expandedGroups, expandedNotes) {
+  var list = Array.isArray(notes) ? notes : [];
+  return LIFE_NOTE_GROUPS.map(function (group) {
+    var groupNotes = list.filter(function (note) {
+      return group.sources.indexOf(String(note.source || '')) >= 0;
+    }).map(function (note) {
+      var text = String(note.text || '');
+      var key = note.localKey || note.id || '';
+      var noteExpanded = !!expandedNotes[key];
+      return Object.assign({}, note, {
+        localKey: key,
+        truncated: text.length > LIFE_NOTE_PREVIEW_LENGTH,
+        noteExpanded: noteExpanded,
+        displayText: !noteExpanded && text.length > LIFE_NOTE_PREVIEW_LENGTH
+          ? text.slice(0, LIFE_NOTE_PREVIEW_LENGTH) + '…'
+          : text
+      });
+    });
+    var groupExpanded = !!expandedGroups[group.key];
+    return {
+      key: group.key,
+      label: group.label,
+      hint: group.hint,
+      total: groupNotes.length,
+      expanded: groupExpanded,
+      collapsible: groupNotes.length > LIFE_NOTE_COLLAPSED_COUNT,
+      hiddenCount: Math.max(0, groupNotes.length - LIFE_NOTE_COLLAPSED_COUNT),
+      notes: groupExpanded ? groupNotes : groupNotes.slice(0, LIFE_NOTE_COLLAPSED_COUNT)
+    };
+  }).filter(function (group) { return group.total > 0; });
+}
+
 function genderIndexFor(value) {
   var normalized = String(value || '').trim().toLowerCase();
   return normalized === 'male' ? 1 : normalized === 'female' ? 2 : 0;
@@ -52,6 +114,9 @@ Page({
     revisitSubmitting: false,
     revisitDisabled: false,
     lifeNotes: [],
+    lifeNoteGroups: [],
+    lifeNoteExpandedGroups: {},
+    lifeNoteExpandedNotes: {},
     memoryState: stagePortrait.emptyMemoryState(),
     // 画像在这一页是只读入口，编辑/重新梳理/溯源都在「梦册」顶部。这些键仍然
     // 存在是因为共享控制器（utils/stagePortrait）向它们写状态。
@@ -76,9 +141,10 @@ Page({
       genderIndex: genderIndexFor(saved.gender),
       insights: insights,
       lifeNotes: dreamMemory.autoExtractedRealLifeContext(archive).map(function (text, index) {
-        return { id: '', localKey: 'local-' + index, text: text, localOnly: true };
+        return { id: '', localKey: 'local-' + index, text: text, localOnly: true, source: '' };
       })
     });
+    this.renderLifeNotes();
     this.portrait.hydrateFromCache();
     analytics.trackEvent('profile_view', { hasBirthDate: !!saved.birthDate });
     this.loadProfileMemory();
@@ -177,7 +243,45 @@ Page({
         return Object.assign({}, note, { localKey: note.id || String(note.createdAt || '') });
       });
       that.setData({ lifeNotes: notes });
+      that.renderLifeNotes();
     });
+  },
+
+  renderLifeNotes: function () {
+    this.setData({
+      lifeNoteGroups: buildLifeNoteGroups(
+        this.data.lifeNotes,
+        this.data.lifeNoteExpandedGroups,
+        this.data.lifeNoteExpandedNotes
+      )
+    });
+  },
+
+  toggleLifeNoteGroup: function (event) {
+    var key = String(event.currentTarget.dataset.group || '');
+    var next = Object.assign({}, this.data.lifeNoteExpandedGroups);
+    next[key] = !next[key];
+    this.setData({ lifeNoteExpandedGroups: next });
+    this.renderLifeNotes();
+  },
+
+  toggleLifeNote: function (event) {
+    var key = String(event.currentTarget.dataset.key || '');
+    if (!key) return;
+    var next = Object.assign({}, this.data.lifeNoteExpandedNotes);
+    next[key] = !next[key];
+    this.setData({ lifeNoteExpandedNotes: next });
+    this.renderLifeNotes();
+  },
+
+  // 分组之后按下标定位就不成立了：界面上的位置和 lifeNotes 里的位置不再对应，
+  // 折叠状态还会让可见项少于实际项。改成按 id 查。
+  findLifeNote: function (event) {
+    var key = String(event.currentTarget.dataset.key || '');
+    var matched = this.data.lifeNotes.filter(function (note) {
+      return String(note.localKey || note.id || '') === key;
+    });
+    return matched[0] || null;
   },
 
   refreshPortraitInBackground: function (reason, refreshKey) {
@@ -200,8 +304,7 @@ Page({
 
   editLifeNote: function (event) {
     var that = this;
-    var index = Number(event.currentTarget.dataset.index);
-    var note = this.data.lifeNotes[index];
+    var note = this.findLifeNote(event);
     if (!note || !note.id) {
       wx.showToast({ title: '联网后可修改这条片段', icon: 'none' });
       return;
@@ -230,8 +333,7 @@ Page({
 
   deleteLifeNote: function (event) {
     var that = this;
-    var index = Number(event.currentTarget.dataset.index);
-    var note = this.data.lifeNotes[index];
+    var note = this.findLifeNote(event);
     if (!note || !note.id) {
       wx.showToast({ title: '联网后可删除这条片段', icon: 'none' });
       return;

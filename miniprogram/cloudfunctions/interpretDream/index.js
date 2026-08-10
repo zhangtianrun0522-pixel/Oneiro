@@ -99,12 +99,20 @@ const DREAM_CHAT_SYSTEM_PROMPT = [
   '但严禁把背景当成谈资：没有具体呼应时一个字都不要提，不得罗列意象或主题词，不得说「根据你的画像」「你的关键词是」这类元话语，不得把长期背景复述成对他的定义。用户可以随时否定这些背景，它们是线索不是结论。',
   '聊到后段（大约五六轮之后），从提问转向收束：把这次对话里他确认过的东西说回给他一句，让对话有个可以停下来的地方，而不是无限追问下去。他想继续时再继续。',
   '可以提出一种可能理解，但必须标注为可能性，区分梦中事实、用户感受和待确认的现实关联，不得虚构用户的现实经历或历史记忆。',
-  '同时判断用户本条消息里是否有可自动记入资料的现实事实：只有用户明确自述的、现实生活中已经发生、正在发生或已经决定的事实才 eligible=true。',
-  '问题、猜测、假设、否定、梦中发生的事、单纯情绪联想和你的推断都必须 eligible=false。',
-  'memory_candidate.quote 必须逐字复制用户本条消息中的一个连续原文片段，不得改写、补全或概括；eligible=false 时 quote 必须为空。',
+  // 这条边界原来划错了地方。它写的是「已经发生、正在发生或已经决定」，于是
+  // 「我在考虑出国」被判成猜测丢掉——可那是这个人现实处境里最要紧的一件事。
+  // 该拦的从来不是「还没发生」，而是「不是他说的」：模型自己的推断不能记，
+  // 他自己讲出来的打算、想法、正在纠结的事都该记。
+  '同时从用户本条消息里挑出可以记进他资料的现实线索。标准是「这句话是不是他自己在讲他现实里的事」：已经发生的、正在发生的、已经决定的、正在打算或考虑的、想做还没做的、以及他对自己处境的自述，全都 eligible=true。',
+  '还没发生不是排除理由——计划、打算、正在犹豫的选择，都是他真实处境的一部分，往往比已经发生的事更能说明他现在在哪。',
+  '必须 eligible=false 的只有这几类：你自己的推断和解释、梦里发生的事、对未来的预言、他在问你的问题、他否认的事，以及没有任何现实落点的纯情绪词（「我很难过」单独出现时不算线索，「我最近一直睡不着」算）。',
+  // 一条消息里常常同时有好几件事（「我最近很颓废，而且在考虑出国」）。以前
+  // 只收一条，剩下的直接蒸发，用户看到的就是「提取得不全」。
+  '用户一条消息里可能同时讲了好几件事，全都挑出来，最多三条，各自独立。没有就给空数组。',
+  '每条 quote 必须逐字复制用户本条消息中的一个连续原文片段，不得改写、补全或概括。宁可多带几个字，也不要为了简洁而重新组织措辞——这些话之后会原样呈现给他看，改写过的句子他认不出是自己说的。',
   '不做医疗、创伤、人格、关系或职业诊断，不预测命运。',
   '回复 2-4 句话。',
-  '只返回合法 JSON，不要 markdown：{"reply":"回复正文","memory_candidate":{"eligible":true或false,"quote":"用户原文连续片段或空字符串"}}。'
+  '只返回合法 JSON，不要 markdown：{"reply":"回复正文","memory_candidates":[{"eligible":true,"quote":"用户原文连续片段"}]}。'
 ].join('\n');
 
 const DREAM_REFINE_SYSTEM_PROMPT = [
@@ -2265,13 +2273,42 @@ function chatResultSummary(value) {
   };
 }
 
+// 逐字校验是防止模型把自己的话记成用户的话，这条不能松。但「逐字」不该被
+// 标点和空格卡住：模型经常把句中的逗号补成句号、或者顺手删掉一个空格，原本
+// 完全合格的引用就这样被静默丢掉，表现出来就是「提取得不全」，而且没有任何
+// 日志说明发生过什么。所以比对时两边都剥掉标点和空白，取回的仍然是用户原文
+// 里的那一段。
+function comparableQuote(value) {
+  return String(value || '').replace(/[\s，。、；：！？…—～·「」『』“”‘’（）()《》,.!?;:~"']/g, '');
+}
+
 function validatedRealityClue(value, userMessage, eligible) {
   // The model makes the semantic decision. The server only proves that its
   // candidate is a contiguous quote from this exact user message.
   const clue = asString(value, '', 300);
   const source = asString(userMessage, '', 500);
-  if (eligible !== true || !clue || source.indexOf(clue) < 0) return '';
+  if (eligible !== true || !clue) return '';
+  if (source.indexOf(clue) >= 0) return clue;
+  const strippedSource = comparableQuote(source);
+  const strippedClue = comparableQuote(clue);
+  if (!strippedClue || strippedSource.indexOf(strippedClue) < 0) return '';
   return clue;
+}
+
+// 一条消息里往往同时有好几件事。老契约只收一条，剩下的直接蒸发。
+// 仍然认旧的单条字段：线上可能有正在返回旧格式的调用，也可能有缓存的响应。
+function collectRealityClues(parsed, userMessage) {
+  const raw = Array.isArray(parsed && parsed.memory_candidates)
+    ? parsed.memory_candidates
+    : [parsed && parsed.memory_candidate];
+  const clues = [];
+  raw.slice(0, 3).forEach(function (item) {
+    if (!item || typeof item !== 'object') return;
+    const clue = validatedRealityClue(item.quote, userMessage, item.eligible);
+    // 同一条消息里模型偶尔会把同一句话拆两遍报上来。
+    if (clue && clues.indexOf(clue) < 0) clues.push(clue);
+  });
+  return clues;
 }
 
 function parseDreamChatContent(content, userMessage) {
@@ -2284,19 +2321,15 @@ function parseDreamChatContent(content, userMessage) {
     parsed = null;
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { reply: asString(content, '', 1200), realityClue: '' };
+    return { reply: asString(content, '', 1200), realityClue: '', realityClues: [] };
   }
   reply = asString(parsed.reply, '', 1200);
-  const memoryCandidate = parsed.memory_candidate && typeof parsed.memory_candidate === 'object'
-    ? parsed.memory_candidate
-    : {};
+  const clues = collectRealityClues(parsed, userMessage);
   return {
     reply: reply,
-    realityClue: validatedRealityClue(
-      memoryCandidate.quote,
-      userMessage,
-      memoryCandidate.eligible
-    )
+    // realityClue 保留给还没更新的客户端；新客户端读 realityClues。
+    realityClue: clues[0] || '',
+    realityClues: clues
   };
 }
 
@@ -2540,7 +2573,8 @@ async function runDreamChat(event, openid) {
       model: config.model || '',
       fallback: false,
       reply: chatContent.reply,
-      realityClue: chatContent.realityClue
+      realityClue: chatContent.realityClue,
+      realityClues: chatContent.realityClues || []
     };
   } catch (error) {
     const diagnostic = decorateProviderError(error, config, startedAt);
