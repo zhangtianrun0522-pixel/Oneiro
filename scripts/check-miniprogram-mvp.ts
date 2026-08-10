@@ -1959,13 +1959,28 @@ assert.equal(profilePage.data.memoryState.current.version, 1);
 // 此前三种来源混成一堆，统一标着「系统提取的现实线索」。dream_connection 根本
 // 不是从用户话里提取的——那是我们写的一句呼应，他只是点过「是这样」。混在
 // 一起，用户会在自己的资料页读到一句自己从没说过的话，还以为是自己说的。
+//
+// source 是一个「旧版云函数会静默省略」的字段，而它缺席时的默认值恰好是最糟
+// 的那个。所以 n2 这里故意不带 source：本地必须能自己认出来它是我们写的句子
+// ——它逐字就是梦册里那条呼应。
 wx.lifeNoteRows = [
   { id: 'n1', text: '我最近其实很颓废，我啥也不想干只想躺着，事实上我已经这样有两三个月了', source: '' },
-  { id: 'n2', text: '黑夜中的馈赠，呼应了你当前过渡期中那种不确定但充满可能的感觉', source: 'dream_connection' },
+  { id: 'n2', text: '黑夜中的馈赠，呼应了你当前过渡期中那种不确定但充满可能的感觉', source: '' },
   { id: 'n3', text: '我在考虑出国', source: '' },
   { id: 'n4', text: '那句说反了，我是当场就讲', source: 'portrait_correction' },
   { id: 'n5', text: '这周开始每天走一万步', source: '' },
   { id: 'n6', text: '换了个新组，还在适应', source: '' },
+];
+const archiveBeforeLifeNoteCase = wx.storage['oneiro:dreamArchive'];
+wx.storage['oneiro:dreamArchive'] = [
+  {
+    id: 'dream-with-connection',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    result: {
+      title: '黑夜中的馈赠',
+      possible_connections: ['黑夜中的馈赠，呼应了你当前过渡期中那种不确定但充满可能的感觉'],
+    },
+  },
 ];
 const lifeNotePage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
 lifeNotePage.onLoad();
@@ -1977,6 +1992,7 @@ assert.equal(spokenGroup.total, 5);
 assert.equal(confirmedGroup.total, 1);
 assert.ok(!spokenGroup.notes.some((note: Record<string, any>) => note.id === 'n2'));
 assert.ok(confirmedGroup.hint.includes('Oneiro 写的'));
+assert.equal(confirmedGroup.notes[0].id, 'n2', '云端没给 source 时，本地要自己认出这是我们写的句子');
 
 // 折叠：超过三条才出现展开入口，展开后全部可见。
 assert.equal(spokenGroup.notes.length, 3);
@@ -2016,6 +2032,7 @@ assert.equal(
 assert.equal(lifeNotePage.findLifeNote({ currentTarget: { dataset: { key: 'n6' } } }).text, '换了个新组，还在适应');
 assert.equal(lifeNotePage.findLifeNote({ currentTarget: { dataset: { key: 'nope' } } }), null);
 wx.lifeNoteRows = [];
+wx.storage['oneiro:dreamArchive'] = archiveBeforeLifeNoteCase;
 
 // 「我」页只剩一个只读入口：完整面板在「梦册」顶部。这一页是一整页表单，把
 // 产品里最有辨识度的产出摆在表单上方，它会被读成一个用户自己填的字段。入口

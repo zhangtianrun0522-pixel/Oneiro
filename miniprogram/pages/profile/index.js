@@ -17,6 +17,14 @@ function emptyProfile() {
 //
 // 云函数早就分开存了（profileMemory 的 promptEvidence 就靠这个区分权重），
 // 只有列表接口把 source 丢掉了。
+//
+// 但光把 source 加回列表接口不够：那是一个「旧版云函数会静默省略」的字段，
+// 而它缺席时的默认值恰好是最糟的那个——我们写的句子会被归进「你说过的话」，
+// 用户在自己的资料页读到一句自己从没说过的话。所以来源不能只靠这一个字段。
+//
+// 本地有第二个、独立的证据：dream_connection 的正文逐字就是某个梦的一条
+// possible_connections，而整个梦册就在本地缓存里。对得上就是我们写的句子，
+// 不管云端返回了什么。
 var LIFE_NOTE_GROUPS = [
   {
     key: 'spoken',
@@ -31,6 +39,31 @@ var LIFE_NOTE_GROUPS = [
     sources: ['dream_connection']
   }
 ];
+
+function normalizedClaim(value) {
+  return String(value || '').replace(/[\s，。、；：！？…—～·「」『』“”‘’（）()《》,.!?;:~"']/g, '');
+}
+
+// 梦册里所有被写过的呼应，连同它出自哪个梦。既用来认领来源，也用来回链梦卡。
+function buildConnectionIndex(archive) {
+  var index = {};
+  (Array.isArray(archive) ? archive : []).forEach(function (dream) {
+    var connections = dream && dream.result && dream.result.possible_connections;
+    if (!Array.isArray(connections)) return;
+    connections.forEach(function (item) {
+      var key = normalizedClaim(item);
+      if (key && !index[key]) index[key] = { dreamId: dream.id, title: String((dream.result && dream.result.title) || '') };
+    });
+  });
+  return index;
+}
+
+function noteSourceOf(note, connectionIndex) {
+  var declared = String((note && note.source) || '');
+  if (declared) return declared;
+  // 云端没说来源时自己认：对得上某条呼应，它就是我们写的句子。
+  return connectionIndex[normalizedClaim(note && note.text)] ? 'dream_connection' : '';
+}
 // 折叠后先露几条。多于这个数才出现展开入口。
 var LIFE_NOTE_COLLAPSED_COUNT = 3;
 // 单条超过这个长度就先截断，点一下看全文。手机上一行大概十六七个字，真实
@@ -38,11 +71,12 @@ var LIFE_NOTE_COLLAPSED_COUNT = 3;
 // 而不是被两条长句糊满一屏。
 var LIFE_NOTE_PREVIEW_LENGTH = 24;
 
-function buildLifeNoteGroups(notes, expandedGroups, expandedNotes) {
+function buildLifeNoteGroups(notes, expandedGroups, expandedNotes, archive) {
   var list = Array.isArray(notes) ? notes : [];
+  var connectionIndex = buildConnectionIndex(archive);
   return LIFE_NOTE_GROUPS.map(function (group) {
     var groupNotes = list.filter(function (note) {
-      return group.sources.indexOf(String(note.source || '')) >= 0;
+      return group.sources.indexOf(noteSourceOf(note, connectionIndex)) >= 0;
     }).map(function (note) {
       var text = String(note.text || '');
       var key = note.localKey || note.id || '';
@@ -252,7 +286,8 @@ Page({
       lifeNoteGroups: buildLifeNoteGroups(
         this.data.lifeNotes,
         this.data.lifeNoteExpandedGroups,
-        this.data.lifeNoteExpandedNotes
+        this.data.lifeNoteExpandedNotes,
+        wx.getStorageSync('oneiro:dreamArchive') || []
       )
     });
   },
