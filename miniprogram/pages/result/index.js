@@ -22,6 +22,45 @@ var SHARE_THUMB_WIDTH = 1000;
 var SHARE_THUMB_HEIGHT = 800;
 var QUALITY_POLL_INTERVAL_MS = 3000;
 var QUALITY_POLL_MAX_ATTEMPTS = 60;
+// ── 自动生图的次数上限 ──────────────────────────────────────────────────
+//
+// 结果页每次打开都会去生一次图，失败后 4 秒还会自动再试一次。有图的梦在开头
+// 就短路了，什么都不做；没图的梦于是每打开一次就真调两次供应商，永远。一条
+// 坏掉的梦会无限烧额度，还会把后台的失败率一路顶上去。
+//
+// 三次之后不再自动试，改成显示失败态和「重新生成画面」——手动永远可以，而且
+// 手动重试会把计数清零，等于用户说「再给它一组机会」。
+var MAX_AUTO_IMAGE_ATTEMPTS = 3;
+var IMAGE_ATTEMPTS_KEY = 'oneiro:imageAttempts';
+
+// 计数存在单独的 storage 里，不挂在梦上：梦同步到云端时会走 safeDream 的字段
+// 白名单，挂上去的计数会被丢掉，从云端刷回来时又归零，上限就形同虚设。
+function imageAttemptMap() {
+  var stored = wx.getStorageSync(IMAGE_ATTEMPTS_KEY);
+  return stored && typeof stored === 'object' ? stored : {};
+}
+
+function imageAttemptCount(dreamId) {
+  if (!dreamId) return 0;
+  return Number(imageAttemptMap()[dreamId] || 0);
+}
+
+function bumpImageAttempt(dreamId) {
+  var map;
+  if (!dreamId) return;
+  map = imageAttemptMap();
+  map[dreamId] = Number(map[dreamId] || 0) + 1;
+  wx.setStorageSync(IMAGE_ATTEMPTS_KEY, map);
+}
+
+function clearImageAttempts(dreamId) {
+  var map;
+  if (!dreamId) return;
+  map = imageAttemptMap();
+  if (!map[dreamId]) return;
+  delete map[dreamId];
+  wx.setStorageSync(IMAGE_ATTEMPTS_KEY, map);
+}
 var themePalettes = {
   tide: {
     stops: ['#102832', '#356f78', '#d5e8df'],
@@ -1395,8 +1434,22 @@ Page({
       return;
     }
 
+    // 自动尝试的次数闸门。手动重试（options.manual）永远放行，而且会把计数
+    // 清零——那是用户明确说「再给它一组机会」。
+    if (!(options && options.manual) && imageAttemptCount(dream.id) >= MAX_AUTO_IMAGE_ATTEMPTS) {
+      that.setData({
+        imageStatus: 'failed',
+        imageSyncPending: false,
+        imageErrorMessage: '这条梦的画面连着几次都没生成成功，点「重新生成画面」再试',
+        imageLoadError: 'auto_attempts_exhausted'
+      });
+      if (done) done();
+      return;
+    }
+
     var startGeneration = function () {
       that.setData({ imageStatus: 'generating', imageErrorMessage: '' });
+      bumpImageAttempt(dream.id);
       cloudBase.generateDreamImage(
       prompt,
       dream.id || '',
@@ -1476,6 +1529,9 @@ Page({
             that.startDreamImageQuality(imageRes, result);
           }
         });
+        // 成功了就把闸门归零：这条梦以后再需要重生成（换主题、重新解读）时
+        // 应该重新拿到完整的自动尝试次数。
+        clearImageAttempts(currentDream.id);
         analytics.trackEvent('generated_image_success', {
           dreamId: currentDream.id || '',
           provider: imageRes.provider || '',
@@ -1775,6 +1831,10 @@ Page({
     var dream = this.data.dream;
     var resumeExistingJob = isResumableImageFailure(this.data.imageLoadError);
 
+    // 手动重试重新给满自动尝试次数，并且这一次本身不受闸门限制。
+    clearImageAttempts(dream && dream.id);
+    this.imageAutoRetryDone = false;
+
     if (resumeExistingJob) {
       this.setData({
         imageStatus: 'idle',
@@ -1782,7 +1842,7 @@ Page({
         imageLoadError: '',
         imageSyncPending: false
       });
-      this.requestDreamImage();
+      this.requestDreamImage(null, { manual: true });
       return;
     }
 
@@ -1813,12 +1873,13 @@ Page({
       publicShareImagePath: ''
     });
     this.stopDreamImageQualityPolling();
-    this.requestDreamImage(null, { forceRefresh: true });
+    this.requestDreamImage(null, { forceRefresh: true, manual: true });
   },
 
   retryDreamImageSync: function () {
     if (!this.data.imageSyncPending) return;
-    this.requestDreamImage();
+    clearImageAttempts(this.data.dream && this.data.dream.id);
+    this.requestDreamImage(null, { manual: true });
   },
 
   retryCloudSync: function () {
@@ -1828,8 +1889,9 @@ Page({
       // 一次「重新生成画面」——大部分人不会，卡就一直停在底色上。
       if (!ok || that.data.aiImageLocalPath || that.data.imageStatus === 'generating') return;
       that.imageAutoRetryDone = false;
+      clearImageAttempts(that.data.dream && that.data.dream.id);
       that.setData({ imageStatus: 'generating', imageErrorMessage: '', imageLoadError: '' });
-      that.requestDreamImage();
+      that.requestDreamImage(null, { manual: true });
     });
   },
 

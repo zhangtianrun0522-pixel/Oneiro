@@ -981,6 +981,75 @@ async function distinctDreamCount(eventName) {
   return Number(row.total || 0);
 }
 
+// ── 生图为什么失败 ──────────────────────────────────────────────────────
+//
+// 失败事件一直带着原因（provider 超时、额度、内容策略、梦还没同步、图下不
+// 下来……），但统计那头只做了 count()，从来没人问过它。于是后台只能显示一个
+// 百分比，看不出那 70% 里到底是什么——修哪儿全靠猜。
+async function imageFailureBreakdown() {
+  const $ = db.command.aggregate;
+  const result = await db.collection('events')
+    .aggregate()
+    .match({ eventName: 'generated_image_fail' })
+    // 同一次失败同时带 reason 和 failureType：后者用来把「梦压根没同步上云、
+    // 生图从没开始」这一类挑出来——它记在生图失败里，但它不是生图的问题。
+    .group({ _id: { reason: '$metadata.reason', failureType: '$metadata.failureType' }, total: $.sum(1) })
+    .end();
+  const rows = (result && result.list) || [];
+  const buckets = {};
+  let total = 0;
+  let syncTotal = 0;
+  rows.forEach(function (row) {
+    const key = String((row && row._id && row._id.reason) || 'unknown');
+    const count = Number((row && row.total) || 0);
+    const isSync = String((row && row._id && row._id.failureType) || '') === 'sync';
+    buckets[key] = (buckets[key] || 0) + count;
+    total += count;
+    if (isSync) syncTotal += count;
+  });
+  return {
+    ok: true,
+    total: total,
+    syncTotal: syncTotal,
+    reasons: Object.keys(buckets).map(function (reason) {
+      return { reason: reason, count: buckets[reason] };
+    }).sort(function (left, right) { return right.count - left.count; }).slice(0, 8)
+  };
+}
+
+// ── 到底有多少条梦没有画面 ──────────────────────────────────────────────
+//
+// 上面那个失败率数的是「事件」，而事件的计法是偏的：一条成功的梦一辈子只记
+// 一次成功（有图之后结果页直接短路，不再发事件），一条坏掉的梦每打开一次就
+// 再记一次失败，还要被自动重试翻一倍。分子会一直涨，分母不会。
+//
+// 这里换成数梦本身，读的是 dream_entries 而不是事件流——它不会被反复打开刷
+// 高，也是用户真正关心的那个问题：我的梦卡有没有画面。
+async function imageOutcomeByDream() {
+  const $ = db.command.aggregate;
+  const result = await db.collection('dream_entries')
+    .aggregate()
+    .match({ status: 'ready' })
+    // 供应商可能只给回 URL 而没有云存储 id，两个字段都要看，缺一个不算没图。
+    .group({ _id: { fileId: '$result.image_file_id', imageUrl: '$result.imageUrl' }, total: $.sum(1) })
+    .end();
+  const rows = (result && result.list) || [];
+  let total = 0;
+  let withImage = 0;
+  rows.forEach(function (row) {
+    const key = (row && row._id) || {};
+    const count = Number((row && row.total) || 0);
+    total += count;
+    if (String(key.fileId || '') || String(key.imageUrl || '')) withImage += count;
+  });
+  return {
+    ok: true,
+    total: total,
+    missing: total - withImage,
+    missingRate: ratio(total - withImage, total)
+  };
+}
+
 // 展开率按「被展开过的梦」而不是事件条数计：一个人反复展开收起会刷出多条
 // result_full_reading_expand，按条数算能超过 100%。
 //
@@ -1008,6 +1077,20 @@ async function internalStats() {
   const readingDepth = await readingDepthStats();
   const retention = await retentionFunnel();
   const pipeline = await pipelineFailureStats();
+  // 这两块各自会挂：聚合语法在旧环境上可能不被支持。一块查不出来不该把整页
+  // 统计带塌，所以各自兜住，界面按 ok 决定显不显示。
+  let imageReasons;
+  let imageDreams;
+  try {
+    imageReasons = await imageFailureBreakdown();
+  } catch (error) {
+    imageReasons = { ok: false, reason: 'image_failure_breakdown_failed' };
+  }
+  try {
+    imageDreams = await imageOutcomeByDream();
+  } catch (error) {
+    imageDreams = { ok: false, reason: 'image_outcome_by_dream_failed' };
+  }
 
   return {
     ok: true,
@@ -1015,7 +1098,9 @@ async function internalStats() {
     memoryEcho: memoryEcho,
     readingDepth: readingDepth,
     retention: retention,
-    pipeline: pipeline
+    pipeline: pipeline,
+    imageReasons: imageReasons,
+    imageDreams: imageDreams
   };
 }
 

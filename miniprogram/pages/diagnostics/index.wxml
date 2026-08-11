@@ -101,13 +101,40 @@
       <text class="metric-detail">{{internalStats.interpretation.detail}}</text>
     </view>
 
+    <!-- 要看的是这个：多少条梦最终没有画面。它读的是梦本身，不是事件流，所以
+         不会被反复打开刷高。下面那个按尝试次数计的失败率留着，但它回答的是
+         另一个问题（管线有多颠簸），不能当成「多少人没拿到图」。 -->
+    <view wx:if="{{internalStats.imageDreams}}" class="metric-block">
+      <view class="metric-head">
+        <text class="metric-name">没有画面的梦</text>
+        <text class="metric-figure {{internalStats.imageDreams.missingRateText === '样本不足' ? '' : 'metric-alert'}}">{{internalStats.imageDreams.missingRateText}}</text>
+      </view>
+      <text class="metric-detail">{{internalStats.imageDreams.detail}}</text>
+      <text class="metric-note">按梦计，读的是梦记录本身而不是事件流：一条梦无论被打开几次都只算一次。这才是「多少人没拿到图」。</text>
+    </view>
+
     <view wx:if="{{internalStats.image}}" class="metric-block">
       <view class="metric-head">
-        <text class="metric-name">生图失败率</text>
-        <text class="metric-figure {{internalStats.image.failureRateText === '样本不足' ? '' : 'metric-alert'}}">{{internalStats.image.failureRateText}}</text>
+        <text class="metric-name">生图尝试失败率</text>
+        <text class="metric-figure">{{internalStats.image.failureRateText}}</text>
       </view>
       <text class="metric-detail">{{internalStats.image.detail}}</text>
-      <text class="metric-note">失败率按尝试次数计，重试成功仍然记一次失败——否则「第一次总是超时」会被洗白。</text>
+      <text class="metric-note">按尝试次数计，衡量管线颠簸程度，不等于有多少人没拿到图：有图的梦不再发事件，坏掉的梦每打开一次就再记一次失败，还会被自动重试翻一倍。</text>
+    </view>
+
+    <!-- 原因一直存在事件里，只是从来没人问过它。看不见原因就只能猜着修。 -->
+    <view wx:if="{{internalStats.imageReasons && internalStats.imageReasons.rows.length}}" class="metric-block">
+      <view class="metric-head">
+        <text class="metric-name">生图失败原因</text>
+        <text class="metric-figure">共 {{internalStats.imageReasons.total}} 次</text>
+      </view>
+      <view class="reason-list">
+        <view wx:for="{{internalStats.imageReasons.rows}}" wx:key="reason" class="reason-row">
+          <text class="reason-name">{{item.reason}}</text>
+          <text class="reason-count">{{item.count}} · {{item.shareText}}</text>
+        </view>
+      </view>
+      <text wx:if="{{internalStats.imageReasons.syncTotal}}" class="metric-note">其中 {{internalStats.imageReasons.syncTotal}} 次是梦还没同步上云、生图压根没开始——那是同步问题，不是生图问题。</text>
     </view>
 
     <view wx:if="{{feedbackStats}}" class="metric-block">

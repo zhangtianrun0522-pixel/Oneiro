@@ -265,6 +265,8 @@ type WxMock = {
   authorize: (options: Record<string, any>) => void;
   getFileSystemManager: () => Record<string, any>;
   failNextFileRead: boolean;
+  // 持续失败（不是「重试就好」那种）：用来验证坏掉的梦不会无限重试烧额度。
+  failImageGeneration: boolean;
   failNextSpeechRecognize: boolean;
 };
 
@@ -312,6 +314,7 @@ function createWxMock(): WxMock {
     cloudCalls: [],
     cloudUploads: [],
     failNextFileRead: false,
+    failImageGeneration: false,
     failNextSpeechRecognize: false,
     blockNextInterpret: false,
     failNextInterpret: false,
@@ -928,6 +931,10 @@ function createWxMock(): WxMock {
         return;
       }
       if (options.name === 'generateDreamImage') {
+        if (wx.failImageGeneration && !options.data?.healthCheck) {
+          options.success({ result: { ok: false, reason: 'provider_timeout', message: '生成超时' } });
+          return;
+        }
         if (options.data?.healthCheck) {
           options.success({
             result: {
@@ -1374,7 +1381,7 @@ for (const [path, expected] of [
   ['miniprogram/pages/diagnostics/index.wxml', "记忆呼应命中率"],
   ['miniprogram/pages/diagnostics/index.wxml', "留存漏斗"],
   ['miniprogram/pages/diagnostics/index.wxml', "解读失败率"],
-  ['miniprogram/pages/diagnostics/index.wxml', "生图失败率"],
+  ['miniprogram/pages/diagnostics/index.wxml', "生图尝试失败率"],
   ['miniprogram/pages/diagnostics/index.wxml', "解读反馈"],
   ['miniprogram/pages/diagnostics/index.wxml', "ADMIN_OPENIDS"],
   ['miniprogram/cloudfunctions/saveDream/index.js', "feedbackStats"],
@@ -2342,6 +2349,54 @@ assert.equal(
   wx.cloudCalls.find((call) => call.name === 'interpretDream' && call.data?.dreamText && !call.data?.chatAboutDream)?.data?.profile?.gender,
   'male'
 );
+
+// ── 坏掉的梦不能无限烧额度 ──────────────────────────────────────────────
+//
+// 结果页每次打开都会去生一次图，失败后还会自动再试一次。有图的梦在开头就短路
+// 了；没图的梦于是每打开一次就真调两次供应商，永远——一条坏掉的梦无限烧额度，
+// 还会把后台那个失败率一路顶上去（那正是「70.4%」的来源之一）。
+const imageCapDream = JSON.parse(JSON.stringify(archiveAfterDream[0]));
+imageCapDream.id = 'dream-image-cap';
+imageCapDream.cloudSynced = true;
+imageCapDream.result = Object.assign({}, imageCapDream.result, {
+  imageUrl: '', image_file_id: '', imageFileId: '', fileID: '', fileId: '',
+  image_prompt: '一把钥匙浮在海面上',
+});
+const archiveBeforeImageCap = wx.storage['oneiro:dreamArchive'];
+wx.storage['oneiro:dreamArchive'] = [imageCapDream].concat(archiveBeforeImageCap as any[]);
+wx.failImageGeneration = true;
+const imageCallsBeforeCap = () =>
+  wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && call.data?.dreamId === 'dream-image-cap').length;
+const capPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+capPage.onLoad({ id: 'dream-image-cap' });
+// 沙箱里 setTimeout 是同步的，所以每次请求失败后的那次自动重试会立刻跑掉。
+capPage.requestDreamImage();
+capPage.requestDreamImage();
+capPage.requestDreamImage();
+capPage.requestDreamImage();
+assert.equal(imageCallsBeforeCap(), 3, '自动生图最多三次，之后不再自动调供应商');
+assert.equal(capPage.data.imageStatus, 'failed');
+assert.equal(capPage.data.imageLoadError, 'auto_attempts_exhausted');
+// 失败必须是可见且可操作的：不给按钮的话，卡就一直停在底色上。
+assertIncludes('miniprogram/pages/result/index.wxml', 'bindtap="retryDreamImage"');
+// 手动重试永远放行，并且重新给满一轮次数——那是用户明确说「再给它一组机会」。
+const capCallsBeforeManual = imageCallsBeforeCap();
+capPage.retryDreamImage();
+assert.ok(imageCallsBeforeCap() > capCallsBeforeManual, '手动「重新生成画面」不受自动上限限制');
+// 但只给一轮。换一个页面实例（= 用户退出去又进来）不能续杯，否则上限形同虚设
+// ——计数存在单独的 storage 里正是为了扛住这个：挂在梦上会被同步白名单丢掉。
+const reopenedCapPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+reopenedCapPage.onLoad({ id: 'dream-image-cap' });
+reopenedCapPage.requestDreamImage();
+reopenedCapPage.requestDreamImage();
+reopenedCapPage.requestDreamImage();
+assert.equal(imageCallsBeforeCap(), capCallsBeforeManual + 3, '手动重试只给一轮三次，重开页面不再续杯');
+// 生成成功要把闸门归零：以后换主题重新生成时该重新拿到完整的自动次数。
+wx.failImageGeneration = false;
+reopenedCapPage.retryDreamImage();
+assert.equal(reopenedCapPage.data.imageStatus, 'ready');
+assert.equal((wx.storage['oneiro:imageAttempts'] as Record<string, number>)['dream-image-cap'], undefined);
+wx.storage['oneiro:dreamArchive'] = archiveBeforeImageCap;
 
 const resultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 resultPage.onLoad({ id: archiveAfterDream[0].id });

@@ -135,6 +135,21 @@ interpretation requests fail retryably rather than fabricating local results.
 After real AI setup it should report `provider: deepseek` or
 `provider: openai-compatible` and `providerConfigured: true`.
 
+## 生图失败率怎么读
+
+后台上那个「生图失败率」数的是**事件**，而事件的计法是偏的，三个原因都往一个方向偏：
+
+- 有图的梦在 `requestDreamImage` 开头就短路了，不再发任何事件——一条成功的梦一辈子只贡献一次成功。
+- 没图的梦每打开一次结果页就重新生一次，于是**每打开一次再记一次失败**。
+- 失败后 4 秒还有一次自动重试，把同一次访问的失败再翻一倍。
+- 还有一类根本不是生图失败：梦没同步上云、生图压根没开始，也记在同一个计数器里（`metadata.failureType === 'sync'`）。
+
+所以那个百分比只能读作「管线有多颠簸」，不能读作「多少人没拿到图」。后者看诊断页的**「没有画面的梦」**：它由 `imageOutcomeByDream()` 从 `dream_entries` 直接数（`status: ready` 且 `result` 里既没有 `image_file_id` 也没有 `imageUrl`），一条梦无论被打开几次都只算一次。
+
+失败原因由 `imageFailureBreakdown()` 按 `metadata.reason` 聚合，并单独报出其中属于同步问题的次数。这些数据一直都存着，只是此前没有任何地方聚合过——后台只有一个百分比，修哪儿全靠猜。
+
+客户端那头给自动生图加了上限：同一条梦最多自动尝试 `MAX_AUTO_IMAGE_ATTEMPTS = 3` 次，之后显示失败态和「重新生成画面」。手动重试永远放行并重新给满一轮。计数存在 `oneiro:imageAttempts` 这个独立的 storage 里，不挂在梦上——挂上去会被 `safeDream` 的字段白名单丢掉，从云端刷回来就归零，上限形同虚设。
+
 ## Internal-test observation panel
 
 The diagnostics page (`pages/diagnostics/index`) can show aggregate internal-test

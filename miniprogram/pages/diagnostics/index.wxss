@@ -192,6 +192,38 @@
   font-size: 18rpx;
 }
 
+/* 失败原因清单：一行一个原因，右边是次数和占比。等宽字体让原因码对齐，
+   扫一眼就能看出哪一条压倒性地多。 */
+.reason-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  padding: 16rpx 0 8rpx;
+}
+
+.reason-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.reason-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono, monospace);
+  font-size: 24rpx;
+}
+
+.reason-count {
+  flex: 0 0 auto;
+  font-size: 24rpx;
+  opacity: 0.7;
+}
+
 .feedback-count-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

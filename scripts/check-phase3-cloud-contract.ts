@@ -43,6 +43,14 @@ function fakeDatabase(seed: Record<string, Row[]>): any {
     set(value: any) {
       return { __fakeDbCommand: 'set', value };
     },
+    // 后台统计用聚合读事件流和梦记录。这几个函数此前完全没有测试覆盖——mock
+    // 里既没有 aggregate 也没有 count，于是「70% 生图失败率」这种数字是怎么
+    // 算出来的，没有任何地方验证过。
+    aggregate: {
+      sum(value: any) {
+        return { __fakeAggOp: 'sum', value };
+      },
+    },
   };
   Object.entries(seed).forEach(([name, rows]) => { collections[name] = rows.map((row) => ({ ...row })); });
 
@@ -89,11 +97,64 @@ function fakeDatabase(seed: Record<string, Row[]>): any {
           collections[name] = collections[name].filter((row) => !matches(row, query));
           return { stats: { removed: before - collections[name].length } };
         },
+        async count() {
+          return { total: collections[name].filter((row) => matches(row, query)).length };
+        },
+      };
+    }
+
+    // 只实现生产代码真正用到的那点子集：match → group（可链式）→ end。
+    // group 的 _id 支持 null、'$path' 和 {key: '$path'} 三种形态，累加器只有
+    // $.sum(1)——多一分都是在测一个我们没写的东西。
+    function aggregateApi(rows: Row[]): any {
+      return {
+        match(query: Row) {
+          return aggregateApi(rows.filter((row) => matches(row, query)));
+        },
+        group(spec: Row) {
+          const keyOf = (row: Row): any => {
+            const id = spec._id;
+            if (id === null || id === undefined) return null;
+            if (typeof id === 'string' && id.startsWith('$')) return getPath(row, id.slice(1));
+            if (isPlainObject(id)) {
+              const composite: Row = {};
+              Object.entries(id as Row).forEach(([field, path]) => {
+                composite[field] = typeof path === 'string' && path.startsWith('$')
+                  ? getPath(row, path.slice(1))
+                  : path;
+              });
+              return composite;
+            }
+            return id;
+          };
+          const accumulators = Object.entries(spec).filter(([field]) => field !== '_id');
+          const groups = new Map<string, Row>();
+          rows.forEach((row) => {
+            const key = keyOf(row);
+            const signature = JSON.stringify(key === undefined ? null : key);
+            if (!groups.has(signature)) {
+              const seeded: Row = { _id: key === undefined ? null : key };
+              accumulators.forEach(([field]) => { seeded[field] = 0; });
+              groups.set(signature, seeded);
+            }
+            const bucket = groups.get(signature) as Row;
+            accumulators.forEach(([field, op]) => {
+              bucket[field] += Number((op && op.__fakeAggOp === 'sum' ? op.value : 0) || 0);
+            });
+          });
+          return aggregateApi(Array.from(groups.values()));
+        },
+        sort() { return aggregateApi(rows); },
+        limit(value: number) { return aggregateApi(rows.slice(0, value)); },
+        async end() {
+          return { list: rows.map((row) => ({ ...row })) };
+        },
       };
     }
 
     return {
       ...queryApi(),
+      aggregate() { return aggregateApi(collections[name].map((row) => ({ ...row }))); },
       async add({ data }: { data: Row }) {
         const row = { ...data, _id: data._id || `id-${idCounter++}` };
         collections[name].push(row);
@@ -156,7 +217,7 @@ function fakeDatabase(seed: Record<string, Row[]>): any {
   return database;
 }
 
-function loadCloudFunction(path: string, cloud: Row): (event: Row) => Promise<Row> {
+function loadCloudFunction(path: string, cloud: Row, env: Row = {}): (event: Row) => Promise<Row> {
   const module = { exports: {} as Row };
   const sandbox = {
     module,
@@ -174,7 +235,7 @@ function loadCloudFunction(path: string, cloud: Row): (event: Row) => Promise<Ro
       throw new Error(`Unexpected require(${request}) in ${path}`);
     },
     console,
-    process: { env: {} },
+    process: { env: env },
     Buffer,
     URL,
     Date,
@@ -521,6 +582,59 @@ assert.equal(newestSourcesPortrait.snapshot.sourceRefs.some((ref: Row) => ref.so
 database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => !recentPortraitDreamIds.includes(item.localId));
 
 const saveDreamMain = loadCloudFunction('miniprogram/cloudfunctions/saveDream/index.js', cloud);
+
+// ── 后台统计：生图到底怎么了 ────────────────────────────────────────────
+//
+// 这几个数以前完全没有测试覆盖（mock 里连 aggregate 都没有），而后台显示的
+// 「生图失败率 70.4%」正是它们算出来的。那个数字虚高有三个独立原因：有图的
+// 梦不再发事件、坏梦每打开一次再记一次失败、自动重试又翻一倍。所以这里既要
+// 测新的按梦计的口径，也要测失败原因能被拆出来。
+const statsAdminMain = loadCloudFunction(
+  'miniprogram/cloudfunctions/saveDream/index.js',
+  cloud,
+  { ADMIN_OPENIDS: 'user-a' }
+);
+assert.equal((await saveDreamMain({ action: 'internalStats' })).reason, 'not_admin', '统计是全站数据，非管理员一律拒绝');
+
+const statsDreamsBefore = database.rows.dream_entries;
+const statsEventsBefore = database.rows.events;
+database.rows.dream_entries = [
+  { _id: 's1', openid: 'user-a', localId: 's1', status: 'ready', result: { image_file_id: 'cloud://a.png' } },
+  // 供应商只给回 URL、没有云存储 id：也算有图，不能记成没画面。
+  { _id: 's2', openid: 'user-a', localId: 's2', status: 'ready', result: { imageUrl: 'https://x/y.png' } },
+  { _id: 's3', openid: 'user-b', localId: 's3', status: 'ready', result: { title: '没有画面' } },
+  { _id: 's4', openid: 'user-b', localId: 's4', status: 'ready', result: { image_file_id: '' } },
+  // 还没解读完的不该进分母：它本来就还轮不到生图。
+  { _id: 's5', openid: 'user-b', localId: 's5', status: 'pending', result: null },
+];
+database.rows.events = [
+  { eventName: 'generated_image_fail', metadata: { reason: 'provider_timeout' } },
+  { eventName: 'generated_image_fail', metadata: { reason: 'provider_timeout' } },
+  { eventName: 'generated_image_fail', metadata: { reason: 'provider_timeout' } },
+  { eventName: 'generated_image_fail', metadata: { reason: 'content_policy' } },
+  { eventName: 'generated_image_fail', metadata: { reason: 'cloud_call_failed', failureType: 'sync' } },
+  { eventName: 'generated_image_success', metadata: {} },
+];
+const imageStats = await statsAdminMain({ action: 'internalStats' });
+assert.equal(imageStats.ok, true);
+
+// 按梦计：一条梦无论被打开几次都只算一次，这才是「多少人没拿到图」。
+assert.equal(imageStats.imageDreams.ok, true);
+assert.equal(imageStats.imageDreams.total, 4, '只数已解读的梦');
+assert.equal(imageStats.imageDreams.missing, 2);
+assert.equal(imageStats.imageDreams.missingRate, 50);
+
+// 原因拆得开，最多的排最前——看不见原因就只能猜着修。
+assert.equal(imageStats.imageReasons.ok, true);
+assert.equal(imageStats.imageReasons.total, 5);
+assert.equal(imageStats.imageReasons.reasons[0].reason, 'provider_timeout');
+assert.equal(imageStats.imageReasons.reasons[0].count, 3);
+// 「梦还没同步上云、生图压根没开始」记在生图失败里，但它不是生图的问题。
+assert.equal(imageStats.imageReasons.syncTotal, 1);
+
+database.rows.dream_entries = statsDreamsBefore;
+database.rows.events = statsEventsBefore;
+
 const pendingContractDreamWrite = await saveDreamMain({ dream: {
   id: 'dream-pending-contract',
   dreamText: '等待云端模型解读',

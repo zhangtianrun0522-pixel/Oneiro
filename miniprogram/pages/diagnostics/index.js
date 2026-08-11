@@ -149,6 +149,12 @@ function percentText(value, sampleSize) {
   return String(value) + '%';
 }
 
+// 云端算过的比例直接用，这里只负责把「某个原因占全部失败的几成」算出来。
+function ratioOf(part, total) {
+  if (!total) return null;
+  return Math.round((Number(part || 0) / Number(total)) * 1000) / 10;
+}
+
 function normalizeInternalStats(result) {
   if (!result || !result.ok) return null;
 
@@ -158,6 +164,8 @@ function normalizeInternalStats(result) {
   var pipeline = (result.pipeline && result.pipeline.ok) ? result.pipeline : null;
   var interpretation = pipeline ? pipeline.interpretation : null;
   var image = pipeline ? pipeline.image : null;
+  var imageDreams = (result.imageDreams && result.imageDreams.ok) ? result.imageDreams : null;
+  var imageReasons = (result.imageReasons && result.imageReasons.ok) ? result.imageReasons : null;
 
   return {
     generatedAt: feedbackTime(result.generatedAt),
@@ -189,6 +197,24 @@ function normalizeInternalStats(result) {
     image: image ? {
       failureRateText: percentText(image.failureRate, image.attempts),
       detail: String(image.failed) + ' / ' + String(image.attempts) + ' 次生图尝试失败'
+    } : null,
+    // 这个才是要看的那个数：多少条梦最终没有画面。上面那个失败率数的是事件，
+    // 而事件的计法是偏的——成功的梦只记一次，坏掉的梦每打开一次再记一次。
+    imageDreams: imageDreams ? {
+      missingRateText: percentText(imageDreams.missingRate, imageDreams.total),
+      detail: String(imageDreams.missing) + ' / ' + String(imageDreams.total) + ' 条已解读的梦没有画面'
+    } : null,
+    // 失败原因一直存在事件里，只是从来没人问过它。
+    imageReasons: imageReasons ? {
+      total: imageReasons.total,
+      syncTotal: imageReasons.syncTotal,
+      rows: (imageReasons.reasons || []).map(function (row) {
+        return {
+          reason: row.reason,
+          count: row.count,
+          shareText: percentText(ratioOf(row.count, imageReasons.total), imageReasons.total)
+        };
+      })
     } : null
   };
 }
