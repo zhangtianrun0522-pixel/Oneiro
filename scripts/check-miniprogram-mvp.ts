@@ -265,8 +265,8 @@ type WxMock = {
   authorize: (options: Record<string, any>) => void;
   getFileSystemManager: () => Record<string, any>;
   failNextFileRead: boolean;
-  // 持续失败（不是「重试就好」那种）：用来验证坏掉的梦不会无限重试烧额度。
-  failImageGeneration: boolean;
+  // 持续失败，可以直接给一个 reason：一次性失败要继续重试，永久性失败不该重试。
+  failImageGeneration: boolean | string;
   failNextSpeechRecognize: boolean;
 };
 
@@ -932,7 +932,13 @@ function createWxMock(): WxMock {
       }
       if (options.name === 'generateDreamImage') {
         if (wx.failImageGeneration && !options.data?.healthCheck) {
-          options.success({ result: { ok: false, reason: 'provider_timeout', message: '生成超时' } });
+          options.success({
+            result: {
+              ok: false,
+              reason: typeof wx.failImageGeneration === 'string' ? wx.failImageGeneration : 'provider_timeout',
+              message: '',
+            },
+          });
           return;
         }
         if (options.data?.healthCheck) {
@@ -2350,53 +2356,71 @@ assert.equal(
   'male'
 );
 
-// ── 坏掉的梦不能无限烧额度 ──────────────────────────────────────────────
+// ── 该不该再试，按「再试会不会不一样」判，不按次数 ──────────────────────
 //
-// 结果页每次打开都会去生一次图，失败后还会自动再试一次。有图的梦在开头就短路
-// 了；没图的梦于是每打开一次就真调两次供应商，永远——一条坏掉的梦无限烧额度，
-// 还会把后台那个失败率一路顶上去（那正是「70.4%」的来源之一）。
-const imageCapDream = JSON.parse(JSON.stringify(archiveAfterDream[0]));
-imageCapDream.id = 'dream-image-cap';
-imageCapDream.cloudSynced = true;
-imageCapDream.result = Object.assign({}, imageCapDream.result, {
+// 这里上一版是「同一条梦最多自动试三次」。方向错了：云端的 jobId 由
+// (openid, 梦, 提示词, 模型) 确定性算出，已存在的任务直接短路返回，重复调用
+// 并不会再向供应商提交一次。所以再打开一次页面是廉价的，而它恰恰是把「已经
+// 生成好、只是没人取回来」的那张图捡回来的唯一时机——按次数掐掉等于掐掉成图。
+const imageRetryDream = JSON.parse(JSON.stringify(archiveAfterDream[0]));
+imageRetryDream.id = 'dream-image-retry';
+imageRetryDream.cloudSynced = true;
+imageRetryDream.result = Object.assign({}, imageRetryDream.result, {
   imageUrl: '', image_file_id: '', imageFileId: '', fileID: '', fileId: '',
   image_prompt: '一把钥匙浮在海面上',
 });
-const archiveBeforeImageCap = wx.storage['oneiro:dreamArchive'];
-wx.storage['oneiro:dreamArchive'] = [imageCapDream].concat(archiveBeforeImageCap as any[]);
-wx.failImageGeneration = true;
-const imageCallsBeforeCap = () =>
-  wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && call.data?.dreamId === 'dream-image-cap').length;
-const capPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
-capPage.onLoad({ id: 'dream-image-cap' });
-// 沙箱里 setTimeout 是同步的，所以每次请求失败后的那次自动重试会立刻跑掉。
-capPage.requestDreamImage();
-capPage.requestDreamImage();
-capPage.requestDreamImage();
-capPage.requestDreamImage();
-assert.equal(imageCallsBeforeCap(), 3, '自动生图最多三次，之后不再自动调供应商');
-assert.equal(capPage.data.imageStatus, 'failed');
-assert.equal(capPage.data.imageLoadError, 'auto_attempts_exhausted');
+const archiveBeforeImageRetry = wx.storage['oneiro:dreamArchive'];
+wx.storage['oneiro:dreamArchive'] = [imageRetryDream].concat(archiveBeforeImageRetry as any[]);
+const retryCalls = () =>
+  wx.cloudCalls.filter((call) => call.name === 'generateDreamImage' && call.data?.dreamId === 'dream-image-retry').length;
+
+// 一次性失败：一直可以再试。
+wx.failImageGeneration = 'provider_timeout';
+const transientPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+transientPage.onLoad({ id: 'dream-image-retry' });
+transientPage.requestDreamImage();
+const afterTransientOpen = retryCalls();
+assert.ok(afterTransientOpen > 0);
+transientPage.requestDreamImage();
+transientPage.requestDreamImage();
+assert.ok(retryCalls() > afterTransientOpen, '一次性失败必须继续重试——那是捡回孤儿任务的唯一时机');
+assert.equal((wx.storage['oneiro:imageFailures'] as Record<string, string>)['dream-image-retry'], undefined);
+
+// 永久性失败：再试也是同一个答案，不再自动重试，但按钮永远在。
+wx.failImageGeneration = 'insufficient_balance';
+transientPage.requestDreamImage();
+const afterPermanent = retryCalls();
+assert.equal(
+  (wx.storage['oneiro:imageFailures'] as Record<string, string>)['dream-image-retry'],
+  'insufficient_balance'
+);
+const reopenedRetryPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+reopenedRetryPage.onLoad({ id: 'dream-image-retry' });
+reopenedRetryPage.requestDreamImage();
+reopenedRetryPage.requestDreamImage();
+assert.equal(retryCalls(), afterPermanent, '永久性失败不再自动重试，重开页面也不例外');
+assert.equal(reopenedRetryPage.data.imageStatus, 'failed');
 // 失败必须是可见且可操作的：不给按钮的话，卡就一直停在底色上。
 assertIncludes('miniprogram/pages/result/index.wxml', 'bindtap="retryDreamImage"');
-// 手动重试永远放行，并且重新给满一轮次数——那是用户明确说「再给它一组机会」。
-const capCallsBeforeManual = imageCallsBeforeCap();
-capPage.retryDreamImage();
-assert.ok(imageCallsBeforeCap() > capCallsBeforeManual, '手动「重新生成画面」不受自动上限限制');
-// 但只给一轮。换一个页面实例（= 用户退出去又进来）不能续杯，否则上限形同虚设
-// ——计数存在单独的 storage 里正是为了扛住这个：挂在梦上会被同步白名单丢掉。
-const reopenedCapPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
-reopenedCapPage.onLoad({ id: 'dream-image-cap' });
-reopenedCapPage.requestDreamImage();
-reopenedCapPage.requestDreamImage();
-reopenedCapPage.requestDreamImage();
-assert.equal(imageCallsBeforeCap(), capCallsBeforeManual + 3, '手动重试只给一轮三次，重开页面不再续杯');
-// 生成成功要把闸门归零：以后换主题重新生成时该重新拿到完整的自动次数。
+// 手动永远放行——用户明确要求，哪怕上次是永久性失败。
 wx.failImageGeneration = false;
-reopenedCapPage.retryDreamImage();
-assert.equal(reopenedCapPage.data.imageStatus, 'ready');
-assert.equal((wx.storage['oneiro:imageAttempts'] as Record<string, number>)['dream-image-cap'], undefined);
-wx.storage['oneiro:dreamArchive'] = archiveBeforeImageCap;
+reopenedRetryPage.retryDreamImage();
+assert.ok(retryCalls() > afterPermanent, '手动「重新生成画面」不受任何闸门限制');
+assert.equal(reopenedRetryPage.data.imageStatus, 'ready');
+assert.equal((wx.storage['oneiro:imageFailures'] as Record<string, string>)['dream-image-retry'], undefined);
+
+// 没有 id 的梦一律不进生图管线：云端第一件事就是拒掉空 dreamId，调过去纯属
+// 白跑一趟，还会在失败统计里堆成一座假山（后台那 78.7% 的 missing_dream_id）。
+const noIdCallsBefore = wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length;
+const fixturePage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
+fixturePage.onLoad({ fixture: '1', devPreview: '1' });
+fixturePage.requestDreamImage();
+assert.equal(
+  wx.cloudCalls.filter((call) => call.name === 'generateDreamImage').length,
+  noIdCallsBefore,
+  '预览入口的梦没有 id，一次云调用都不该发出去'
+);
+wx.storage['oneiro:dreamArchive'] = archiveBeforeImageRetry;
 
 const resultPage = loadPage('miniprogram/pages/result/index.js', pageModules, wx, app);
 resultPage.onLoad({ id: archiveAfterDream[0].id });

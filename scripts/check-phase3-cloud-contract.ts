@@ -581,6 +581,33 @@ assert.equal(newestSourcesPortrait.snapshot.sourceRefs.length, 18);
 assert.equal(newestSourcesPortrait.snapshot.sourceRefs.some((ref: Row) => ref.sourceLocalId === 'dream-2026-07-30-latest'), true);
 database.rows.dream_entries = database.rows.dream_entries.filter((item: Row) => !recentPortraitDreamIds.includes(item.localId));
 
+// ── 同一条事件只算一次 ──────────────────────────────────────────────────
+//
+// 客户端把每条事件报两次以上：生成时单条上传，之后每次冷启动、每记一个梦，又
+// 把本地那个「最新 120 条」的缓冲区整体重传一遍，而缓冲区从来不清。以前云端
+// 无条件 add()，于是后台看到的 2668 次生图尝试对应的其实只有 43 个梦——指标
+// 一旦不可信，就没法判断任何修改到底有没有用。重传本身在弱网下是必要的，所以
+// 只能让写入幂等。
+const trackEventMain = loadCloudFunction('miniprogram/cloudfunctions/trackEvent/index.js', cloud);
+database.rows.events = [];
+const sameEvent = { id: 'evt-local-1', name: 'generated_image_fail', metadata: { reason: 'provider_timeout' } };
+await trackEventMain({ event: sameEvent });
+await trackEventMain({ events: [sameEvent, sameEvent] });
+await trackEventMain({ events: [sameEvent] });
+assert.equal(database.rows.events.length, 1, '同一条事件重传多少次都只算一次');
+assert.equal(database.rows.events[0].eventName, 'generated_image_fail');
+await trackEventMain({ event: { id: 'evt-local-2', name: 'generated_image_success', metadata: {} } });
+assert.equal(database.rows.events.length, 2, '不同事件照常各记一条');
+// 两个用户可能撞上同一个本地 id，去重键必须带上 openid，否则会互相覆盖。
+currentOpenId = 'user-b';
+await trackEventMain({ event: sameEvent });
+currentOpenId = 'user-a';
+assert.equal(database.rows.events.length, 3, '去重只在同一个用户内部生效');
+// 老客户端不带 id：宁可多记一条，也不要把一批事件全折叠成一条。
+await trackEventMain({ events: [{ name: 'app_start' }, { name: 'app_start' }] });
+assert.equal(database.rows.events.length, 5);
+database.rows.events = [];
+
 const saveDreamMain = loadCloudFunction('miniprogram/cloudfunctions/saveDream/index.js', cloud);
 
 // ── 后台统计：生图到底怎么了 ────────────────────────────────────────────

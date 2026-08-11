@@ -19,6 +19,7 @@ const state = {
   deletion: false,
   transactionDeletion: false,
   providerCalls: 0,
+  providerSubmits: 0,
   uploaded: 0,
   deletedFiles: [],
   requestBodies: [],
@@ -39,6 +40,24 @@ function queryResult(collection, query) {
       ? [{ _id: 'legacy-tombstone' }] : [];
   }
   if (collection === 'generated_assets') return state.generatedAssets;
+  // 定时清扫要按 status / updated_at 挑出没人认领的任务，所以这个 mock 得认
+  // 得 db.command 的 in 和 lt——否则「用户中途退出，图白生成」这条路径根本
+  // 测不到，而它正是没有画面的梦的主要来源。
+  if (collection === 'image_generation_jobs') {
+    return Object.keys(state.jobs).map(function (id) {
+      return Object.assign({ _id: id }, state.jobs[id]);
+    }).filter(function (job) {
+      return Object.keys(query || {}).every(function (key) {
+        const expected = query[key];
+        const actual = job[key];
+        if (expected && expected.__op === 'in') return expected.value.indexOf(actual) >= 0;
+        if (expected && expected.__op === 'lt') {
+          return new Date(actual || 0).getTime() < new Date(expected.value || 0).getTime();
+        }
+        return actual === expected;
+      });
+    });
+  }
   return [];
 }
 
@@ -47,6 +66,7 @@ function collection(name, transaction) {
     where: function (query) {
       return {
         limit: function () { return this; },
+        orderBy: function () { return this; },
         get: async function () { return { data: queryResult(name, query) }; }
       };
     },
@@ -86,7 +106,11 @@ const cloud = {
   database: function () {
     return {
       collection: function (name) { return collection(name, false); },
-      serverDate: function () { return { $date: true }; },
+      command: {
+        in: function (value) { return { __op: 'in', value: value }; },
+        lt: function (value) { return { __op: 'lt', value: value }; }
+      },
+      serverDate: function () { return new Date(); },
       runTransaction: async function (work) {
         return work({ collection: function (name) { return collection(name, true); } });
       }
@@ -129,6 +153,8 @@ function fakeRequest(options, callback) {
   };
   request.end = function () {
     state.providerCalls += 1;
+    // 花钱的是提交（POST），下载已经生成好的图只是取回字节。清扫必须只做后者。
+    if (String(options.method || '').toUpperCase() !== 'GET') state.providerSubmits += 1;
     if (written) state.requestBodies.push(JSON.parse(written));
     const response = new EventEmitter();
     response.statusCode = 200;
@@ -732,9 +758,78 @@ async function run() {
   assert.equal(expiredSubmit.reason, 'submit_lease_expired');
   assert.equal(state.providerCalls, callsBeforeExpiredLease, 'expired submit lease must fail closed without another paid request');
   state.dream = Object.assign({}, state.dream, { localId: 'dream-1', _id: 'record-1' });
-  state.providerImageUrl = '';
+  // 清扫要真的把图下载回来落库，所以 GET 必须还得回图片字节。
+  state.providerImageUrl = 'https://images.example.com/orphan.png';
 
-  console.log('generateDreamImage visual-plan, authorization and deletion-race regressions passed');
+  // ── 没人认领的任务要能自己收尾 ────────────────────────────────────────
+  //
+  // 图是供应商产出的，它不管用户在不在看。任务停在 provider_ready 意味着图已
+  // 经生成、钱已经花了，只差把它取回来落库——而取回这一步以前只有客户端会做。
+  // 用户在那几十秒里退出页面、切后台、锁屏，这条梦就永远没有画面。这是「没有
+  // 画面的梦」的主要来源，所以这条路径必须有测试。
+  state.jobs = {};
+  const staleAt = new Date(Date.now() - 10 * 60 * 1000);
+  state.jobs['orphan-ready'] = {
+    kind: 'seedream_primary', openid: 'owner', sourceDreamId: 'dream-1', dreamRecordId: 'record-1',
+    status: 'provider_ready', provider: 'openai', model: 'seedream-4.0',
+    provider_image_url: 'https://images.example.com/orphan.png',
+    generation_prompt: '一把钥匙浮在海面上', context_key: 'orphan-key',
+    visual_plan: visualPlan, theme: 'mist', finalize_attempts: 0,
+    updated_at: staleAt, created_at: staleAt
+  };
+  state.jobs['orphan-submitting'] = {
+    kind: 'seedream_primary', openid: 'owner', sourceDreamId: 'dream-1', dreamRecordId: 'record-1',
+    status: 'submitting', provider: 'openai', model: 'seedream-4.0',
+    submit_lease_until_ms: 0, finalize_attempts: 0,
+    updated_at: staleAt, created_at: staleAt
+  };
+  state.jobs['fresh-ready'] = {
+    kind: 'seedream_primary', openid: 'owner', sourceDreamId: 'dream-1', dreamRecordId: 'record-1',
+    status: 'provider_ready', provider: 'openai', model: 'seedream-4.0',
+    provider_image_url: 'https://images.example.com/fresh.png',
+    generation_prompt: '还在生成中', context_key: 'fresh-key',
+    visual_plan: visualPlan, theme: 'mist', finalize_attempts: 0,
+    updated_at: new Date(), created_at: new Date()
+  };
+  const uploadsBeforeSweep = state.uploaded;
+  const providerSubmitsBeforeSweep = state.providerSubmits;
+  const swept = await imageFunction.main({ Type: 'Timer', TriggerName: 'sweepPrimaryJobs' });
+  assert.equal(swept.ok, true);
+  assert.equal(swept.finalized, 1, '图已经生成好的孤儿任务要被收尾');
+  assert.equal(state.jobs['orphan-ready'].status, 'succeeded');
+  assert.ok(state.jobs['orphan-ready'].file_id, '收尾后图片必须落库，梦册那边才认领得回去');
+  assert.equal(state.uploaded, uploadsBeforeSweep + 1);
+  // 清扫只捡已经付过钱的那张图，绝不替用户重新提交——那要花钱，而且他可能
+  // 已经不想要了。
+  assert.equal(state.providerSubmits, providerSubmitsBeforeSweep, '清扫只取回已经付过钱的那张图，绝不重新提交');
+  // 提交阶段断掉的：标成可重试，等他下次真的打开这条梦再接着来。
+  assert.equal(swept.released, 1);
+  assert.equal(state.jobs['orphan-submitting'].status, 'failed');
+  assert.equal(state.jobs['orphan-submitting'].reason, 'submit_lease_expired');
+  // 还在正常进行中的任务不许碰，否则会把用户正看着的那张图打断。
+  assert.equal(state.jobs['fresh-ready'].status, 'provider_ready');
+
+  // 一次性失败下次打开自动接着来，不必等用户手点「重新生成画面」——大多数人
+  // 不会点，那条梦就永远停在底色上。
+  const callsBeforeAutoResume = state.providerCalls;
+  const autoResume = await imageFunction.main({
+    action: 'startPrimaryImage', prompt: 'retry', dreamId: 'dream-1', visualPlan: visualPlan
+  });
+  assert.equal(autoResume.status, 'provider_ready');
+  assert.equal(state.providerCalls, callsBeforeAutoResume + 1, '租约过期的任务下次打开自动重新提交');
+  // 但永久性失败不该自动重来：再试也是同一个答案，只会白烧。
+  const permanentJobId = autoResume.jobId;
+  state.jobs[permanentJobId] = Object.assign({}, state.jobs[permanentJobId], {
+    status: 'failed', reason: 'insufficient_balance'
+  });
+  const callsBeforePermanent = state.providerCalls;
+  const permanentRetry = await imageFunction.main({
+    action: 'startPrimaryImage', prompt: 'retry', dreamId: 'dream-1', visualPlan: visualPlan
+  });
+  assert.equal(permanentRetry.ok, false);
+  assert.equal(state.providerCalls, callsBeforePermanent, '余额不足这类失败不得自动重试');
+
+  console.log('generateDreamImage visual-plan, authorization, sweep and deletion-race regressions passed');
 }
 
 run().finally(function () {

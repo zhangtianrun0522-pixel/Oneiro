@@ -37,6 +37,44 @@ const PRIMARY_SEEDREAM_SUBMIT_TIMEOUT_MS = 54000;
 const PRIMARY_SUBMIT_LEASE_MS = 60000;
 const PRIMARY_FINALIZE_LEASE_MS = 65000;
 const PRIMARY_FINALIZE_MAX_RETRIES = 2;
+// ── 让成图不再取决于用户有没有待在页面上 ────────────────────────────────
+//
+// 这条管线的每一步都由客户端驱动：提交、轮询、取回、落库。可是图是供应商产
+// 出的，它不管用户在不在看。任务提交出去要几十秒才出图，用户这期间退出页面、
+// 切后台、锁屏，任务就停在 provider_ready——图已经生成了、钱已经花了，只是
+// 没人去把它取回来，这条梦从此没有画面。
+//
+// 服务端本来就有完整的任务状态（image_generation_jobs，带租约和幂等），缺的
+// 只是一个不依赖客户端的推手。定时触发器每分钟扫一遍，把这类孤儿任务收尾。
+// 收尾后图片会写进 generated_assets，梦册那边的 enrichDreamImages 自然就把它
+// 认领回对应的梦——用户下次打开就看见了，什么都不用点。
+const SWEEP_ORPHAN_AFTER_MS = 90000;
+const SWEEP_MAX_JOBS_PER_RUN = 8;
+const SWEEP_BUDGET_MS = 45000;
+// 重试要按「再试一次有没有可能不一样」来分，不是按错误好不好听。列永久性的那
+// 几个，其余一律当一次性——新出现的错误码默认可重试，方向对得起「尽量出图」。
+//
+// 这几个再试一百次也是同一个答案：钥匙不对、余额没了、地址错了、请求本身不合
+// 法、内容被安全策略挡了。重试它们只是烧时间和钱。
+const PERMANENT_IMAGE_FAILURES = [
+  'auth_failed',
+  'insufficient_balance',
+  'subscription_not_found',
+  'endpoint_not_found',
+  'invalid_request',
+  'image_safety_blocked',
+  'unsafe_dream_content'
+];
+
+function retryableImageFailure(reason) {
+  const code = String(reason || '').trim();
+  if (!code) return false;
+  return PERMANENT_IMAGE_FAILURES.indexOf(code) < 0;
+}
+
+// 提交本身很快（只换回一个任务号），抖一下就地重来一次——而且不额外花钱：
+// 上一次根本没提交成功。
+const PRIMARY_SUBMIT_ATTEMPTS = 2;
 const LEGACY_FUNCTION_HARD_BUDGET_MS = 60000;
 const LEGACY_FINALIZE_MIN_BUDGET_MS = 20000;
 // 同步小图模型（gpt-image 等）保持原来的快速失败超时，不被 seedream 的
@@ -1318,6 +1356,7 @@ function primaryJobContext(job) {
 }
 
 async function startPrimaryImage(event, openid) {
+  const startedAt = Date.now();
   const prepared = await preparePrimaryContext(event, openid);
   if (prepared.error) return prepared.error;
   const { sourceDreamId, dream, prompt, theme, visualPlan, config, context } = prepared;
@@ -1342,7 +1381,11 @@ async function startPrimaryImage(event, openid) {
     const jobs = transaction.collection('image_generation_jobs');
     existing = await getDocument(jobs, jobId);
     if (existing && existing.kind !== 'seedream_primary') return;
-    if (existing && existing.status === 'failed' && event && event.forceRefresh === true) {
+    // 一次性失败（供应商抖动、租约过期）不该等用户手点「重新生成画面」——大多数
+    // 人不会点。下一次打开这条梦，自动接着来。
+    const retryableFailure = existing && existing.status === 'failed' &&
+      retryableImageFailure(existing.reason);
+    if (existing && existing.status === 'failed' && ((event && event.forceRefresh === true) || retryableFailure)) {
       await jobs.doc(jobId).update({ data: {
         status: 'submitting', reason: '', stage: '', provider_image_url: '', finalize_attempts: 0,
         submit_lease_token: submitLeaseToken, submit_lease_until_ms: Date.now() + PRIMARY_SUBMIT_LEASE_MS,
@@ -1389,7 +1432,25 @@ async function startPrimaryImage(event, openid) {
     return { ok: current.status !== 'failed', status: current.status || 'submitting', jobId: jobId, reason: current.reason || '' };
   }
   try {
-    const providerUrl = await submitPrimarySeedream(config, context.generationPrompt);
+    // 提交只是换回一个任务号，很快。抖一下就地重来一次，比把失败甩给用户、
+    // 等他下次打开划算——而且这一次重试不额外花钱：上一次根本没提交成功。
+    let providerUrl;
+    let submitError;
+    for (let attempt = 0; attempt < PRIMARY_SUBMIT_ATTEMPTS; attempt += 1) {
+      try {
+        providerUrl = await submitPrimarySeedream(config, context.generationPrompt);
+        submitError = null;
+        break;
+      } catch (error) {
+        submitError = error;
+        // 永久性失败重试多少次都是同一个答案，别浪费预算。
+        if (!retryableImageFailure(qualityDiagnosticCode(error))) break;
+        // 预算不够再跑一次完整提交时就别开头了，否则这次调用会整个超时，
+        // 连「失败原因」都写不回任务里。
+        if (Date.now() - startedAt > FUNCTION_BUDGET_MS - PRIMARY_SEEDREAM_SUBMIT_TIMEOUT_MS) break;
+      }
+    }
+    if (submitError) throw submitError;
     const stored = await writePrimaryJob(db, jobId, {
       status: 'provider_ready', provider_image_url: providerUrl, submit_lease_until_ms: 0, updated_at: db.serverDate()
     }, function (job) {
@@ -1500,6 +1561,92 @@ async function finalizePrimaryImage(event, openid) {
     if (!updated) return { ok: false, status: 'cancelled', jobId: jobId, reason: 'dream_not_found' };
     return { ok: false, status: retryable ? 'provider_ready' : 'failed', jobId: jobId, reason: reason, stage: stage };
   }
+}
+
+// ── 收尾没人认领的任务 ──────────────────────────────────────────────────
+//
+// 图是供应商产出的，它不管用户在不在看。任务停在 provider_ready 意味着：图已
+// 经生成、钱已经花了，只差把它取回来落库——而取回这一步以前只有客户端会做。
+// 用户在这几十秒里退出页面、切后台、锁屏，这条梦就永远没有画面。
+//
+// 这里只收尾 provider_ready（图已经存在，纯捡漏，不额外花钱），不替用户重新
+// 提交——那要花钱，而且他可能已经不想要了。提交阶段卡住的任务改为标记成可重
+// 试，等他下次真的打开这条梦时自然接着来。
+async function sweepPrimaryJobs(event) {
+  const startedAt = Date.now();
+  const db = cloud.database();
+  const _ = db.command;
+  const before = new Date(Date.now() - SWEEP_ORPHAN_AFTER_MS);
+  const limit = Math.max(1, Math.min(SWEEP_MAX_JOBS_PER_RUN, Number((event && event.limit) || SWEEP_MAX_JOBS_PER_RUN)));
+  let scanned = 0;
+  let finalized = 0;
+  let released = 0;
+  let failed = 0;
+
+  let pending;
+  try {
+    pending = await db.collection('image_generation_jobs')
+      .where({
+        kind: 'seedream_primary',
+        status: _.in(['provider_ready', 'submitting']),
+        updated_at: _.lt(before)
+      })
+      .orderBy('updated_at', 'asc')
+      .limit(limit)
+      .get();
+  } catch (error) {
+    return { ok: false, reason: 'sweep_query_failed', message: String((error && error.message) || '').slice(0, 200) };
+  }
+
+  const jobs = (pending && pending.data) || [];
+  for (let index = 0; index < jobs.length; index += 1) {
+    const job = jobs[index];
+    // 一次触发只干这么多：宁可下一分钟再来一趟，也不要整批卡在超时里，
+    // 那样连已经收尾成功的那几条都可能白做。
+    if (Date.now() - startedAt > SWEEP_BUDGET_MS) break;
+    scanned += 1;
+    if (!job || !job._id || !job.openid || !job.sourceDreamId) continue;
+
+    if (job.status === 'submitting') {
+      // 提交阶段断掉的：不替他重新提交（那要花钱），只把它从「死掉」改成
+      // 「可重试」，下次他打开这条梦就会自动接着来。
+      const releasedJob = await writePrimaryJob(db, job._id, {
+        status: 'failed',
+        reason: 'submit_lease_expired',
+        stage: 'submit',
+        submit_lease_until_ms: 0,
+        updated_at: db.serverDate(),
+        finished_at: db.serverDate()
+      }, function (current) {
+        return current.kind === 'seedream_primary' && current.status === 'submitting' &&
+          Number(current.submit_lease_until_ms || 0) <= Date.now() && !current.cancel_requested;
+      });
+      if (releasedJob) released += 1;
+      continue;
+    }
+
+    try {
+      const result = await finalizePrimaryImage(
+        { jobId: job._id, dreamId: job.sourceDreamId },
+        job.openid
+      );
+      if (result && result.ok && result.fileID) finalized += 1;
+      else failed += 1;
+    } catch (error) {
+      failed += 1;
+    }
+  }
+
+  return {
+    ok: true,
+    type: 'generateDreamImage.sweep',
+    scanned: scanned,
+    pending: jobs.length,
+    finalized: finalized,
+    released: released,
+    failed: failed,
+    elapsedMs: Date.now() - startedAt
+  };
 }
 
 async function legacyPrimaryPreview(jobId, sourceDreamId, openid) {
@@ -2014,6 +2161,16 @@ exports.main = async function (event) {
   const action = String((event && event.action) || '').trim();
   const wxContext = cloud.getWXContext ? cloud.getWXContext() : {};
   const openid = String((wxContext && wxContext.OPENID) || '');
+
+  // 定时触发器进来时没有 openid，也不带 action：微信把触发器事件塞成
+  // { Type: 'Timer', TriggerName, Time }。两种入口都收，好在诊断页手动跑一次。
+  if (action === 'sweepPrimaryJobs' || (event && String(event.Type || '') === 'Timer')) {
+    try {
+      return await sweepPrimaryJobs(event);
+    } catch (error) {
+      return { ok: false, reason: 'sweep_failed', message: String((error && error.message) || '').slice(0, 200) };
+    }
+  }
 
   if (action === 'startPrimaryImage') {
     return startPrimaryImage(event, openid);

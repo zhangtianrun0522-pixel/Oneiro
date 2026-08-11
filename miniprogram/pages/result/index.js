@@ -22,45 +22,64 @@ var SHARE_THUMB_WIDTH = 1000;
 var SHARE_THUMB_HEIGHT = 800;
 var QUALITY_POLL_INTERVAL_MS = 3000;
 var QUALITY_POLL_MAX_ATTEMPTS = 60;
-// ── 自动生图的次数上限 ──────────────────────────────────────────────────
+// ── 什么时候该再试，什么时候不该 ────────────────────────────────────────
 //
-// 结果页每次打开都会去生一次图，失败后 4 秒还会自动再试一次。有图的梦在开头
-// 就短路了，什么都不做；没图的梦于是每打开一次就真调两次供应商，永远。一条
-// 坏掉的梦会无限烧额度，还会把后台的失败率一路顶上去。
+// 上一版这里是一个「同一条梦最多自动试三次」的次数闸门。方向错了：云端的
+// jobId 由 (openid, 梦, 提示词, 模型) 确定性算出，已经存在的任务会直接短路
+// 返回，**重复调用并不会再向供应商提交一次**，钱只在第一次花。所以再打开一次
+// 页面是廉价的，而它恰恰是把「已经生成好、只是没人取回来」的那张图捡回来的
+// 唯一时机。按次数掐掉，等于把成图机会掐掉。
 //
-// 三次之后不再自动试，改成显示失败态和「重新生成画面」——手动永远可以，而且
-// 手动重试会把计数清零，等于用户说「再给它一组机会」。
-var MAX_AUTO_IMAGE_ATTEMPTS = 3;
-var IMAGE_ATTEMPTS_KEY = 'oneiro:imageAttempts';
+// 该拦的不是「试了几次」，而是「再试也不会不一样」：钥匙不对、余额没了、请求
+// 本身不合法、内容被安全策略挡了。这些重试一百次也是同一个答案，只会在页面上
+// 反复闪一条帮不上忙的报错。其余一律继续试。
+var PERMANENT_IMAGE_FAILURES = [
+  'auth_failed',
+  'insufficient_balance',
+  'subscription_not_found',
+  'endpoint_not_found',
+  'invalid_request',
+  'image_safety_blocked',
+  'unsafe_dream_content',
+  'missing_api_key'
+];
+var IMAGE_FAILURE_KEY = 'oneiro:imageFailures';
 
-// 计数存在单独的 storage 里，不挂在梦上：梦同步到云端时会走 safeDream 的字段
-// 白名单，挂上去的计数会被丢掉，从云端刷回来时又归零，上限就形同虚设。
-function imageAttemptMap() {
-  var stored = wx.getStorageSync(IMAGE_ATTEMPTS_KEY);
+// 记在单独的 storage 里，不挂在梦上：梦同步到云端会走 safeDream 的字段白名单，
+// 挂上去的东西会被丢掉，从云端刷回来又归零。
+function imageFailureMap() {
+  var stored = wx.getStorageSync(IMAGE_FAILURE_KEY);
   return stored && typeof stored === 'object' ? stored : {};
 }
 
-function imageAttemptCount(dreamId) {
-  if (!dreamId) return 0;
-  return Number(imageAttemptMap()[dreamId] || 0);
+function permanentImageFailure(reason) {
+  var code = String(reason || '').replace(/^presync:/, '').trim();
+  return !!code && PERMANENT_IMAGE_FAILURES.indexOf(code) >= 0;
 }
 
-function bumpImageAttempt(dreamId) {
+function rememberImageFailure(dreamId, reason) {
   var map;
   if (!dreamId) return;
-  map = imageAttemptMap();
-  map[dreamId] = Number(map[dreamId] || 0) + 1;
-  wx.setStorageSync(IMAGE_ATTEMPTS_KEY, map);
+  map = imageFailureMap();
+  if (permanentImageFailure(reason)) map[dreamId] = String(reason);
+  else delete map[dreamId];
+  wx.setStorageSync(IMAGE_FAILURE_KEY, map);
 }
 
-function clearImageAttempts(dreamId) {
+function blockedImageFailure(dreamId) {
+  if (!dreamId) return '';
+  return String(imageFailureMap()[dreamId] || '');
+}
+
+function clearImageFailure(dreamId) {
   var map;
   if (!dreamId) return;
-  map = imageAttemptMap();
+  map = imageFailureMap();
   if (!map[dreamId]) return;
   delete map[dreamId];
-  wx.setStorageSync(IMAGE_ATTEMPTS_KEY, map);
+  wx.setStorageSync(IMAGE_FAILURE_KEY, map);
 }
+
 var themePalettes = {
   tide: {
     stops: ['#102832', '#356f78', '#d5e8df'],
@@ -1411,6 +1430,15 @@ Page({
     }
     var prompt = result.image_prompt || result.image || '';
 
+    // 没有 id 的梦一律不进生图管线。云端第一件事就是拒掉空 dreamId
+    // （missing_dream_id），调过去纯属白跑一趟，还会在失败统计里堆成一座假山。
+    // 结果页的验收/预览入口拼出来的梦对象就没有 id：示例梦在 onReady 里被单独
+    // 挡掉了，fixture 没有——与其在每个入口各挡一次，不如挡在这个必经之处。
+    if (!dream.id) {
+      if (done) done();
+      return;
+    }
+
     var hasSavedImage = !!(result.imageUrl || result.image_file_id || result.imageFileId || result.fileID || result.fileId);
     if (hasSavedImage || (!prompt && !result.visual_plan)) {
       if (hasSavedImage && dream.cloudSynced !== true) {
@@ -1434,14 +1462,15 @@ Page({
       return;
     }
 
-    // 自动尝试的次数闸门。手动重试（options.manual）永远放行，而且会把计数
-    // 清零——那是用户明确说「再给它一组机会」。
-    if (!(options && options.manual) && imageAttemptCount(dream.id) >= MAX_AUTO_IMAGE_ATTEMPTS) {
+    // 上一次的失败是永久性的（钥匙、余额、内容策略……）就不再自动重试：再试
+    // 也是同一个答案，只会在页面上反复闪一条帮不上忙的报错。手动永远放行。
+    var blockingFailure = (options && options.manual) ? '' : blockedImageFailure(dream.id);
+    if (blockingFailure) {
       that.setData({
         imageStatus: 'failed',
         imageSyncPending: false,
-        imageErrorMessage: '这条梦的画面连着几次都没生成成功，点「重新生成画面」再试',
-        imageLoadError: 'auto_attempts_exhausted'
+        imageErrorMessage: imageFailureMessage(blockingFailure) + '（' + blockingFailure + '）',
+        imageLoadError: blockingFailure
       });
       if (done) done();
       return;
@@ -1449,7 +1478,6 @@ Page({
 
     var startGeneration = function () {
       that.setData({ imageStatus: 'generating', imageErrorMessage: '' });
-      bumpImageAttempt(dream.id);
       cloudBase.generateDreamImage(
       prompt,
       dream.id || '',
@@ -1529,9 +1557,7 @@ Page({
             that.startDreamImageQuality(imageRes, result);
           }
         });
-        // 成功了就把闸门归零：这条梦以后再需要重生成（换主题、重新解读）时
-        // 应该重新拿到完整的自动尝试次数。
-        clearImageAttempts(currentDream.id);
+        clearImageFailure(currentDream.id);
         analytics.trackEvent('generated_image_success', {
           dreamId: currentDream.id || '',
           provider: imageRes.provider || '',
@@ -1546,6 +1572,9 @@ Page({
           imageErrorMessage: failure.displayMessage,
           imageLoadError: failure.reason
         });
+        // 只记永久性失败；一次性失败不留痕，下次打开照常再试——那正是把已经
+        // 生成好、还没人取回来的图捡回来的时机。
+        rememberImageFailure(currentDream.id, failure.reason);
         analytics.trackEvent('generated_image_fail', {
           dreamId: currentDream.id || '',
           reason: failure.reason,
@@ -1831,8 +1860,8 @@ Page({
     var dream = this.data.dream;
     var resumeExistingJob = isResumableImageFailure(this.data.imageLoadError);
 
-    // 手动重试重新给满自动尝试次数，并且这一次本身不受闸门限制。
-    clearImageAttempts(dream && dream.id);
+    // 手动重试永远放行：用户明确要求，哪怕上次是永久性失败也让他试。
+    clearImageFailure(dream && dream.id);
     this.imageAutoRetryDone = false;
 
     if (resumeExistingJob) {
@@ -1878,7 +1907,7 @@ Page({
 
   retryDreamImageSync: function () {
     if (!this.data.imageSyncPending) return;
-    clearImageAttempts(this.data.dream && this.data.dream.id);
+    clearImageFailure(this.data.dream && this.data.dream.id);
     this.requestDreamImage(null, { manual: true });
   },
 
@@ -1889,7 +1918,7 @@ Page({
       // 一次「重新生成画面」——大部分人不会，卡就一直停在底色上。
       if (!ok || that.data.aiImageLocalPath || that.data.imageStatus === 'generating') return;
       that.imageAutoRetryDone = false;
-      clearImageAttempts(that.data.dream && that.data.dream.id);
+      clearImageFailure(that.data.dream && that.data.dream.id);
       that.setData({ imageStatus: 'generating', imageErrorMessage: '', imageLoadError: '' });
       that.requestDreamImage(null, { manual: true });
     });

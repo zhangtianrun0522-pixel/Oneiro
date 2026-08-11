@@ -46,7 +46,10 @@ function trackEvent(eventName, metadata) {
 
   events = readEvents();
   event = {
-    id: String(Date.now()) + '-' + events.length,
+    // 这个 id 是云端幂等写入的键：同一条事件被重传多少次都只算一次。缓冲区
+    // 满了之后 events.length 恒为 120，只剩毫秒数区分，同一毫秒内的两条事件
+    // 会撞成同一个 id、在云端互相覆盖——补一段随机后缀，让它真的唯一。
+    id: String(Date.now()) + '-' + events.length + '-' + Math.random().toString(36).slice(2, 8),
     name: name,
     metadata: cleanMetadata(metadata),
     createdAt: new Date().toISOString()

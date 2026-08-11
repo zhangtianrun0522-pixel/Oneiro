@@ -135,6 +135,20 @@ interpretation requests fail retryably rather than fabricating local results.
 After real AI setup it should report `provider: deepseek` or
 `provider: openai-compatible` and `providerConfigured: true`.
 
+## 生图成功率：约束在哪
+
+第一性原理：**图是供应商产出的，它不管用户在不在看。** 提交出去要几十秒才出图，而这条管线的每一步——提交、轮询、取回、落库——以前都由客户端驱动。用户在这几十秒里退出页面、切后台、锁屏，任务就停在 `provider_ready`：图已经生成、钱已经花了，只是没人去取，这条梦从此没有画面。
+
+服务端本来就有完整、幂等、带租约的任务状态（`image_generation_jobs`），缺的只是一个不依赖客户端的推手。所以：
+
+- **定时清扫**：`generateDreamImage` 的 `sweepPrimaryJobs`（`config.json` 里的 timer 触发器，每分钟一次）扫出停了 `SWEEP_ORPHAN_AFTER_MS`（90 秒）以上的任务收尾。它**只**收尾 `provider_ready`——图已经存在，纯捡漏，不向供应商发起任何新请求；卡在 `submitting` 的只标记成可重试，不替用户重新提交（那要花钱，而且他可能已经不想要了）。收尾后图片写进 `generated_assets`，梦册的 `enrichDreamImages` 自然认领回对应的梦，用户下次打开就看见了。
+- **一次性失败自动接着来**：提交阶段的失败以前会把任务钉死成 `failed`，只有用户手点「重新生成画面」才动得了——大多数人不会点。现在按 `retryableImageFailure()` 判断：只有 `PERMANENT_IMAGE_FAILURES` 里那几个（钥匙、余额、地址、非法请求、内容安全）是终局，其余一律下次打开自动重来。**新出现的错误码默认可重试**，方向对得起「尽量出图」。
+- **提交就地重试一次**（`PRIMARY_SUBMIT_ATTEMPTS`）：提交只是换回一个任务号，抖一下就重来，而且不额外花钱——上一次根本没提交成功。
+
+客户端对应地放弃了「同一条梦最多自动试三次」那个次数闸门。方向是错的：`jobId` 由 (openid, 梦, 提示词, 模型) 确定性算出，已存在的任务直接短路返回，**重复调用并不会再向供应商提交一次**。再打开一次页面是廉价的，而它恰恰是把孤儿任务捡回来的时机。现在改为按原因判断：永久性失败不再自动重试（记在 `oneiro:imageFailures`），其余一直试，手动「重新生成画面」永远放行。
+
+另外，没有 `id` 的梦一律不进生图管线（守卫在 `requestDreamImage` 这个必经之处）。结果页的验收/预览入口拼出来的梦对象没有 id，调过去只会被云端以 `missing_dream_id` 拒掉——那正是后台失败原因里占 78.7% 的那一项。
+
 ## 生图失败率怎么读
 
 后台上那个「生图失败率」数的是**事件**，而事件的计法是偏的，三个原因都往一个方向偏：
