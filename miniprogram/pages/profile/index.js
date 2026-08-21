@@ -282,13 +282,10 @@ Page({
       if (!sameProfile(previousProfile, profile)) {
         that.refreshPortraitInBackground('基础资料更新后重新理解你', 'profile:' + String(Date.now()));
       }
-      if (wx.getStorageSync('oneiro:pendingDreamText')) {
-        if (wx.navigateBack) {
-          wx.navigateBack({ delta: 1 });
-        } else {
-          tabNav.switchTab('pages/home/index');
-        }
-      }
+      // 这里原本有一段「存在未提交草稿就自动返回记梦页」。它是两页合并前的
+      // 遗留：那时资料页是从写梦流程里 navigateTo 进来的，返回有意义。现在
+      // 「我的」是 tabBar 页，既没有可返回的页面栈，用户也是自己点 tab 进来
+      // 的——保存完资料就把他弹走，是替他做了他没要求的决定。
     });
   },
 

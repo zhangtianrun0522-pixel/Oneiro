@@ -131,6 +131,8 @@ type CloudBaseModule = {
   deleteDream: (dreamId: string, callback?: Function) => boolean;
   getLifeNotes: (callback?: Function) => boolean;
   deleteLifeNote: (noteId: string, callback?: Function) => boolean;
+  // 失败重试的用例要替换它来驱动各种识别结果，所以类型上必须可写。
+  recognizeSpeech: (filePath: string, duration: number, callback: (result: any) => void) => void;
   // 都已废止，类型上留个位子好断言它们真的不在了。
   editLifeNote?: undefined;
   pinLifeNote?: undefined;
@@ -219,6 +221,7 @@ type WxMock = {
   cloud?: Record<string, any>;
   getStorageSync: (key: string) => any;
   setStorageSync: (key: string, value: any) => void;
+  removeStorageSync: (key: string) => void;
   navigateTo: (options: { url: string }) => void;
   reLaunch: (options: { url: string }) => void;
   switchTab: (options: { url: string }) => void;
@@ -376,6 +379,12 @@ function createWxMock(): WxMock {
     },
     setStorageSync(key, value) {
       this.storage[key] = value;
+    },
+    // 此前 mock 里没有这个方法，于是所有 `if (wx.removeStorageSync)` 的清理
+    // 分支在测试里都被静默跳过——草稿在提交成功/配额用尽后到底有没有被清掉，
+    // 一直没有被验证过。
+    removeStorageSync(key) {
+      delete this.storage[key];
     },
     navigateTo(options) {
       this.navigations.push(options.url);
@@ -1861,6 +1870,89 @@ assert.equal(authorizeRaceSubmits, 1);
 assert.equal(homePage.data.recording, false);
 homePage.generateDreamCard = originalGenerateDreamCard;
 homePage.data.dreamText = '';
+
+// ── 识别失败不丢录音 ──────────────────────────────────────────────────
+// 以前失败就是一句 toast 然后 return，录音文件当场丢掉——用户唯一的出路是把
+// 整段梦重新说一遍。对这个产品这是最贵的一种失败：人是刚醒来说的，网络状态
+// 最差，而梦本身正在被忘掉，重说的那一遍已经不是同一个东西。
+const realRecognizeSpeech = cloudBase.recognizeSpeech;
+homePage.data.dreamText = '';
+homePage.setData({ failedClip: null });
+
+cloudBase.recognizeSpeech = function (_filePath: string, _duration: number, callback: (result: unknown) => void) {
+  callback({ ok: false, reason: 'cloud_unavailable' });
+};
+homePage.runRecognition('/tmp/clip-a.mp3', 12, false);
+assert.equal(homePage.data.recognizing, false);
+// 录音的路径必须留着，否则「重试」按下去没有东西可认。
+assert.equal(homePage.data.failedClip.filePath, '/tmp/clip-a.mp3');
+assert.equal(homePage.data.failedClip.seconds, 12);
+assert.ok(homePage.data.failedClip.message.length > 0);
+
+// 重试走同一段音频，成功后落进草稿，重试行随之消失。
+cloudBase.recognizeSpeech = function (filePath: string, _duration: number, callback: (result: unknown) => void) {
+  assert.equal(filePath, '/tmp/clip-a.mp3');
+  callback({ ok: true, text: '我梦见自己站在门口' });
+};
+homePage.retryRecognition();
+assert.equal(homePage.data.dreamText, '我梦见自己站在门口');
+assert.equal(homePage.data.failedClip, null);
+
+// 再说一段：追加到已有草稿之后，并且必须把滚动区顶到底部。追加的文字落在
+// 视口下方看不见时，用户读到的是「什么都没发生」，会以为识别失败又说一遍。
+const scrollTopBeforeAppend = homePage.data.captureScrollTop;
+cloudBase.recognizeSpeech = function (_filePath: string, _duration: number, callback: (result: unknown) => void) {
+  callback({ ok: true, text: '门没有锁' });
+};
+homePage.runRecognition('/tmp/clip-b.mp3', 8, false);
+assert.equal(homePage.data.dreamText, '我梦见自己站在门口\n门没有锁');
+assert.ok(homePage.data.captureScrollTop > scrollTopBeforeAppend);
+
+// too_short 是唯一不留录音的失败：那段确实没有内容可认，留着只会让人反复
+// 重试同样的一下，而正确的下一步是「多说一会儿」。
+cloudBase.recognizeSpeech = function (_filePath: string, _duration: number, callback: (result: unknown) => void) {
+  callback({ ok: false, reason: 'too_short' });
+};
+homePage.runRecognition('/tmp/clip-c.mp3', 0.3, false);
+assert.equal(homePage.data.failedClip, null);
+
+// 明确放弃：重试行要有出口，否则它会一直挂在那里没法消掉。
+cloudBase.recognizeSpeech = function (_filePath: string, _duration: number, callback: (result: unknown) => void) {
+  callback({ ok: false, reason: 'cloud_unavailable' });
+};
+homePage.runRecognition('/tmp/clip-d.mp3', 9, false);
+assert.ok(homePage.data.failedClip);
+homePage.discardFailedClip();
+assert.equal(homePage.data.failedClip, null);
+
+cloudBase.recognizeSpeech = realRecognizeSpeech;
+
+// ── 草稿落盘 ──────────────────────────────────────────────────────────
+// oneiro:pendingDreamText 这个键曾被读了 4 处、删了 2 处，却从来没有人写过：
+// 它原本是 home → new-dream 两页交接用的，两页合并后写入被删掉、读取留了
+// 下来，于是首页实际上一直没有草稿保护——打了一半的梦，App 被系统回收就没
+// 了，而这个产品的用户正是在刚醒来、最容易被打断的时刻使用它。
+delete wx.storage['oneiro:pendingDreamText'];
+homePage.data.dreamText = '';
+homePage.onDreamInput({ detail: { value: '半夜醒来记下的半句' } });
+homePage.persistDraft();
+assert.equal(wx.storage['oneiro:pendingDreamText'], '半夜醒来记下的半句');
+
+// 离开页面时补写一次：节流的那次可能还没到点，而被系统回收正是它要防的场景。
+homePage.data.dreamText = '离开前又补了一句';
+homePage.onHide();
+assert.equal(wx.storage['oneiro:pendingDreamText'], '离开前又补了一句');
+
+// 重新进入时恢复。
+const restoredHomePage = loadPage('miniprogram/pages/home/index.js', pageModules, wx, app);
+restoredHomePage.onLoad({});
+assert.equal(restoredHomePage.data.dreamText, '离开前又补了一句');
+
+// 清空草稿要把键一起删掉，否则下次进来会恢复出一段用户已经删掉的文字。
+homePage.data.dreamText = '';
+homePage.persistDraft();
+assert.equal(wx.storage['oneiro:pendingDreamText'], undefined);
+homePage.onShow();
 
 // 过短的片段送到 ASR 只会拿回 empty_result，用户读到的是「没有听清」，会以为
 // 是识别不准而反复重试同样短的一下。客户端直接拦下，且不发起云调用。

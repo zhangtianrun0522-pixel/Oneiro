@@ -54,7 +54,10 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-height: 420rpx;
+  /* 420 → 470：多出来的是失败重试行（约 111rpx）。它和录音状态行互斥，
+     所以两者不会同时占位，按更高的那个留余量。这个上限的职责是别把语音
+     圆环顶出屏幕，超长文字交给 .capture-textscroll 内部滚动。 */
+  max-height: 470rpx;
   margin-top: 24rpx;
   padding: 0 8rpx;
 }
@@ -72,6 +75,10 @@
   height: 320rpx;
 }
 
+/* 空态：一句话，居中。
+   有草稿：改成左上对齐。多行居中的长段落每行起点都不一样，眼睛找不到行首，
+   而这里最多能装 1200 字——提交前想通读检查一遍会很吃力。顶对齐同时配合
+   语音追加后自动滚到底，读起来是「从上往下填满」。 */
 .capture-static {
   box-sizing: border-box;
   display: flex;
@@ -79,7 +86,11 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  color: rgba(33, 29, 23, 0.45);
+  /* 设计稿字面值 rgba(33,29,23,0.45) 在 --paper 上实测 2.73:1，而 --fs-title
+     是 38rpx(19px)，够不到 WCAG 大字豁免，需要 4.5:1。项目里其它页面早已把
+     这个值判为不合格并改用 --ink-70（约 6.1:1），首页这处此前漏了——而这句
+     话是空态下屏幕上唯一的提示语。 */
+  color: var(--ink-70);
   font-family: var(--font-serif);
   font-size: var(--fs-title);
   line-height: 1.6;
@@ -87,11 +98,19 @@
 }
 
 .capture-static.has-draft {
+  align-items: flex-start;
   color: var(--ink);
+  text-align: left;
+}
+
+.capture-static-text {
+  width: 100%;
 }
 
 /* textarea 默认 height:150px，必须显式给 height 才压得下去；透明背景+
    无边框，字号/字族/居中方式与静态展示态完全一致，避免点进编辑时文字跳动 */
+/* 编辑态一律左对齐：光标在居中文本里跳来跳去，改一个字都难对位。
+   与 .capture-static.has-draft 保持一致，点进编辑时文字不跳动。 */
 .capture-textarea {
   box-sizing: border-box;
   width: 100%;
@@ -101,7 +120,7 @@
   font-family: var(--font-serif);
   font-size: var(--fs-title);
   line-height: 1.6;
-  text-align: center;
+  text-align: left;
 }
 
 .capture-waveform { display: flex; flex-direction: column; align-items: center; }
@@ -544,4 +563,63 @@
   color: var(--ink-55);
   font-size: var(--fs-label);
   line-height: 1.6;
+}
+
+/* ── 识别失败后的重试行 ────────────────────────────────────
+   录音还在，所以这里说的是「还留着」而不是「失败了」——用户要知道的第一件事
+   是他说的话没丢。放在草稿上方：它讲的是刚才那一段，不是已经收下的正文。 */
+.capture-retry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  width: 100%;
+  margin-bottom: 16rpx;
+  padding: 16rpx 20rpx;
+  box-sizing: border-box;
+  border-left: 3rpx solid rgba(184, 134, 59, 0.54);
+  background: var(--paper-raised);
+}
+
+.capture-retry-copy {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.capture-retry-title {
+  display: block;
+  color: var(--ink);
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+
+.capture-retry-reason {
+  display: block;
+  margin-top: 4rpx;
+  overflow: hidden;
+  color: var(--ink-70);
+  font-size: 20rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capture-retry-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.capture-retry-go {
+  color: var(--ink);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
+}
+
+.capture-retry-drop {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
 }

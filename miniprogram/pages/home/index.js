@@ -251,6 +251,10 @@ Page({
     heroCardNo: '',
     heroDate: '',
     showSampleEntry: false,
+    // 识别失败但录音还在：界面上挂一条可重试的行，录音文件不丢。
+    failedClip: null,
+    // 语音追加文字后把 scroll-view 顶到底部，见 scrollCaptureToEnd。
+    captureScrollTop: 0,
     analysisActive: false,
     analysisPreview: '',
     analysisStageIndex: 0,
@@ -269,16 +273,13 @@ Page({
     this.setData({ fromShare: fromShare });
     analytics.trackEvent(fromShare ? 'share_landing_view' : 'home_view', {});
 
+    // 上次没提交完的草稿。现在这个键真的会被写入了（见 persistDraft），
+    // 所以这条恢复路径从死代码变回了它本来的用途。
     if (pendingDreamText) {
       this.setData({ dreamText: pendingDreamText });
     }
 
     this.refreshHeroLabel();
-
-    if (options && options.autoSubmit && pendingDreamText) {
-      var that = this;
-      setTimeout(function () { that.generateDreamCard(); }, 0);
-    }
   },
 
   refreshHeroLabel: function () {
@@ -801,7 +802,19 @@ Page({
 
     // 读文件 / 内联还是上传 / 失败兜底都收在 cloudBase.recognizeSpeech 里：
     // 长音频不再把 base64 塞进 callFunction 的请求体（见那里的注释）。
-    this.setData({ recognizing: true });
+    this.runRecognition(filePath, duration, shouldAutoSubmit);
+  },
+
+  // 识别单独抽出来，因为它需要能被重放一次。
+  //
+  // 原来失败就是一句 toast 然后 return，录音文件当场丢掉——用户唯一的出路是
+  // 把整段梦重新说一遍。对这个产品这是最贵的一种失败：人是刚醒来说的，网络
+  // 状态最差，而梦本身正在被忘掉，重说的那一遍已经不是同一个东西了。
+  // 60 秒上限那条路上专门留了「说出口的不能丢」，识别失败这条路上不能自相矛盾。
+  runRecognition: function (filePath, duration, shouldAutoSubmit) {
+    var self = this;
+
+    this.setData({ recognizing: true, failedClip: null });
     cloudBase.recognizeSpeech(filePath, duration, function (recognizeResult) {
       var text;
       var nextText;
@@ -816,7 +829,21 @@ Page({
           // 放在一张表里才看得出来。
           durationMs: Math.round(duration * 1000)
         });
-        wx.showToast({ title: voiceFailureMessage(recognizeResult), icon: 'none', duration: 2800 });
+        // 录音留着，界面上给一条能点的重试。
+        // too_short 除外：那段确实没有内容可认，留着只会让人反复重试同样的
+        // 一下，而正确的下一步是「多说一会儿」——文案已经这么说了。
+        if (recognizeResult && recognizeResult.reason === 'too_short') {
+          wx.showToast({ title: voiceFailureMessage(recognizeResult), icon: 'none', duration: 2800 });
+          return;
+        }
+        self.setData({
+          failedClip: {
+            filePath: filePath,
+            duration: duration,
+            seconds: Math.max(1, Math.round(duration)),
+            message: voiceFailureMessage(recognizeResult)
+          }
+        });
         return;
       }
 
@@ -825,6 +852,11 @@ Page({
         ? self.data.dreamText + '\n' + text
         : text;
       self.setData({ dreamText: nextText });
+      // 追加的文字在视口下方看不见时，用户读到的是「什么都没发生」，会以为
+      // 识别失败又说一遍。文本每次都变长，所以这个值每次都不同，一定能触发
+      // scroll-view 重新定位。
+      self.scrollCaptureToEnd(nextText);
+      self.persistDraft(nextText);
       analytics.trackEvent('voice_recognize_success', {
         duration: duration,
         textLength: text.length
@@ -836,6 +868,53 @@ Page({
         self.generateDreamCard();
       }
     });
+  },
+
+  retryRecognition: function () {
+    var clip = this.data.failedClip;
+    if (!clip || this.data.recording || this.data.recognizing) return;
+    analytics.trackEvent('voice_recognize_retry', { durationMs: Math.round(clip.duration * 1000) });
+    this.runRecognition(clip.filePath, clip.duration, false);
+  },
+
+  // 明确放弃这一段。给一个出口，否则那条重试行会一直挂在那里没法消掉。
+  discardFailedClip: function () {
+    if (!this.data.failedClip) return;
+    analytics.trackEvent('voice_recognize_discarded', {});
+    this.setData({ failedClip: null });
+  },
+
+  scrollCaptureToEnd: function (text) {
+    // 比内容高度大得多的值，scroll-view 会自己夹到底部；带上长度是为了让
+    // 每次赋值都不同，相同的值 setData 不会重新触发滚动。
+    this.setData({ captureScrollTop: 100000 + String(text || '').length });
+  },
+
+  // 草稿落盘。这个键此前被读了 4 处、删了 2 处，却从来没有人写过——它原本
+  // 是 home → new-dream 两页交接用的，两页合并后写入被删掉，读取留了下来，
+  // 于是首页实际上一直没有草稿保护：打了一半的梦，App 被系统回收就没了。
+  // 打字走节流，识别成功后立即写。
+  persistDraft: function (text) {
+    var value = String(text === undefined ? this.data.dreamText : text || '');
+    if (this.draftTimer) {
+      clearTimeout(this.draftTimer);
+      this.draftTimer = null;
+    }
+    try {
+      if (value.trim()) wx.setStorageSync('oneiro:pendingDreamText', value);
+      else if (wx.removeStorageSync) wx.removeStorageSync('oneiro:pendingDreamText');
+    } catch (error) {
+      // 存储写不进去（配额满/隐私模式）不该打断记梦本身，草稿仍在页面内存里。
+    }
+  },
+
+  schedulePersistDraft: function () {
+    var self = this;
+    if (this.draftTimer) clearTimeout(this.draftTimer);
+    this.draftTimer = setTimeout(function () {
+      self.draftTimer = null;
+      self.persistDraft();
+    }, 400);
   },
 
   onShow: function () {
@@ -856,8 +935,14 @@ Page({
 
   onHide: function () {
     this.pageActive = false;
+    // 节流的那次写入可能还没到点，离开前补一次——被系统回收正是它要防的场景。
+    this.persistDraft();
     this.stopRecorderForExit();
     recorderRouter.unregister(this);
+  },
+
+  onUnload: function () {
+    this.persistDraft();
   },
 
   onRecorderError: function (error) {
@@ -874,6 +959,7 @@ Page({
 
   onDreamInput: function (event) {
     this.setData({ dreamText: event.detail.value });
+    this.schedulePersistDraft();
   },
 
   generateDreamCard: function () {

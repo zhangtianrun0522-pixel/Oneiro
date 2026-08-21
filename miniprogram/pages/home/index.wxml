@@ -26,9 +26,29 @@
         <text wx:elif="{{recognizing}}" class="capture-recognizing">正在整理刚才的话…</text>
       </view>
 
-      <scroll-view wx:if="{{!editingDream}}" class="capture-textscroll" scroll-y="{{true}}">
+      <!-- 识别失败但录音还留着：给一条能点的重试，而不是一句 toast 之后
+           让人把整段梦重说一遍。放在文字上方，因为它讲的是「刚才那段」，
+           不是已经收下的草稿。 -->
+      <view wx:if="{{failedClip && !recording && !recognizing}}" class="capture-retry">
+        <view class="capture-retry-copy">
+          <text class="capture-retry-title">刚才那 {{failedClip.seconds}} 秒还留着</text>
+          <text class="capture-retry-reason">{{failedClip.message}}</text>
+        </view>
+        <view class="capture-retry-actions">
+          <text class="capture-retry-go" bindtap="retryRecognition">重试</text>
+          <text class="capture-retry-drop" bindtap="discardFailedClip">不要了</text>
+        </view>
+      </view>
+
+      <scroll-view
+        wx:if="{{!editingDream}}"
+        class="capture-textscroll"
+        scroll-y="{{true}}"
+        scroll-top="{{captureScrollTop}}"
+        scroll-with-animation="{{true}}"
+      >
         <view class="capture-static {{dreamText ? 'has-draft' : ''}}" bindtap="onDreamTextTap">
-          <text>{{dreamText || '今天醒来，还记得什么？'}}</text>
+          <text class="capture-static-text">{{dreamText || '今天醒来，还记得什么？'}}</text>
         </view>
       </scroll-view>
       <textarea
@@ -90,9 +110,11 @@
     </text>
 
     <!-- 只对一个梦都还没有、且此刻没在写的人出现。放在提示行之下、圆环之外，
-         它是一条出路，不能和主动作抢位置。 -->
+         它是一条出路，不能和主动作抢位置。
+         有一段录音等着重试时也不出现：那时他已经动手说过了，「先看一个例子」
+         既是噪音，也会和重试行一起把圆环挤下去。 -->
     <view
-      wx:if="{{showSampleEntry && !dreamText && !recording && !recognizing && !editingDream}}"
+      wx:if="{{showSampleEntry && !dreamText && !recording && !recognizing && !editingDream && !failedClip}}"
       class="sample-entry"
       bindtap="openSample"
     >
