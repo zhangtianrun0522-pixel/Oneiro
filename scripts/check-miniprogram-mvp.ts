@@ -85,23 +85,6 @@ type AcceptanceModule = {
   };
 };
 
-type DreamArtifactsModule = {
-  computeArchetype: (archive: unknown[]) => {
-    eligible: boolean;
-    archetype?: {
-      label: string;
-      description: string;
-      evidenceKeyword: string;
-      evidenceCount: number;
-      disclaimer: string;
-    };
-  };
-  buildTopicCard: (symbol: string) => {
-    symbol: string;
-    headline: string;
-    prompt: string;
-  };
-};
 
 type DreamMemoryModule = {
   buildInsights: (archive: unknown[]) => Record<string, any>;
@@ -113,14 +96,6 @@ type DreamMemoryModule = {
   ) => Record<string, any>;
 };
 
-type CanvasFrameModule = {
-  drawOrnamentalFrame: (
-    ctx: unknown,
-    width: number,
-    height: number,
-    options?: Record<string, unknown>
-  ) => void;
-};
 
 type ContentSafetyModule = {
   validateDreamText: (value: string) => {
@@ -1110,10 +1085,8 @@ function loadApp(
 
 const acceptance = loadCommonJS<AcceptanceModule>('miniprogram/utils/acceptanceDream.js');
 const contentSafety = loadCommonJS<ContentSafetyModule>('miniprogram/utils/contentSafety.js');
-const dreamArtifacts = loadCommonJS<DreamArtifactsModule>('miniprogram/utils/dreamArtifacts.js');
 const syncQueue = loadCommonJS<Record<string, any>>('miniprogram/utils/syncQueue.js', { wx: createWxMock() });
 const dreamMemory = loadCommonJS<DreamMemoryModule>('miniprogram/utils/dreamMemory.js', {}, { './syncQueue': syncQueue });
-const canvasFrame = loadCommonJS<CanvasFrameModule>('miniprogram/utils/canvasFrame.js');
 
 for (const path of [
   'miniprogram/app.json',
@@ -1225,18 +1198,17 @@ for (const [path, expected] of [
   ['miniprogram/pages/dream-chat/index.wxml', 'bindtap="sendMessage"'],
   ['miniprogram/pages/profile/index.wxml', 'bindtap="saveProfile"'],
   ['miniprogram/pages/profile/index.wxml', '可随时修改或清空'],
-  // 阶段画像的完整面板已经搬到「梦册」顶部：「我」是一整页表单，把产品里最有
-  // 辨识度的产出摆在表单上方，它会被读成一个用户自己填的字段。这一页只留
-  // 入口，编辑/重新梳理/溯源/历史版本都在梦册。
+  // 「我的」已经从设置页改成画像页：画像正文完整摊在首屏，不截断也不藏在
+  // 浮层后面。之前搬去梦册是因为「我」当时是一整页表单，产出摆在表单上方会
+  // 被读成用户自己填的字段——现在这一页本身就是那段画像，前提不再成立。
   ['miniprogram/pages/profile/index.wxml', '阶段画像'],
-  ['miniprogram/pages/profile/index.wxml', 'bindtap="openPortrait"'],
-  ['miniprogram/pages/profile/index.wxml', '在梦册查看'],
-  // 「关于你的记录」在资料页只是入口：条数、标签、在用几条。原话、来源梦和
-  // 标为重要/编辑/删除都在二级页——把它们全铺在这一页，一屏读下来全是原话，
-  // 而这一格要回答的只是「系统记着我什么」。
-  ['miniprogram/pages/profile/index.wxml', '关于你的记录'],
-  ['miniprogram/pages/profile/index.wxml', 'bindtap="openLifeNotes"'],
-  ['miniprogram/pages/profile/index.wxml', '正在影响画像'],
+  ['miniprogram/pages/profile/index.wxml', '{{memoryState.current.summary}}'],
+  ['miniprogram/pages/profile/index.wxml', 'bindtap="openPortraitDetail"'],
+  // 溯源/历史版本/修正入口/两块养料全部收进二级页：首屏的任务是「读」，
+  // 二级页的任务是「查」。
+  ['miniprogram/pages/portrait-detail/index.wxml', '关于你的记录'],
+  ['miniprogram/pages/portrait-detail/index.wxml', 'bindtap="openLifeNotes"'],
+  ['miniprogram/pages/portrait-detail/index.wxml', '正在影响画像'],
   ['miniprogram/utils/lifeNotes.js', '你说过的话'],
   ['miniprogram/utils/lifeNotes.js', '你认下的解读'],
   ['miniprogram/pages/life-notes/index.wxml', 'bindtap="toggleGroup"'],
@@ -1245,15 +1217,14 @@ for (const [path, expected] of [
   // 起来一模一样，而其中一半根本不是他说的。
   ['miniprogram/pages/life-notes/index.wxml', '{{note.byline}}'],
   ['miniprogram/utils/lifeNotes.js', 'Oneiro 写的'],
-  ['miniprogram/pages/archive/index.wxml', '阶段画像'],
-  ['miniprogram/pages/archive/index.wxml', '这段不像我'],
+  ['miniprogram/pages/portrait-detail/index.wxml', '这段不像我'],
   ['miniprogram/pages/dream-chat/index.wxml', '{{portraitMode}}'],
-  ['miniprogram/pages/archive/index.wxml', 'bindtap="refreshPortrait"'],
+  ['miniprogram/pages/portrait-detail/index.wxml', 'bindtap="refreshPortrait"'],
   // 画像从「好看」变成「可信」的全部差别：判断能指回具体哪几个梦，以及能看到
   // 自己以前的样子。这两样的数据一直存在 profile_snapshots 里，此前从未渲染。
-  ['miniprogram/pages/archive/index.wxml', 'bindtap="openPortraitSource"'],
-  ['miniprogram/pages/archive/index.wxml', 'bindtap="togglePortraitHistory"'],
-  ['miniprogram/pages/archive/index.wxml', '你以前的样子'],
+  ['miniprogram/pages/portrait-detail/index.wxml', 'bindtap="openPortraitSource"'],
+  ['miniprogram/pages/portrait-detail/index.wxml', 'bindtap="togglePortraitHistory"'],
+  ['miniprogram/pages/portrait-detail/index.wxml', '你以前的样子'],
   ['miniprogram/pages/share/index.wxml', '记下我的梦'],
   ['miniprogram/pages/share/index.wxml', 'theme-{{payload.cardTheme}}'],
   ['miniprogram/pages/diagnostics/index.wxml', '运行诊断'],
@@ -1263,9 +1234,15 @@ for (const [path, expected] of [
   ['miniprogram/pages/diagnostics/index.wxml', 'AI SMOKE TEST'],
   ['miniprogram/pages/diagnostics/index.wxml', 'bindtap="runSmokeTest"'],
   ['miniprogram/pages/archive/index.wxml', '私人梦境牌组'],
-  ['miniprogram/pages/archive/index.wxml', '本月观察'],
+  // 观察卡改成一个月一张、左右滑动翻阅，所以不再叫「本月」。
+  ['miniprogram/pages/archive/index.wxml', '月度观察'],
   ['miniprogram/pages/archive/index.wxml', 'class="month-observation"'],
-  ['miniprogram/pages/archive/index.wxml', 'wx:for="{{timelineGroups}}"'],
+  ['miniprogram/pages/archive/index.wxml', 'wx:for="{{monthlyCards}}"'],
+  // 一次只渲染一个月，切月份不滚页面——没有滚动位置这个输入，也就没有
+  // 「卡片和刻度各说各话」可调停。
+  ['miniprogram/pages/archive/index.wxml', '{{activeMonthGroup.cells}}'],
+  ['miniprogram/pages/archive/index.wxml', 'bindchange="onObservationChange"'],
+  ['miniprogram/pages/archive/index.wxml', 'bindscroll="onStripScroll"'],
   ['miniprogram/pages/archive/index.wxml', 'timelineTimestamp'],
   ['miniprogram/pages/archive/index.wxml', 'archive-thumb-placeholder'],
 ] as const) {
@@ -1277,8 +1254,12 @@ for (const [path, unexpected] of [
   ['miniprogram/pages/result/index.wxml', '生成分享话题卡'],
   // 让用户自己重写画像的输入框已经废止：他写的那句会被当成最高权重原文照抄
   // 回去，等于让用户自己给自己下判断。纠偏只走对话。
-  ['miniprogram/pages/archive/index.wxml', 'portrait-editor'],
-  ['miniprogram/pages/archive/index.wxml', 'bindinput="onPortraitSummaryInput"'],
+  ['miniprogram/pages/portrait-detail/index.wxml', 'portrait-editor'],
+  ['miniprogram/pages/portrait-detail/index.wxml', 'bindinput="onPortraitSummaryInput"'],
+  // 画像整个搬离了梦册：梦册讲的是「你的梦」，画像讲的是「你」，
+  // 两个时间尺度混在一页会互相稀释。
+  ['miniprogram/pages/archive/index.wxml', '阶段画像'],
+  ['miniprogram/pages/archive/index.wxml', 'bindtap="refreshPortrait"'],
   // 记录的原话和逐条操作只在二级页出现。留在资料页上，这一格就又变回一份清单。
   ['miniprogram/pages/profile/index.wxml', 'bindtap="deleteLifeNote"'],
   // 「标为重要」和「编辑」都废止了：前者把系统该做的判断转嫁给用户，后者与
@@ -1424,14 +1405,20 @@ for (const [path, expected] of [
   ['miniprogram/pages/profile/index.js', "cloudBase.saveProfile"],
   ['miniprogram/pages/profile/index.js', "refreshPortraitInBackground"],
   ['miniprogram/pages/life-notes/index.js', "cloudBase.deleteLifeNote"],
-  // 画像的编排只有一份实现（utils/stagePortrait），梦册和「我」两页都用它。
-  // 两页各自实现会立刻分叉：同一个快照在两处显示出不同的版本号或状态。
+  // 画像的编排只有一份实现（utils/stagePortrait），「我的」和画像详情两页都
+  // 用它。两页各自实现会立刻分叉：同一个快照在两处显示出不同的版本号或状态。
   ['miniprogram/utils/stagePortrait.js', "toggleUse"],
-  ['miniprogram/pages/archive/index.js', "openPortraitChat"],
+  ['miniprogram/pages/portrait-detail/index.js', "openPortraitChat"],
   ['miniprogram/utils/stagePortrait.js', "generateProfilePortrait"],
   ['miniprogram/utils/stagePortrait.js', "toggleProfilePortrait"],
-  ['miniprogram/pages/archive/index.js', "stagePortrait.createController"],
+  ['miniprogram/pages/portrait-detail/index.js', "stagePortrait.createController"],
   ['miniprogram/pages/profile/index.js', "stagePortrait.createController"],
+  // 控制器会读写这两个字段，页面漏了声明就会静默走错：缺
+  // portraitAutoGenerateTriggered 会重复触发生成，缺 insights 会把上报的
+  // 梦数记成 0。两页都必须声明。
+  ['miniprogram/pages/portrait-detail/index.js', "portraitAutoGenerateTriggered"],
+  ['miniprogram/pages/profile/index.js', "portraitAutoGenerateTriggered"],
+  ['miniprogram/pages/profile/index.js', "insights"],
   ['miniprogram/cloudfunctions/profileMemory/index.js', "profile_snapshots"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "INTERPRET_PROVIDER"],
   ['miniprogram/cloudfunctions/interpretDream/index.js', "DEEPSEEK_API_KEY"],
@@ -1616,7 +1603,6 @@ const app = {
   globalData: {
     pendingTabParams: {} as Record<string, Record<string, any>>,
     currentDream: null,
-    currentArtifact: null,
     lastProfile: {
       nickname: '',
       birthDate: '',
@@ -1637,9 +1623,7 @@ const pageModules = {
   '../../utils/analytics': analytics,
   '../../utils/cloudBase': cloudBase,
   '../../utils/contentSafety': contentSafety,
-  '../../utils/dreamArtifacts': dreamArtifacts,
   '../../utils/dreamMemory': dreamMemory,
-  '../../utils/canvasFrame': canvasFrame,
   '../../utils/tabNav': tabNav,
   '../../utils/syncQueue': mainSyncQueue,
   '../../utils/recorderRouter': recorderRouter,
@@ -2028,9 +2012,11 @@ wx.lifeNoteRows = [
   { id: 'n6', text: '换了个新组，还在适应', source: '', retiredAt: inUse, sourceDreamId: 'deleted-dream' },
 ];
 
-// 资料页：只回答「一共几条、大致关于什么、其中几条正在影响画像」。原话和逐条
-// 操作全部搬走了——留在这里，这一格就又变回一份读不完的清单。
-const lifeNoteEntryPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+// 画像详情页：只回答「一共几条、大致关于什么、其中几条正在影响画像」。原话和
+// 逐条操作全部搬走了——留在这里，这一格就又变回一份读不完的清单。
+// 入口从资料页移到了这里：这两块是画像的养料，该跟着画像走，而「我的」首屏
+// 只留画像正文本身。
+const lifeNoteEntryPage = loadPage('miniprogram/pages/portrait-detail/index.js', pageModules, wx, app);
 lifeNoteEntryPage.onLoad();
 const noteSummary = () => lifeNoteEntryPage.data.lifeNoteSummary;
 assert.equal(noteSummary().total, 6);
@@ -2140,7 +2126,7 @@ assert.equal(legacyGroup.total, 4);
 // 而这里恰恰不知道。
 assert.equal(legacyGroup.visibleDormant.length, 4);
 assert.equal(legacyGroup.collapsible, false);
-const legacyEntryPage = loadPage('miniprogram/pages/profile/index.js', pageModules, wx, app);
+const legacyEntryPage = loadPage('miniprogram/pages/portrait-detail/index.js', pageModules, wx, app);
 legacyEntryPage.onLoad();
 assert.equal(legacyEntryPage.data.lifeNoteSummary.unknownUsage, true);
 
@@ -2151,19 +2137,18 @@ assert.equal(legacyNotePage.findNote({ currentTarget: { dataset: { key: 'nope' }
 wx.lifeNoteRows = [];
 wx.storage['oneiro:dreamArchive'] = archiveBeforeLifeNoteCase;
 
-// 「我」页只剩一个只读入口：完整面板在「梦册」顶部。这一页是一整页表单，把
-// 产品里最有辨识度的产出摆在表单上方，它会被读成一个用户自己填的字段。入口
-// 仍然要显示版本与状态，否则老用户在熟悉的位置什么都看不到。
+// 「我的」首屏就是画像正文本身，不再是入口卡。版本与状态仍要显示——它们是
+// 「这东西盯了你多久、现在还算不算数」，缺了画像就只是一段来路不明的话。
 assert.equal(profilePage.data.portraitVersionLabel, 'V1');
 assert.ok(profilePage.data.portraitStatusLabel.length > 0);
 assert.equal(typeof profilePage.startPortraitEdit, 'undefined');
-profilePage.openPortrait();
-assert.equal(last(wx.navigations), '/pages/archive/index');
+profilePage.openPortraitDetail();
+assert.equal(last(wx.navigations), '/pages/portrait-detail/index');
 
-// 画像的编辑/重新梳理/溯源/历史版本全部在梦册。下面这些用例跟着 UI 一起搬到
-// archive 页，编排逻辑本身由 utils/stagePortrait 共享，两页不会分叉。
+// 溯源/历史版本/修正入口全部在画像详情二级页。编排逻辑本身由
+// utils/stagePortrait 共享，两页不会分叉。
 function loadPortraitPage(): MiniProgramPage {
-  const page = loadPage('miniprogram/pages/archive/index.js', pageModules, wx, app);
+  const page = loadPage('miniprogram/pages/portrait-detail/index.js', pageModules, wx, app);
   page.onLoad({});
   page.portrait.load();
   return page;
@@ -3240,8 +3225,20 @@ archivePage.onShow();
 assert.equal(archivePage.data.archiveCount, 1);
 assert.ok(archivePage.data.archive[0].id);
 assert.ok(archivePage.data.archive[0].createdAt);
-assert.equal(archivePage.data.timelineGroups.length, 1);
-assert.match(archivePage.data.timelineGroups[0].dreams[0].timelineTimestamp, /^\d{4}\.\d{2}\.\d{2}\s{2}\d{2}:\d{2}$/);
+// 梦册改成按月翻阅：一次只渲染 activeMonthGroup 一个月，切月份不滚页面。
+// 三者（观察卡 / 刻度轴 / 牌组）统一成时间正序，共用一个下标，默认停在最新
+// 的月份——也就是数组末尾，不是开头。
+assert.equal(archivePage.data.monthGroups.length, 1);
+assert.equal(archivePage.data.activeMonthIndex, archivePage.data.monthGroups.length - 1);
+assert.equal(archivePage.data.activeMonthGroup.key, archivePage.data.activeMonthKey);
+assert.equal(archivePage.data.monthlyCards.length, archivePage.data.monthGroups.length);
+// 卡片和刻度必须和牌组同序，否则往左滑卡片走向更旧、刻度却往右移。
+// 比较用 join 而不是 deepEqual：页面跑在 vm 沙箱里，它造的数组来自另一个
+// realm，原型不同，deepStrictEqual 会因此判不等——内容其实一模一样。
+const monthOrder = archivePage.data.monthGroups.map((group: Record<string, any>) => group.key).join(',');
+assert.equal(archivePage.data.monthlyCards.map((card: Record<string, any>) => card.month).join(','), monthOrder);
+assert.equal(archivePage.data.monthStrip.map((tick: Record<string, any>) => tick.key).join(','), monthOrder);
+assert.match(archivePage.data.activeMonthGroup.cells[0].dreams[0].timelineTimestamp, /^\d{4}\.\d{2}\.\d{2}\s{2}\d{2}:\d{2}$/);
 archivePage.openDream({ currentTarget: { dataset: { index: 0 } } });
 assert.ok(last(wx.navigations).startsWith('/pages/result/index?id='));
 assert.ok(wx.cloudCalls.some((call) => call.name === 'saveDream'));
