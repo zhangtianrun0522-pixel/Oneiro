@@ -6,7 +6,13 @@
   flex-direction: column;
   height: 100vh;
   padding: 40rpx 40rpx 0;
-  background: var(--paper);
+  background-color: var(--paper);
+  /* 这三个根节点都是不透明的满屏块，会盖住 page 上铺的 --paper-noise。
+     原本只写 background: var(--paper)，纸纹到这三屏就断了 —— 解读页与
+     分享页恰恰是最需要纸感的两屏。与 app.wxss 的 .screen 保持同一套写法。 */
+  background-image: var(--paper-noise);
+  background-repeat: repeat;
+  background-size: 64rpx 64rpx;
   color: var(--ink);
 }
 

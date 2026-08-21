@@ -15,6 +15,13 @@ page {
   --gold-line: #b8863b;
   --gold-ink: #8a5d29;
 
+  /* 分隔线。此前 life-notes 直接引用 var(--rule) 而全项目从未定义过它，
+     var() 无 fallback 会让整条 border 声明 invalid at computed-value time，
+     border-style 回落到 none —— 那两条线因此根本没有渲染。取 0.12 而不是
+     发丝线常用的 0.08：其中一处是 .note-item.is-confirmed 的 2rpx 左线，
+     职责是让「我们写的句子」和「他的原话」立刻分开，0.08 太弱撑不住。 */
+  --rule: rgba(33, 29, 23, 0.12);
+
   /* 纸纹：64×64 灰度噪点 PNG（node 脚本生成，逐像素 alpha ≤ 3.5%），
      以 background-image 平铺在暖纸底色之上，制造「远看均匀、近看有纤维感」
      的质地。体积 1.4KB / base64 1860 字符，远低于 2KB 上限。 */
