@@ -1,65 +1,17 @@
 .profile-screen { padding-bottom: calc(64rpx + env(safe-area-inset-bottom)); }
 
-/* ── 对齐设计稿 3c：本页不再使用「卡片盒」语言，改为纯文字流 +
-   细线分区，只有「昨日梦回访」与「历史版本」两处保留浅色底块。
-   下面每条颜色都用相对亮度公式核算过，数值见各分组注释；
-   设计稿里 rgba(33,29,23,0.35/0.4/0.45) 与 #B8863B 用作文字时
-   在暖纸上只有 2.1–2.7:1，一律替换为已校准 token：
-     --gold-ink  #8a5d29  ~4.5–4.85:1  用于强调型小标签/标签文字
-     --ink-70    rgba(.72) ~5.9–6.1:1  用于中性小标签/可点文字链
-     --ink-55    rgba(.58) ~3.9:1      仅用于「已暂停」这类非关键弱化状态
-     --cinnabar-ink #b23a32 ~4.7–5.0:1 用于「删除」这类危险小字
-   --gold-line (#b8863b) 即使 100% 不透明在暖纸上也只有 2.74:1，
-   达不到文字的 4.5:1，也够不到装饰图形的 3:1，因此全部改为仅用于
-   低透明度的点缀边框（历史版本盒左边线、标签描边），不作为任何
-   文字色使用；这类点缀细线本身不承载必须信息，移除也不影响内容
-   可读，视为纯装饰不做 3:1 强制。 ── */
-
-.profile-header {
-  flex-shrink: 0;
+.basic-info-block {
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.08);
 }
 
-/* 覆盖 app.wxss 全局 .title（19px 宋体），本页头图更克制：16px 无衬线 */
-.profile-header .title {
-  font-family: var(--font-sans);
-  font-size: 32rpx;
-  font-weight: 600;
-  letter-spacing: 0;
-  line-height: 1.4;
-}
-
-.profile-subtitle {
-  display: block;
-  margin-top: 8rpx;
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  line-height: 1.5;
-}
-
-/* ── 昨日梦回访：设计稿唯一的实底卡片，暖金底块 + 无边框 ──
-   #EDE4D0 是设计稿指定的实色（非 token），核算：
-     --gold-ink  on #EDE4D0 = 4.52:1  （标题小标签）
-     --ink       on #EDE4D0 = 13.26:1 （正文/问题）
-     --ink-70    on #EDE4D0 = 5.87:1  （回答/跳过/关闭提醒可点文字） */
-.profile-revisit {
-  margin-top: var(--space-group);
-  padding: 28rpx 32rpx;
-  border-radius: 4rpx;
-  background: #ede4d0;
-}
-
-.profile-revisit-kicker,
+/* 回访的实底暖金卡改由页脚的 .footer-panel 提供底色，这里只留文字样式。
+   底色仍是 #EDE4D0，原有核算不变：--ink 13.26:1，--ink-70 5.87:1。 */
 .profile-revisit-title,
 .profile-revisit-question,
 .profile-revisit-disable {
   display: block;
-}
-
-.profile-revisit-kicker {
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  letter-spacing: 2rpx;
 }
 
 .profile-revisit-title {
@@ -147,144 +99,64 @@
   border: 0;
 }
 
-/* ── 通用：小标签 / 计数 / 分区细线 ──
-   --ink-70 on --paper = 6.10:1，覆盖本页所有「阶段画像·V3」
-   「最近的线索」「系统提取的现实线索」「基础资料」这类结构性
-   眉题，以及「共 3 版」「N 条」这类计数、和全部可点文字链 */
-.section-label {
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  letter-spacing: 2rpx;
+/* ── 画像的加载 / 空 / 失败态 ── */
+.portrait-loading-card,
+.portrait-empty-card {
+  margin-top: var(--space-tight);
 }
 
-.section-meta {
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-}
-
-.section-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 20rpx;
-}
-
-.section-divider {
-  margin-top: var(--space-group);
-  padding-top: 28rpx;
-  border-top: 1rpx solid rgba(33, 29, 23, 0.08);
-}
-
-/* ── 阶段画像入口 ──
-   完整面板已搬到「梦册」顶部（见 pages/archive/index.wxss）。这一页只留一个
-   只读入口：老用户仍能从熟悉的位置找到它，但不再有两份可编辑的画像 UI，
-   也不会让这页表单看起来像是画像的归属地。 */
-.portrait-entry {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20rpx;
-  margin-top: 44rpx;
-  padding: 26rpx 28rpx;
-  background: rgba(33, 29, 23, 0.03);
-  border-left: 4rpx solid rgba(184, 134, 59, 0.5);
-}
-
-.portrait-entry-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.portrait-entry-head {
-  display: flex;
-  align-items: baseline;
-  gap: 14rpx;
-}
-
-.portrait-entry-badge {
-  flex: 0 0 auto;
-  padding: 2rpx 12rpx;
-  background: var(--gold-line);
-  color: var(--paper);
-  font-size: 19rpx;
-  font-weight: 700;
-}
-
-/* 预览只留两行：这里是入口不是正文，全文在梦册。 */
-.portrait-entry-preview {
-  display: -webkit-box;
-  margin-top: 12rpx;
-  overflow: hidden;
-  font-family: var(--font-serif);
-  color: var(--ink-70);
-  font-size: 24rpx;
-  line-height: 1.7;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.portrait-entry-status {
+.portrait-loading-copy,
+.portrait-empty-copy {
   display: block;
-  margin-top: 12rpx;
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 700;
-}
-
-.portrait-entry-arrow {
-  flex: 0 0 auto;
-  align-self: center;
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  font-weight: 700;
-}
-
-/* ── 最近的线索：真实数据是 dreamCount + stageSummary 一段摘要文字，
-   不是设计稿画的标签云（页面没有关键词计数的数据源，不能在不动
-   index.js 的前提下编出假标签），因此保留原有段落展示，只对齐
-   标题/分隔线/字号这一层视觉规格 ── */
-.recent-clues-summary {
-  display: block;
-  margin-top: 20rpx;
   color: var(--ink-70);
   font-size: var(--fs-aux);
-  line-height: 1.75;
+  line-height: 1.7;
 }
 
-/* ── 关于你的记录（入口） ── */
-/* 这一格原来铺开全部记录，一屏读下来全是原话。现在只回答三件事：一共几条、
-   大致关于什么、其中几条正在影响画像。原话和操作都在二级页。 */
-.facts-labels {
+.portrait-empty-copy { margin-top: var(--space-tight); }
+
+.portrait-empty-title {
   display: block;
-  margin-top: 10rpx;
   color: var(--ink);
   font-size: var(--fs-aux);
-  line-height: 1.6;
+  font-weight: 600;
 }
 
-.facts-usage {
-  display: block;
-  margin-top: 6rpx;
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  line-height: 1.5;
+.portrait-loading-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  margin-top: 20rpx;
 }
 
-.facts-empty {
-  display: block;
+.portrait-loading-bar {
+  height: 22rpx;
+  border-radius: 2rpx;
+  background: rgba(33, 29, 23, 0.08);
+  animation: portrait-loading-pulse 1.2s ease-in-out infinite;
+}
+
+.portrait-loading-bar.is-short { width: 60%; }
+
+@keyframes portrait-loading-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.portrait-empty-retry {
+  display: inline-block;
+  min-height: var(--tap-min);
   margin-top: var(--space-tight);
   color: var(--ink-70);
-  font-size: var(--fs-aux);
-  line-height: 1.7;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
-/* ── 基础资料：产品决定保留现有内联表单交互（input + picker +
-   底部保存按钮），这里只对齐标题/说明文案/分隔线的视觉规格。
-   去掉了上一轮的 .basic-info-zone 底色块和它的左右内padding——
-   那层 padding 让基础资料的字段相对其它分区多缩进了 28rpx，
-   现在改用与其它分区相同的 .section-divider（只留 padding-top），
-   横向对齐重新与上方各分区一致 ── */
+/* ── 基础资料：保留原有的内联表单交互（input + picker + 底部保存按钮），
+   现在整个折叠在顶部「我 的」那一行下面，默认收起 ── */
 .basic-info-note {
   display: block;
   margin-top: 20rpx;
@@ -332,4 +204,306 @@
   font-size: var(--fs-label);
   line-height: 1.6;
   text-align: center;
+}
+
+/* ══ 新版「我的」：画像即页面 ══════════════════════════════
+   层级主要靠字号：全页只有三处大字（底账的数字、画像的名字、画像正文），
+   其余一切都在 19–24rpx 之间——差一倍以上才算一级。
+
+   底色只用在该用的地方，一共两处，各自有理由：
+     .portrait-sheet  画像主卡，要浮在那叠纸上面，不然叠牌像印偏了
+     .footer-panel    有待回访时的暖金块，全页唯一需要用户此刻动手的事
+   除此之外的分区一律用细线和间距，不再加盒子。 */
+
+/* 页面标题退成眉标：画像才是这页的标题。 */
+.profile-eyebrow {
+  display: block;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  font-weight: 700;
+  letter-spacing: 6rpx;
+}
+
+/* ── 画像纸叠 ─────────────────────────────────────────────
+   背后垫 0–3 层纸色偏移卡，攒的版本越多越厚（level-0 完全不垫）。
+   和梦册的 .deck-shadow 同一套语言，但更收敛：旋转角更小，因为这叠纸
+   要托住一大段正文，歪太多会影响阅读。 */
+.portrait-deck {
+  position: relative;
+  margin-top: 40rpx;
+}
+
+/* 每层纸都有自己的投影，越往下越深、越偏——这样三层读起来是「叠起来的纸」
+   而不是「三个错开的色块」。底色也逐层加深一点，模拟压在下面的纸吃光。 */
+.portrait-deck-shadow {
+  position: absolute;
+  inset: 0;
+  border: 1rpx solid rgba(33, 29, 23, 0.1);
+  background: #ebe1cb;
+  box-shadow: 0 4rpx 12rpx rgba(33, 29, 23, 0.06);
+}
+
+.portrait-deck-shadow.shadow-1 {
+  transform: rotate(0.8deg) translate(7rpx, 7rpx);
+}
+
+.portrait-deck-shadow.shadow-2 {
+  background: #e7dcc4;
+  transform: rotate(1.7deg) translate(14rpx, 13rpx);
+}
+
+.portrait-deck-shadow.shadow-3 {
+  background: #e3d7bd;
+  box-shadow: 0 8rpx 20rpx rgba(33, 29, 23, 0.09);
+  transform: rotate(2.6deg) translate(21rpx, 19rpx);
+}
+
+/* 主卡要明显比垫在下面的纸「浮」起来，否则叠牌看着像印偏了的印刷品。
+   左边一条金线是这张卡唯一的装饰，也是整页的视觉锚点。 */
+.portrait-sheet {
+  position: relative;
+  z-index: 2;
+  padding: 38rpx 34rpx 34rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.12);
+  border-left: 4rpx solid rgba(184, 134, 59, 0.5);
+  background: #f4efe2;
+  box-shadow: 0 10rpx 30rpx rgba(33, 29, 23, 0.1);
+}
+
+.portrait-sheet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.portrait-sheet-kicker {
+  color: var(--gold-ink);
+  font-size: 21rpx;
+  font-weight: 700;
+  letter-spacing: 5rpx;
+}
+
+.portrait-sheet-status {
+  flex: 0 0 auto;
+  color: var(--ink-70);
+  font-size: 20rpx;
+}
+
+.portrait-sheet-status.is-paused {
+  color: var(--ink-55);
+}
+
+/* 画像的名字：全页最大的字。参考 Polarsteps「Travel DNA」和 Moonly
+   上升星座——先给身份，再给证据。仍是全页最大的字，但收到 36rpx：
+   46rpx 一行放不下八个字就要折行，折了行的大标题反而散。 */
+.portrait-title {
+  display: block;
+  margin-top: 28rpx;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 36rpx;
+  line-height: 1.4;
+}
+
+/* 有名字时版本退成注脚（小字、淡色）；名字缺席的旧版本走 .is-lead，
+   见下面的 .portrait-body。 */
+.portrait-sheet-version {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 10rpx;
+}
+
+.portrait-version-num {
+  color: var(--ink-70);
+  font-size: 20rpx;
+}
+
+.portrait-version-date {
+  color: var(--ink-70);
+  font-size: 20rpx;
+}
+
+/* 「已更新」是这个产品唯一一个「有新东西可看」的信号，不是徽章装饰。 */
+.portrait-version-new {
+  padding: 3rpx 14rpx;
+  border: 1rpx solid rgba(184, 134, 59, 0.42);
+  border-radius: 999rpx;
+  color: var(--gold-ink);
+  font-size: 18rpx;
+  font-weight: 700;
+}
+
+/* 正文。不截断、不加 line-clamp——这段话就是用户来这一页要读的东西。
+   有名字时它是名字的展开（28rpx，让位给标题）；没有名字的旧版本走
+   .is-lead 顶上来当主角（32rpx），不至于整张卡没有重心。 */
+.portrait-body {
+  display: block;
+  margin-top: 26rpx;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 28rpx;
+  line-height: 1.8;
+}
+
+.portrait-body.is-lead {
+  font-size: 32rpx;
+}
+
+/* 一截短金线，收住正文。通栏分割线会把卡切成上下两半，而这段免责话
+   本来就该依附在正文尾巴上，不该另起一节。 */
+.portrait-rule {
+  width: 56rpx;
+  height: 2rpx;
+  margin-top: 32rpx;
+  background: var(--gold-line);
+}
+
+/* 原来挂在页面标题下当副标题，现在贴着画像本身——它限定的是这段话，
+   不是整个页面。 */
+.portrait-caveat {
+  display: block;
+  margin-top: 18rpx;
+  color: var(--ink-70);
+  font-size: 20rpx;
+  line-height: 1.6;
+}
+
+/* ── 顶部：标题行即资料入口 ────────────────────────────────
+   这页没有别的设置项了，不值得再为基础资料单开一区，所以「我 的」
+   这一行本身就是它的开关。 */
+.profile-topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+  min-height: var(--tap-min);
+}
+
+.profile-topbar-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-70);
+  font-size: 20rpx;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 梦境回访 ─────────────────────────────────────────────
+   排在画像之前。有待办时是全页唯一一块实底（暖金 #EDE4D0，
+   --ink 13.26:1 / --ink-70 5.87:1），因为它是唯一一件需要用户
+   此刻动手的事；没有待办时收成一行灰字，功能仍在，只是安静。 */
+.revisit-panel {
+  margin-top: 36rpx;
+  padding: 26rpx 30rpx 30rpx;
+  border-radius: 4rpx;
+  background: #ede4d0;
+}
+
+.revisit-kicker {
+  display: block;
+  color: var(--gold-ink);
+  font-size: 21rpx;
+  font-weight: 700;
+  letter-spacing: 5rpx;
+}
+
+.revisit-dormant {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-top: 36rpx;
+  padding-bottom: 20rpx;
+  border-bottom: 1rpx solid rgba(33, 29, 23, 0.1);
+}
+
+.revisit-dormant-label {
+  flex: 0 0 auto;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.revisit-dormant-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-55);
+  font-size: 20rpx;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 详情入口 ─────────────────────────────────────────────
+   做成卡片底部一整行而不是右上角小箭头：它承接的是「这段话从哪来、
+   我认不认」这一整类疑问，值一整行。 */
+.portrait-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  min-height: var(--tap-min);
+  margin-top: 28rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.1);
+}
+
+.portrait-more-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portrait-more-icon {
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+/* ── 底账 ─────────────────────────────────────────────────
+   参考 Deepstash「Reading Personality」：判断之前先摆证据的体量。
+   数字用衬线体、单位用小字——一眼扫过去读到的是「12」「38」，而不是
+   两串等宽的说明文字。同时填掉了标题行和回访之间那片空白。
+   字号压在画像名字（36rpx）之下，否则一进页面先看见的是计数而不是画像。 */
+.ledger {
+  display: flex;
+  align-items: center;
+  gap: 30rpx;
+  margin-top: 30rpx;
+  padding-bottom: 24rpx;
+  border-bottom: 1rpx solid rgba(33, 29, 23, 0.1);
+}
+
+.ledger-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+}
+
+.ledger-num {
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 32rpx;
+  line-height: 1;
+}
+
+.ledger-unit {
+  color: var(--ink-70);
+  font-size: 20rpx;
+}
+
+/* 两组数字之间的竖线，比 gap 更能说明「这是并列的两笔账」 */
+.ledger-rule {
+  width: 1rpx;
+  height: 28rpx;
+  background: rgba(33, 29, 23, 0.16);
 }

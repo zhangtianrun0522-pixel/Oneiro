@@ -5,6 +5,7 @@
     "pages/dream-chat/index",
     "pages/archive/index",
     "pages/profile/index",
+    "pages/portrait-detail/index",
     "pages/life-notes/index",
     "pages/share/index",
     "pages/diagnostics/index"

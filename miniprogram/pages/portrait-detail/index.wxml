@@ -1,0 +1,120 @@
+<!-- 画像详情：核对这段判断的所有材料。
+     「我的」首屏只留画像正文，这一页回答三个问题：
+     这段话从哪来（溯源）／我以前是什么样（历史版本）／不认可怎么办（修正），
+     最后附上画像赖以生长的两样东西（最近的线索 / 关于你的记录）。 -->
+<view class="screen">
+  <!-- 顶部复述一遍当前画像：不复述的话，用户在二级页核对的是一段
+       他必须凭记忆回想的话。字号比首屏小一档，因为这里它是被审阅的
+       对象，不是被阅读的主角。 -->
+  <view wx:if="{{memoryState.current}}" class="recap">
+    <view class="recap-head">
+      <text class="recap-kicker">当前画像</text>
+      <text class="recap-status {{portraitPaused ? 'is-paused' : ''}}">{{portraitStatusLabel}}</text>
+    </view>
+    <text wx:if="{{memoryState.current.title}}" class="recap-title">{{memoryState.current.title}}</text>
+    <view class="recap-version">
+      <text class="recap-version-num">{{portraitVersionText}}</text>
+      <text wx:if="{{portraitUpdatedLabel}}" class="recap-version-date">{{portraitUpdatedLabel}}</text>
+    </view>
+    <text class="recap-body">{{memoryState.current.summary}}</text>
+  </view>
+
+  <block wx:if="{{memoryState.current}}">
+    <!-- 一个无法核对的判断会退化成星座运势，正是画像 prompt 一直在对抗的
+         失败模式。所以溯源排在这一页的第一位。 -->
+    <view wx:if="{{portraitSources.length}}" class="detail-section">
+      <view class="detail-row" bindtap="togglePortraitSources">
+        <text class="detail-label">这段来自你的 {{portraitSources.length}} 个梦</text>
+        <text class="detail-icon">{{showPortraitSources ? '收起 ↑' : '查看 ↓'}}</text>
+      </view>
+      <view wx:if="{{showPortraitSources}}" class="detail-panel">
+        <view
+          wx:for="{{portraitSources}}"
+          wx:key="dreamId"
+          class="portrait-source-item {{item.openable ? '' : 'is-gone'}}"
+          data-dream-id="{{item.openable ? item.dreamId : ''}}"
+          bindtap="openPortraitSource"
+        >
+          <text class="portrait-source-title">{{item.title}}</text>
+          <text class="portrait-source-meta">{{item.dateLabel}}{{item.openable ? ' ›' : ' · 已删除'}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 「三个月前你是这样，现在你是这样」是画像唯一能做、而单次解读永远
+         做不到的事。 -->
+    <view wx:if="{{portraitHistory.length}}" class="detail-section">
+      <view class="detail-row" bindtap="togglePortraitHistory">
+        <text class="detail-label">你以前的样子（{{portraitHistory.length}} 版）</text>
+        <text class="detail-icon">{{showPortraitHistory ? '收起 ↑' : '展开 ↓'}}</text>
+      </view>
+      <view wx:if="{{showPortraitHistory}}" class="detail-panel">
+        <!-- 有名字之后，历史版本一眼就能读出变化：「停在门口的人 →
+             开始试探的人」比对比两段散文快得多。老版本没有名字，那一条
+             就只显示版本号和正文。 -->
+        <view wx:for="{{portraitHistory}}" wx:key="clientId" class="portrait-history-item">
+          <view class="portrait-history-head">
+            <text class="portrait-history-version">{{item.title ? item.title : item.versionLabel}}</text>
+            <text class="portrait-history-date">{{item.title ? item.versionLabel + ' · ' + item.dateLabel : item.dateLabel}}</text>
+          </view>
+          <text class="portrait-history-copy">{{item.summary}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 按钮上写的就是那句异议本身，点下去直接进对话，第一句已经替他说完
+         了——开口成本和点一个「不像」按钮一样，但落在能说清楚的地方。 -->
+    <view class="detail-section">
+      <text class="detail-section-kicker">如果这段不对</text>
+      <view class="portrait-links-row">
+        <button class="portrait-link-btn is-object" disabled="{{portraitLoading}}" bindtap="openPortraitChat">这段不像我</button>
+        <button wx:if="{{portraitPaused}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="togglePortraitUse">恢复用于解读</button>
+        <button wx:else class="portrait-link-btn" disabled="{{portraitLoading}}" loading="{{portraitLoading}}" bindtap="refreshPortrait">重新梳理</button>
+      </view>
+      <text wx:if="{{!portraitPaused}}" class="portrait-pause-link" bindtap="togglePortraitUse">暂停用于解读</text>
+      <view wx:if="{{portraitGenerateFailed}}" class="portrait-links-row">
+        <text class="portrait-empty-retry" bindtap="refreshPortrait">重新梳理失败，点击重试</text>
+      </view>
+      <text wx:if="{{insights.dreamCount < 3}}" class="portrait-growth-hint">随着你记录更多梦，这份画像会越来越具体</text>
+    </view>
+  </block>
+
+  <view wx:elif="{{!memoryLoaded}}" class="portrait-loading-card">
+    <text class="portrait-loading-copy">正在读取 Oneiro 对你的理解…</text>
+    <view class="portrait-loading-bars">
+      <view class="portrait-loading-bar"></view>
+      <view class="portrait-loading-bar"></view>
+      <view class="portrait-loading-bar is-short"></view>
+    </view>
+  </view>
+
+  <view wx:else class="portrait-empty-card">
+    <text class="portrait-empty-title">还没有画像</text>
+    <text class="portrait-empty-copy">记下几个梦之后，这里会出现一版关于你的当下观察，以及它的全部依据。</text>
+    <text wx:if="{{portraitLoadError || portraitGenerateFailed}}" class="portrait-empty-retry" bindtap="retryPortrait">重试</text>
+  </view>
+
+  <!-- ── 画像的两块养料 ────────────────────────────────────
+       画像是从这两样长出来的，所以放在核对材料之后：先看结论怎么来的，
+       再看原料本身。 -->
+  <view class="feed-block">
+    <view class="section-row">
+      <text class="section-label">最近的线索</text>
+      <text class="section-meta">{{insights.dreamCount}} 梦</text>
+    </view>
+    <text class="feed-copy">{{insights.stageSummary}}</text>
+  </view>
+
+  <view class="feed-block" bindtap="openLifeNotes">
+    <view class="section-row">
+      <text class="section-label">关于你的记录</text>
+      <text class="section-meta">{{lifeNoteSummary.total}} 条 ›</text>
+    </view>
+    <text wx:if="{{!lifeNoteSummary.total}}" class="feed-copy">系统会从梦后对话和次日回访中提取有现实落点的线索，普通猜测不会直接成为记忆。</text>
+    <block wx:else>
+      <text class="feed-copy">{{lifeNoteSummary.labelLine}}</text>
+      <!-- 「不知道有哪些在用」和「0 条在用」是两件事，别把前者显示成后者。 -->
+      <text class="feed-usage">{{lifeNoteSummary.unknownUsage ? '下次梳理画像后，这里会显示哪几条正在影响它' : lifeNoteSummary.activeCount + ' 条正在影响画像'}}</text>
+    </block>
+  </view>
+</view>

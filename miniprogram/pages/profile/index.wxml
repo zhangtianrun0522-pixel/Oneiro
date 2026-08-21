@@ -1,94 +1,16 @@
+<!-- 「我的」= 一段关于你的话，仅此而已。
+     核对材料（溯源／历史版本／修正入口／最近的线索／关于你的记录）全部
+     收进画像详情二级页——首屏的任务是「读」，二级页的任务是「查」。
+     基础资料收进顶部「我 的」那一行，梦境回访排在画像之前：它是唯一
+     需要用户此刻动手的事，而画像是读完就走的东西。 -->
 <view class="screen profile-screen">
-  <view class="profile-header">
-    <text class="title">我的资料</text>
-    <text class="profile-subtitle">这是可修改的当下观察，不是对你的定义</text>
+  <!-- 标题行本身就是资料入口：这页没有别的设置项了，不值得再为它单开一区。 -->
+  <view class="profile-topbar" bindtap="toggleProfileEdit">
+    <text class="profile-eyebrow">我 的</text>
+    <text class="profile-topbar-value">{{profile.nickname ? profile.nickname : '未填称呼'}}{{profile.birthDate || profile.birthTime || profile.birthPlace || profile.gender ? ' · 资料已填' : ' · 资料未填'}}{{showProfileEdit ? ' 收起 ↑' : ' 编辑 ›'}}</text>
   </view>
 
-  <!-- 「次日回访」区域固定占位，不因为当前没有待回访的梦就整块消失——
-       否则用户会以为这个功能被下线了。四种状态：已关闭 / 有待回访(默认或作答中) /
-       无待回访。真正没有待回访的梦时只说明机制，绝不编造回访问题文案。 -->
-  <view class="profile-revisit">
-    <text class="profile-revisit-kicker">次日回访</text>
-
-    <block wx:if="{{revisitDisabled}}">
-      <text class="profile-revisit-title">回访提醒已关闭</text>
-      <text class="profile-revisit-question">记下一个梦后，第二天本该在这里出现一次回访提问，但提醒已被关闭。</text>
-      <view class="profile-revisit-actions">
-        <text class="profile-revisit-disable" bindtap="enableRevisitPrompts">恢复回访提醒</text>
-      </view>
-    </block>
-
-    <block wx:elif="{{revisit}}">
-      <text class="profile-revisit-title">昨天的梦「{{revisit.title}}」</text>
-      <text class="profile-revisit-question">{{revisit.question}}</text>
-      <view wx:if="{{!revisitAnswering}}" class="profile-revisit-actions">
-        <button class="profile-revisit-answer" bindtap="startAnswerRevisit">回答</button>
-        <button class="profile-revisit-skip" bindtap="skipRevisitPrompt">跳过</button>
-        <text class="profile-revisit-disable" bindtap="disableRevisitPrompts">关闭提醒</text>
-      </view>
-      <view wx:else class="profile-revisit-composer">
-        <textarea
-          class="profile-revisit-textarea"
-          bindinput="onRevisitAnswerInput"
-          value="{{revisitAnswerText}}"
-          maxlength="300"
-          auto-height
-          placeholder="写下此刻的变化或感受"
-          placeholder-class="muted"
-        />
-        <button class="profile-revisit-send" disabled="{{revisitSubmitting}}" loading="{{revisitSubmitting}}" bindtap="submitRevisitAnswer">发送</button>
-      </view>
-    </block>
-
-    <block wx:else>
-      <text class="profile-revisit-title">暂时没有待回访的梦</text>
-      <text class="profile-revisit-question">记下一个梦后，第二天起这里会出现一次回访提问，保留一周，帮你确认梦里的感受有没有照进现实。</text>
-    </block>
-  </view>
-
-  <!-- 阶段画像的完整面板已经搬到「梦册」顶部。这一页是一整页表单——出生日期、
-       性别、保存资料、隐私说明——把产品里最有辨识度的产出摆在表单上方，它会
-       被读成一个用户自己填的字段，而不是系统产出的东西。这里只留一个入口：
-       老用户仍然能从熟悉的位置找到它，但不再有两份可编辑的画像 UI。 -->
-  <view class="portrait-entry" bindtap="openPortrait">
-    <view class="portrait-entry-copy">
-      <view class="portrait-entry-head">
-        <text class="section-label">阶段画像{{portraitVersionLabel ? ' · ' + portraitVersionLabel : ''}}</text>
-        <text wx:if="{{portraitHasUpdate}}" class="portrait-entry-badge">已更新</text>
-      </view>
-      <text class="portrait-entry-preview">{{memoryState.current ? memoryState.current.summary : (memoryLoaded ? '还在为你梳理，记下更多梦后它会成形。' : '正在读取 Oneiro 对你的理解…')}}</text>
-      <text class="portrait-entry-status">{{portraitStatusLabel}}</text>
-    </view>
-    <text class="portrait-entry-arrow">在梦册查看 ›</text>
-  </view>
-
-  <view class="recent-clues-block section-divider">
-    <view class="section-row">
-      <text class="section-label">最近的线索</text>
-      <text class="section-meta">{{insights.dreamCount}} 梦</text>
-    </view>
-    <text class="recent-clues-summary">{{insights.stageSummary}}</text>
-  </view>
-
-  <!-- 这里原来把全部记录铺开：两组、每条原话、来源梦、标为重要/编辑/删除。
-       一屏读下来全是原话，而这一格要回答的只是「系统记着我什么」。原话、来源
-       和所有操作都搬进了二级页，这里只留标签和一个真实的条数。 -->
-  <view class="facts-entry section-divider" bindtap="openLifeNotes">
-    <view class="section-row">
-      <text class="section-label">关于你的记录</text>
-      <text class="section-meta">{{lifeNoteSummary.total}} 条 ›</text>
-    </view>
-    <text wx:if="{{!lifeNoteSummary.total}}" class="facts-empty">系统会从梦后对话和次日回访中提取有现实落点的线索，普通猜测不会直接成为记忆。</text>
-    <block wx:else>
-      <text class="facts-labels">{{lifeNoteSummary.labelLine}}</text>
-      <!-- 「不知道有哪些在用」和「0 条在用」是两件事，别把前者显示成后者。 -->
-      <text class="facts-usage">{{lifeNoteSummary.unknownUsage ? '下次梳理画像后，这里会显示哪几条正在影响它' : lifeNoteSummary.activeCount + ' 条正在影响画像'}}</text>
-    </block>
-  </view>
-
-  <view class="basic-info-block section-divider">
-    <text class="section-label">基础资料（全部可选）</text>
-
+  <view wx:if="{{showProfileEdit}}" class="basic-info-block">
     <text class="field-label">称呼 / 可选</text>
     <input class="field" value="{{profile.nickname}}" data-key="nickname" bindinput="onInput" maxlength="30" placeholder="怎么称呼你" placeholder-class="muted" />
 
@@ -123,5 +45,130 @@
 
     <button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveProfile">保存资料</button>
     <text class="privacy-copy">出生资料完全自愿，可随时修改或清空；命理视角会保留，但不会成为记录和基础解读的门槛。</text>
+  </view>
+
+  <!-- ── 底账 ─────────────────────────────────────────────
+       「我 的」和回访之间原本是一片空白。这里放两个数字（参考 Deepstash
+       「Reading Personality」：先摆证据的体量，再下判断），既填了那个空档，
+       也给下面那段画像打了底——读者知道这个判断是从多少材料里来的。
+       一个梦都还没有时整行不出现：那时候它只会显示两个 0。 -->
+  <view wx:if="{{insights.dreamCount}}" class="ledger">
+    <view class="ledger-cell">
+      <text class="ledger-num">{{insights.dreamCount}}</text>
+      <text class="ledger-unit">个梦</text>
+    </view>
+    <view class="ledger-rule"></view>
+    <view class="ledger-cell">
+      <text class="ledger-num">{{portraitVersion || '—'}}</text>
+      <text class="ledger-unit">版画像</text>
+    </view>
+  </view>
+
+  <!-- ── 梦境回访 ─────────────────────────────────────────
+       排在画像之前，因为它是这页唯一需要用户此刻动手的事，而画像是读完
+       就走的。没有待回访时收成一行休眠态，但绝不整块消失——否则用户会
+       以为这个功能被下线了。 -->
+  <block wx:if="{{revisitDisabled || revisit}}">
+    <view class="revisit-panel">
+      <text class="revisit-kicker">梦境回访</text>
+      <block wx:if="{{revisitDisabled}}">
+        <text class="profile-revisit-question">记下一个梦后，第二天本该在这里出现一次回访提问，但提醒已被关闭。</text>
+        <view class="profile-revisit-actions">
+          <text class="profile-revisit-disable" bindtap="enableRevisitPrompts">恢复回访提醒</text>
+        </view>
+      </block>
+      <block wx:else>
+        <text class="profile-revisit-title">昨天的梦「{{revisit.title}}」</text>
+        <text class="profile-revisit-question">{{revisit.question}}</text>
+        <view wx:if="{{!revisitAnswering}}" class="profile-revisit-actions">
+          <button class="profile-revisit-answer" bindtap="startAnswerRevisit">回答</button>
+          <button class="profile-revisit-skip" bindtap="skipRevisitPrompt">跳过</button>
+          <text class="profile-revisit-disable" bindtap="disableRevisitPrompts">关闭提醒</text>
+        </view>
+        <view wx:else class="profile-revisit-composer">
+          <textarea
+            class="profile-revisit-textarea"
+            bindinput="onRevisitAnswerInput"
+            value="{{revisitAnswerText}}"
+            maxlength="300"
+            auto-height
+            placeholder="写下此刻的变化或感受"
+            placeholder-class="muted"
+          />
+          <button class="profile-revisit-send" disabled="{{revisitSubmitting}}" loading="{{revisitSubmitting}}" bindtap="submitRevisitAnswer">发送</button>
+        </view>
+      </block>
+    </view>
+  </block>
+  <view wx:else class="revisit-dormant">
+    <text class="revisit-dormant-label">梦境回访</text>
+    <text class="revisit-dormant-value">记一个梦，第二天这里会出现一次提问</text>
+  </view>
+
+  <!-- ── 阶段画像主体 ──────────────────────────────────────
+       .portrait-deck 背后垫 0–3 层纸色偏移卡：攒的版本越多，这叠纸越厚。
+       版本数少时一层都不垫，新用户不会看到一叠假的「积累」。 -->
+  <view class="portrait-deck">
+    <view wx:if="{{portraitDeckLevel >= 3}}" class="portrait-deck-shadow shadow-3"></view>
+    <view wx:if="{{portraitDeckLevel >= 2}}" class="portrait-deck-shadow shadow-2"></view>
+    <view wx:if="{{portraitDeckLevel >= 1}}" class="portrait-deck-shadow shadow-1"></view>
+
+    <view class="portrait-sheet">
+      <view class="portrait-sheet-head">
+        <text class="portrait-sheet-kicker">阶段画像</text>
+        <text class="portrait-sheet-status {{portraitPaused ? 'is-paused' : ''}}">{{portraitStatusLabel}}</text>
+      </view>
+
+      <block wx:if="{{memoryState.current}}">
+        <!-- 名字是这张卡的主角（参考 Polarsteps「Travel DNA」、Moonly 上升
+             星座那套「小眉标 → 大名字 → 正文」）。一段无题的散文读完留不下
+             东西，一个名字能被记住、被复述。V38 之前的快照没有名字，那时
+             正文直接顶上来当主角，不占位也不显示「未命名」。 -->
+        <text wx:if="{{memoryState.current.title}}" class="portrait-title">{{memoryState.current.title}}</text>
+
+        <!-- 版本退成名字下面一行小字：它是「这判断攒了多久」的注脚，
+             不该跟名字抢。 -->
+        <view class="portrait-sheet-version">
+          <text class="portrait-version-num">{{portraitVersionText}}</text>
+          <text wx:if="{{portraitUpdatedLabel}}" class="portrait-version-date">{{portraitUpdatedLabel}}</text>
+          <text wx:if="{{portraitHasUpdate}}" class="portrait-version-new">已更新</text>
+        </view>
+
+        <text class="portrait-body {{memoryState.current.title ? '' : 'is-lead'}}">{{memoryState.current.summary}}</text>
+
+        <!-- 一截短金线收住正文（stoic. 那种做法）。整条通栏的分割线会把这张
+             卡切成上下两半，而这段免责话本来就该依附在正文尾巴上。 -->
+        <view class="portrait-rule"></view>
+        <text class="portrait-caveat">这是可修改的当下观察，不是对你的定义</text>
+
+        <!-- 详情入口做成卡片底部的一整行，而不是右上角一个小箭头：
+             它要承接的是「这段话从哪来、我认不认」这一整类疑问。 -->
+        <view class="portrait-more" bindtap="openPortraitDetail">
+          <text class="portrait-more-label">看它从哪来，或者告诉我不对</text>
+          <text class="portrait-more-icon">详情 ›</text>
+        </view>
+      </block>
+
+      <!-- 首次进入、云端还没返回：明确的加载态，不是空态 -->
+      <view wx:elif="{{!memoryLoaded}}" class="portrait-loading-card">
+        <text class="portrait-loading-copy">正在读取 Oneiro 对你的理解…</text>
+        <view class="portrait-loading-bars">
+          <view class="portrait-loading-bar"></view>
+          <view class="portrait-loading-bar"></view>
+          <view class="portrait-loading-bar is-short"></view>
+        </view>
+      </view>
+
+      <view wx:elif="{{portraitLoadError || portraitGenerateFailed}}" class="portrait-empty-card">
+        <text class="portrait-empty-title">暂时没连上，点击重试</text>
+        <text class="portrait-empty-copy">你的资料不会受影响，连上后我会继续为你梳理。</text>
+        <text class="portrait-empty-retry" bindtap="retryPortrait">重试</text>
+      </view>
+
+      <view wx:else class="portrait-empty-card">
+        <text class="portrait-empty-title">正在为你梳理</text>
+        <text class="portrait-empty-copy">我会从你留下的资料、梦和生活片段开始，先整理一版简短的当下观察。</text>
+      </view>
+    </view>
   </view>
 </view>

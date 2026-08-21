@@ -1,0 +1,319 @@
+/* 画像详情页。沿用「我的」那套「不靠色块、靠字号和留白」的规则：
+   这一页没有任何底色块，分区全部由细线 + 间距完成。
+   颜色 token 的对比度核算沿用 profile 页的结论：
+     --gold-ink ~4.5:1（眉标）／--ink-70 ~6.1:1（次级文字、可点文字链）
+     --ink-55 ~3.9:1（仅「已暂停」这类非关键弱化状态） */
+
+/* ── 顶部：复述当前画像 ────────────────────────────────────
+   整体比首屏小一档：在这一页画像是被审阅的对象，不是被阅读的主角。 */
+.recap {
+  padding: 30rpx 30rpx 34rpx;
+  border: 1rpx solid rgba(33, 29, 23, 0.1);
+  background: var(--paper-raised, #ede4d0);
+}
+
+.recap-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.recap-kicker {
+  color: var(--gold-ink);
+  font-size: 21rpx;
+  font-weight: 700;
+  letter-spacing: 5rpx;
+}
+
+.recap-status {
+  flex: 0 0 auto;
+  color: var(--ink-70);
+  font-size: 20rpx;
+}
+
+.recap-status.is-paused {
+  color: var(--ink-55);
+}
+
+/* 名字在这一页仍是主角，但比首屏小一档（32 vs 36rpx）。 */
+.recap-title {
+  display: block;
+  margin-top: 18rpx;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 32rpx;
+  line-height: 1.4;
+}
+
+.recap-version {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 10rpx;
+}
+
+.recap-version-num {
+  color: var(--ink-70);
+  font-size: 20rpx;
+}
+
+.recap-version-date {
+  color: var(--ink-70);
+  font-size: 20rpx;
+}
+
+.recap-body {
+  display: block;
+  margin-top: 16rpx;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 26rpx;
+  line-height: 1.8;
+}
+
+/* ── 分区：溯源 / 历史版本 / 修正入口 ───────────────────── */
+.detail-section {
+  margin-top: 44rpx;
+  padding-top: 26rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
+}
+
+.detail-section-kicker {
+  display: block;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  min-height: var(--tap-min);
+}
+
+.detail-label {
+  color: var(--ink);
+  font-size: 24rpx;
+}
+
+.detail-icon {
+  flex: 0 0 auto;
+  color: var(--ink-70);
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.detail-panel {
+  padding: 6rpx 0 12rpx;
+}
+
+/* ── 溯源条目 ───────────────────────────────────────────── */
+.portrait-source-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  min-height: var(--tap-min);
+  padding-left: 20rpx;
+  border-left: 3rpx solid rgba(184, 134, 59, 0.4);
+}
+
+.portrait-source-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 24rpx;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.portrait-source-meta {
+  flex: 0 0 auto;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.portrait-source-item.is-gone .portrait-source-title { color: var(--ink-55); }
+
+/* ── 历史版本 ───────────────────────────────────────────── */
+.portrait-history-item {
+  margin-top: 16rpx;
+  padding: 20rpx 24rpx;
+  background: rgba(33, 29, 23, 0.03);
+  border-left: 4rpx solid rgba(184, 134, 59, 0.35);
+}
+
+.portrait-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+/* 历史版本的名字用衬线体，跟当前画像的名字同一套字，读起来是「同一个东西
+   的不同时期」，而不是一串编号。 */
+.portrait-history-version {
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 26rpx;
+}
+
+.portrait-history-date {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.portrait-history-copy {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--ink-70);
+  font-size: 24rpx;
+  line-height: 1.7;
+}
+
+/* ── 修正入口 ───────────────────────────────────────────── */
+.portrait-links-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 32rpx;
+  margin-top: 8rpx;
+}
+
+.portrait-link-btn {
+  margin: 0 !important;
+  min-height: var(--tap-min);
+  padding: 0;
+  background: transparent;
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  line-height: var(--tap-min);
+}
+
+.portrait-link-btn::after { border: 0; }
+
+/* 「这段不像我」是这组里唯一真正在纠正画像的动作，比「重新梳理」重要。 */
+.portrait-link-btn.is-object {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
+}
+
+.portrait-pause-link {
+  display: block;
+  min-height: var(--tap-min);
+  color: var(--ink-70);
+  font-size: 23rpx;
+  line-height: var(--tap-min);
+}
+
+.portrait-growth-hint {
+  display: block;
+  margin-top: 8rpx;
+  color: var(--ink-70);
+  font-size: 21rpx;
+  line-height: 1.6;
+}
+
+/* ── 加载 / 空 / 失败态 ─────────────────────────────────── */
+.portrait-loading-card,
+.portrait-empty-card {
+  margin-top: var(--space-block);
+}
+
+.portrait-loading-copy,
+.portrait-empty-copy {
+  display: block;
+  color: var(--ink-70);
+  font-size: var(--fs-aux);
+  line-height: 1.7;
+}
+
+.portrait-empty-copy { margin-top: var(--space-tight); }
+
+.portrait-empty-title {
+  display: block;
+  color: var(--ink);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+}
+
+.portrait-loading-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  margin-top: 20rpx;
+}
+
+.portrait-loading-bar {
+  height: 22rpx;
+  border-radius: 2rpx;
+  background: rgba(33, 29, 23, 0.08);
+  animation: portrait-loading-pulse 1.2s ease-in-out infinite;
+}
+
+.portrait-loading-bar.is-short { width: 60%; }
+
+@keyframes portrait-loading-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.portrait-empty-retry {
+  display: inline-block;
+  min-height: var(--tap-min);
+  margin-top: var(--space-tight);
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: var(--tap-min);
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
+}
+
+/* ── 两块养料 ───────────────────────────────────────────── */
+.section-label {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.section-meta {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+}
+
+.section-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.feed-block {
+  margin-top: 44rpx;
+  padding-top: 26rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.12);
+}
+
+.feed-copy {
+  display: block;
+  margin-top: 12rpx;
+  color: var(--ink-70);
+  font-size: 23rpx;
+  line-height: 1.7;
+}
+
+.feed-usage {
+  display: block;
+  margin-top: 10rpx;
+  color: var(--gold-ink);
+  font-size: 20rpx;
+}

@@ -3,15 +3,11 @@ var cloudBase = require('../../utils/cloudBase');
 var dreamMemory = require('../../utils/dreamMemory');
 var tabNav = require('../../utils/tabNav');
 var stagePortrait = require('../../utils/stagePortrait');
-var lifeNotes = require('../../utils/lifeNotes');
 
 function emptyProfile() {
   return { nickname: '', birthDate: '', birthTime: '', birthPlace: '', gender: '' };
 }
 
-// 「关于你的记录」在这一页只是一个入口：几条、在用几条、大致关于什么。原话、
-// 来源梦和标为重要/编辑/删除全部在二级页。分组和标签的算法两页共用一份
-// （utils/lifeNotes），各写一份会立刻分叉——同一批记录在两页显示出不同的条数。
 function genderIndexFor(value) {
   var normalized = String(value || '').trim().toLowerCase();
   return normalized === 'male' ? 1 : normalized === 'female' ? 2 : 0;
@@ -42,6 +38,7 @@ Page({
     genderOptions: ['不填写', '男', '女'],
     genderIndex: 0,
     saving: false,
+    showProfileEdit: false,
     // `memoryLoaded` 决定入口显示「正在读取」还是「还在为你梳理」：它从 false
     // 开始，第一次渲染是读取态，而不是先闪一下「还没有画像」。
     memoryLoaded: false,
@@ -55,57 +52,66 @@ Page({
     revisitAnswerText: '',
     revisitSubmitting: false,
     revisitDisabled: false,
-    lifeNotes: [],
-    lifeNoteSummary: { total: 0, activeCount: 0, unknownUsage: false, labelLine: '' },
     memoryState: stagePortrait.emptyMemoryState(),
-    // 画像在这一页是只读入口，编辑/重新梳理/溯源都在「梦册」顶部。这些键仍然
-    // 存在是因为共享控制器（utils/stagePortrait）向它们写状态。
+    // 这一页只渲染画像正文本身。溯源 / 历史版本 / 修正入口连同它们的数据
+    // 都在 pages/portrait-detail，所以这里不再持有 portraitSources /
+    // portraitHistory / lifeNotes。insights 不渲染但要留着：控制器自动生成
+    // 画像时会读 insights.dreamCount 上报（见 stagePortrait.ensureGenerated），
+    // 拿不到就会把梦数记成 0。
+    // portraitDeckLevel 决定正文背后垫几层纸（版本越多越厚）。
     portraitVersionLabel: '',
+    portraitVersionText: '',
+    portraitVersion: 0,
+    portraitDeckLevel: 0,
     portraitStatusLabel: '',
+    portraitUpdatedLabel: '',
     portraitHasUpdate: false,
     portraitPaused: false,
-    portraitSources: [],
-    portraitHistory: [],
     insights: dreamMemory.buildInsights([])
   },
 
   onLoad: function () {
     var app = getApp();
     var saved = wx.getStorageSync('oneiro:lastProfile') || app.globalData.lastProfile || emptyProfile();
-    var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
-    var insights = dreamMemory.buildInsights(archive);
     this.portrait = stagePortrait.createController(this, { cloudBase: cloudBase });
     this.skipNextProfileShowRefresh = true;
     this.setData({
       profile: Object.assign(emptyProfile(), saved),
       genderIndex: genderIndexFor(saved.gender),
-      insights: insights,
-      lifeNotes: dreamMemory.autoExtractedRealLifeContext(archive).map(function (text, index) {
-        return { id: '', localKey: 'local-' + index, text: text, localOnly: true, source: '' };
-      })
+      insights: dreamMemory.buildInsights(wx.getStorageSync('oneiro:dreamArchive') || [])
     });
-    this.renderLifeNotes();
     this.portrait.hydrateFromCache();
     analytics.trackEvent('profile_view', { hasBirthDate: !!saved.birthDate });
     this.loadProfileMemory();
-    this.loadLifeNotes();
   },
 
+  // 从画像详情页返回时那边可能刚「重新梳理」过，回来要对齐版本。
   onShow: function () {
     this.loadRevisit();
     if (this.skipNextProfileShowRefresh) {
       this.skipNextProfileShowRefresh = false;
       return;
     }
-    this.loadLifeNotes();
     this.loadProfileMemory();
   },
 
-  // 入口点进去就是梦册顶部的完整面板。
-  openPortrait: function () {
+  // 溯源 / 历史版本 / 修正入口 / 两块养料全部在这个二级页，本页只留画像
+  // 正文本身。两页共用 utils/stagePortrait 的同一份状态。
+  openPortraitDetail: function () {
     analytics.trackEvent('portrait_entry_open', { from: 'profile' });
-    tabNav.switchTab('pages/archive/index');
+    wx.navigateTo({ url: '/pages/portrait-detail/index' });
   },
+
+  toggleProfileEdit: function () {
+    this.setData({ showProfileEdit: !this.data.showProfileEdit });
+  },
+
+  // ── 阶段画像：编辑/重新梳理/溯源，原来在「梦册」顶部 ──
+  retryPortrait: function () { this.portrait.retry(); },
+
+
+
+
 
   loadRevisit: function () {
     var that = this;
@@ -145,7 +151,8 @@ Page({
         return;
       }
       that.setData({ revisit: null, revisitAnswering: false, revisitAnswerText: '' });
-      that.loadLifeNotes();
+      // 这条回答会进 life_notes，但生活记录的读取现在归画像详情页——它下次
+      // 进入时自己拉。这里只要把画像本身重新梳理一遍。
       that.refreshPortraitInBackground('回访回答后重新理解你', 'revisit:' + String(revisit.localId));
       wx.showToast({ title: '谢谢你的分享，我会记得这一点', icon: 'none' });
     });
@@ -175,32 +182,8 @@ Page({
     wx.showToast({ title: '已恢复回访提醒', icon: 'none' });
   },
 
-  loadLifeNotes: function () {
-    var that = this;
-    cloudBase.getLifeNotes(function (result) {
-      if (!result || !result.ok || !Array.isArray(result.notes)) return;
-      var notes = result.notes.map(function (note) {
-        return Object.assign({}, note, { localKey: note.id || String(note.createdAt || '') });
-      });
-      that.setData({ lifeNotes: notes });
-      that.renderLifeNotes();
-    });
-  },
 
-  renderLifeNotes: function () {
-    var summary = lifeNotes.buildSummary(
-      this.data.lifeNotes,
-      wx.getStorageSync('oneiro:dreamArchive') || []
-    );
-    this.setData({
-      lifeNoteSummary: Object.assign({}, summary, { labelLine: summary.labels.join(' · ') })
-    });
-  },
 
-  openLifeNotes: function () {
-    analytics.trackEvent('life_notes_open', { total: this.data.lifeNoteSummary.total });
-    wx.navigateTo({ url: '/pages/life-notes/index' });
-  },
 
   refreshPortraitInBackground: function (reason, refreshKey) {
     var that = this;
@@ -310,8 +293,5 @@ Page({
   },
 
 
-  newDream: function () {
-    tabNav.switchTab('pages/home/index');
-  }
 
 });
