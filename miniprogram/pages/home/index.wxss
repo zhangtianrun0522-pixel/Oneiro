@@ -182,27 +182,34 @@
      → 跟到底时仍留 24px，两者不会读成相接的一个整体。 */
   margin: 128rpx auto 0;
   padding: 0;
-  border: 1rpx dashed rgba(33, 29, 23, 0.28);
+  /* 默认不画框。录音中这块只是手势提示，和圆环上方的「松开取消」是同一类
+     东西——那一条从来就只是一行变色的字，这一条也该是。描边留给
+     .is-actionable：那是真的可以点的按钮，框是它的可点性说明。 */
+  border: 0;
   border-radius: 2rpx;
   background: transparent;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+  transition: opacity 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
 .confirm-target::after { border: 0; }
 
-/* 录音中：低调显形，让「往哪滑」在动手之前就是已知的。 */
-.confirm-target.is-target { opacity: 0.62; }
+/* 录音中：显形，让「往哪滑」在动手之前就是已知的。
+   强弱一律交给文字颜色，不再压 opacity——半透明会把本来就只有 3:1 的小字
+   继续往下拉（0.5 的字再乘 0.62，实际不到 0.31），提示反而看不清。 */
+.confirm-target.is-target,
 .confirm-target.is-near,
 .confirm-target.is-armed { opacity: 1; }
 
-/* 有草稿、未录音：页面此刻唯一的主动作。实线描边 + 墨字，与圆环同族的
-   细线语言；分量靠「唯一实线」和文字自身，不靠填充色。 */
+/* 有草稿、未录音：页面此刻唯一的主动作，也是全页唯一画框的状态。
+   当初做成实体按钮是为了解决「不知道要按着圆圈下滑」——一个只能靠手势触发
+   的主流程，对第一次用的人等于没有入口。框是它「可以点」的说明，不能省。
+   实线描边 + 墨字，与圆环同族的细线语言；分量靠「唯一实线」和文字自身，
+   不靠填充色。 */
 .confirm-target.is-actionable {
   opacity: 1;
   pointer-events: auto;
-  border-style: solid;
-  border-color: var(--ink);
+  border: 1rpx solid var(--ink);
 }
 .confirm-target.is-actionable .confirm-target-label {
   color: var(--ink);
@@ -224,30 +231,25 @@
   color: inherit;
 }
 
+/* rgba(33,29,23,0.5) 在纸色上约 3.0:1，而这是 22rpx(11px) 的小字，要求
+   4.5:1。改用 --ink-70（约 6.1:1）。 */
 .confirm-target-label {
-  color: rgba(33, 29, 23, 0.5);
+  color: var(--ink-70);
   font-size: var(--fs-label);
   font-weight: 700;
   letter-spacing: 2rpx;
   line-height: 1.2;
+  transition: color 0.18s ease;
 }
 
-/* 靠近但未过阈值：描边转旧金，提示「已经在感应范围内」 */
-.confirm-target.is-near {
-  border-color: var(--gold-line);
-}
+/* 靠近但未过阈值：转旧金，提示「已经在感应范围内」。 */
 .confirm-target.is-near .confirm-target-label {
   color: var(--gold-ink);
 }
 
-/* 越过阈值：实线深墨描边 + 轻微放大，读作「已就绪，松手即提交」。
-   这里刻意不填实心——录音中的圆环本身就是深墨填充，两个同色实心块靠近时
-   会读成一个整体形状。 */
-.confirm-target.is-armed {
-  border-style: solid;
-  border-color: var(--ink);
-  transform: scale(1.04);
-}
+/* 越过阈值：转深墨，读作「已就绪，松手即提交」。
+   和上方的「松开取消」对称——那一条是朱砂，这一条是深墨，都只是一行变色的
+   字。这里不再放大：一个没有边框的纯文字块做 scale 会读成抖动，不是强调。 */
 .confirm-target.is-armed .confirm-target-label {
   color: var(--ink);
 }
