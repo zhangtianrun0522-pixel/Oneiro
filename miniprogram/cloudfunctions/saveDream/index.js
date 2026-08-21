@@ -1,5 +1,6 @@
 const cloud = require('wx-server-sdk');
 const crypto = require('crypto');
+const contentSecurity = require('./contentSecurity');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
@@ -1302,6 +1303,17 @@ exports.main = async function (event) {
       return { ok: false, reason: 'invalid_note' };
     }
 
+    var noteSecurity = await contentSecurity.checkText(cloud, {
+      content: noteText,
+      openid: wxContext.OPENID,
+      scene: contentSecurity.SCENE.PROFILE,
+      strict: false,
+      budgetMs: 4000
+    });
+    if (!noteSecurity.pass) {
+      return { ok: false, blocked: true, reason: 'content_security_' + noteSecurity.reason };
+    }
+
     var noteSource = String((event && event.source) || '').trim();
     var noteGist = String((event && event.gist) || '').trim().slice(0, 14);
     var noteDurable = event && event.durable === true;
@@ -1343,6 +1355,16 @@ exports.main = async function (event) {
     var editNoteText = String((event && event.text) || '').trim().slice(0, 300);
     if (!editNoteId || !editNoteText) {
       return { ok: false, reason: 'invalid_note' };
+    }
+    var editNoteSecurity = await contentSecurity.checkText(cloud, {
+      content: editNoteText,
+      openid: wxContext.OPENID,
+      scene: contentSecurity.SCENE.PROFILE,
+      strict: false,
+      budgetMs: 4000
+    });
+    if (!editNoteSecurity.pass) {
+      return { ok: false, blocked: true, reason: 'content_security_' + editNoteSecurity.reason };
     }
     var ownedNote = await db.collection('life_notes')
       .where({ openid: wxContext.OPENID, _id: editNoteId })
@@ -1509,6 +1531,25 @@ exports.main = async function (event) {
     .limit(1)
     .get();
 
+  // dream-chat 每发一条消息就会用 safeDream() 重写整个文档，梦境正文却一个字没变。
+  // 每次都送检既烧内容安全接口的配额，也白白给这条链路加一次网络往返。只在正文
+  // 第一次落库、或者被改写过（refineDream）的时候检。
+  const storedDream = query.data && query.data[0];
+  const dreamTextChanged = !storedDream || String(storedDream.dreamText || '') !== String(dream.dreamText || '');
+
+  if (dreamTextChanged) {
+    const dreamSecurity = await contentSecurity.checkText(cloud, {
+      content: dream.dreamText,
+      openid: wxContext.OPENID,
+      scene: contentSecurity.SCENE.SOCIAL_LOG,
+      strict: false,
+      budgetMs: 5000
+    });
+    if (!dreamSecurity.pass) {
+      return { ok: false, blocked: true, reason: 'content_security_' + dreamSecurity.reason };
+    }
+  }
+
   dream.openid = wxContext.OPENID;
-  return writeDreamUnlessDeleted(wxContext.OPENID, dream, query.data && query.data[0]);
+  return writeDreamUnlessDeleted(wxContext.OPENID, dream, storedDream);
 };

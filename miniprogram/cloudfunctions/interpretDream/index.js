@@ -2,6 +2,7 @@ const cloud = require('wx-server-sdk');
 const http = require('http');
 const https = require('https');
 const locationResolver = require('./locationResolver');
+const contentSecurity = require('./contentSecurity');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
@@ -299,6 +300,25 @@ function validateDreamText(value) {
   }
 
   return { safe: true, reason: '', message: '' };
+}
+
+// 解读结构会长字段、改字段，按名字列一遍迟早漏掉新加的那个。递归收所有字符串，
+// 漏检的代价（违规内容展示给用户）比多检几段的代价大得多。
+function collectStrings(value, bucket, depth) {
+  if (!bucket || depth > 6) return bucket || [];
+  if (typeof value === 'string') {
+    if (value.trim()) bucket.push(value);
+    return bucket;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) collectStrings(value[i], bucket, depth + 1);
+    return bucket;
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value);
+    for (let i = 0; i < keys.length; i += 1) collectStrings(value[keys[i]], bucket, depth + 1);
+  }
+  return bucket;
 }
 
 function asString(value, fallback, maxLength) {
@@ -2454,6 +2474,24 @@ async function runPortraitChat(event, openid) {
       return { ok: false, blocked: true, reason: highRiskPatterns[i].reason, message: highRiskPatterns[i].message };
     }
   }
+
+  const portraitChatSecurity = await contentSecurity.checkText(cloud, {
+    content: userMessage,
+    openid: openid,
+    scene: contentSecurity.SCENE.COMMENT,
+    strict: false,
+    budgetMs: 4000
+  });
+
+  if (!portraitChatSecurity.pass) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: 'content_security_' + portraitChatSecurity.reason,
+      message: '这句话没办法继续，换个说法再试试。'
+    };
+  }
+
   if (config.provider === 'static' || config.unsupported || !config.apiKey) {
     return {
       ok: false,
@@ -2550,6 +2588,23 @@ async function runDreamChat(event, openid) {
     if (highRiskPatterns[i].pattern.test(userMessage)) {
       return { ok: false, blocked: true, reason: highRiskPatterns[i].reason, message: highRiskPatterns[i].message };
     }
+  }
+
+  const chatSecurity = await contentSecurity.checkText(cloud, {
+    content: userMessage,
+    openid: openid,
+    scene: contentSecurity.SCENE.COMMENT,
+    strict: false,
+    budgetMs: 4000
+  });
+
+  if (!chatSecurity.pass) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: 'content_security_' + chatSecurity.reason,
+      message: '这句话没办法继续，换个说法再试试。'
+    };
   }
 
   if (config.provider === 'static' || config.unsupported || !config.apiKey) {
@@ -2857,6 +2912,26 @@ exports.main = async function (event) {
     };
   }
 
+  // 关键词表只挡得住它认得的词。微信内容安全接口是审核的硬要求，也是唯一能对
+  // 真实违规负责的一层。放在配额之前：违规内容不该先扣掉用户一次解读额度。
+  const inputSecurity = await contentSecurity.checkText(cloud, {
+    content: dreamText,
+    openid: wxContext && wxContext.OPENID ? wxContext.OPENID : '',
+    scene: contentSecurity.SCENE.SOCIAL_LOG,
+    strict: false,
+    budgetMs: 6000
+  });
+
+  if (!inputSecurity.pass) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: 'content_security_' + inputSecurity.reason,
+      securityLabel: inputSecurity.label,
+      message: '这段内容没办法解读，换个说法再试试。'
+    };
+  }
+
   const quota = await readInterpretationQuota(wxContext && wxContext.OPENID ? wxContext.OPENID : '');
   if (quota.limited) {
     return {
@@ -2881,6 +2956,28 @@ exports.main = async function (event) {
 
   try {
     const interpreted = await interpretWithAi(profileContext, dreamText, cardIndex, memory, baziChart, lifeNote);
+
+    // AI 写出来的东西同样要过检——生成式内容出了问题，责任在小程序这边，不在供应商。
+    // 预算给得紧：供应商请求已经吃掉 45-50 秒，平台只给这个函数 60 秒。
+    const outputSecurity = await contentSecurity.checkTexts(cloud, {
+      contents: collectStrings(interpreted.result, [], 0),
+      openid: wxContext && wxContext.OPENID ? wxContext.OPENID : '',
+      scene: contentSecurity.SCENE.SOCIAL_LOG,
+      strict: false,
+      budgetMs: 5000
+    });
+
+    if (!outputSecurity.pass) {
+      return {
+        ok: false,
+        blocked: true,
+        reason: 'output_security_' + outputSecurity.reason,
+        retryable: true,
+        promptVersion: PROMPT_VERSION,
+        schemaVersion: SCHEMA_VERSION,
+        message: '这次的解读没能通过检查，再试一次吧。'
+      };
+    }
 
     return {
       ok: true,

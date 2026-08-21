@@ -1,5 +1,6 @@
 const cloud = require('wx-server-sdk');
 const crypto = require('crypto');
+const contentSecurity = require('./contentSecurity');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
@@ -69,6 +70,29 @@ exports.main = async function (event) {
     return { ok: false, reason: 'dream_not_found' };
   }
   const payload = publicDreamPayload(dream);
+
+  // 这里是唯一会把内容送出这个用户之外的地方，所以是全项目唯一 strict 的一处：
+  // 检测接口挂了就不发卡。私密梦境放行的那套理由（不能因为接口抖动让产品瘫痪）
+  // 在这里不成立——分享出去就撤不回来了。
+  const shareSecurity = await contentSecurity.checkTexts(cloud, {
+    contents: [payload.title, payload.emotionalWeather, payload.cardInsight].concat(payload.symbols || []),
+    openid: wxContext.OPENID,
+    scene: contentSecurity.SCENE.FORUM,
+    strict: true,
+    budgetMs: 8000
+  });
+
+  if (!shareSecurity.pass) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: 'content_security_' + shareSecurity.reason,
+      message: shareSecurity.degraded
+        ? '分享暂时不可用，稍后再试。'
+        : '这张卡没办法分享出去。'
+    };
+  }
+
   const slug = 'card-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
   const shareData = {
     openid: wxContext.OPENID,

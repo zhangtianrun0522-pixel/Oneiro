@@ -128,6 +128,10 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false, d
         return nodeRequire(path.join(root, 'miniprogram/cloudfunctions/interpretDream/locationResolver.js'));
       }
 
+      if (request === './contentSecurity') {
+        return nodeRequire(path.join(root, 'miniprogram/cloudfunctions/interpretDream/contentSecurity.js'));
+      }
+
       if (request === 'lunar-javascript') {
         return {
           Solar: {

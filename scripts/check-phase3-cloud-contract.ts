@@ -277,11 +277,25 @@ const database = fakeDatabase({
 let currentOpenId = 'user-a';
 const deletedFiles: string[] = [];
 let failFileDelete = false;
+// 内容安全的桩。默认全放行，测拦截时把 secCheckVerdict 换成 'risky'，测接口挂掉时
+// 换成 'error'——分享那条链路是 strict 的，接口挂掉和内容违规都必须挡住。
+let secCheckVerdict: 'pass' | 'risky' | 'review' | 'error' = 'pass';
+const secCheckedContents: string[] = [];
 const cloud = {
   DYNAMIC_CURRENT_ENV: 'test',
   init() {},
   database: () => database,
   getWXContext: () => ({ OPENID: currentOpenId }),
+  openapi: {
+    security: {
+      async msgSecCheck({ content, version }: { content: string; version: number }) {
+        assert.equal(version, 2, 'msgSecCheck 必须走 v2，否则返回体里没有 result.suggest');
+        secCheckedContents.push(content);
+        if (secCheckVerdict === 'error') throw new Error('openapi unavailable');
+        return { errCode: 0, result: { suggest: secCheckVerdict, label: secCheckVerdict === 'risky' ? 20001 : 100 } };
+      },
+    },
+  },
   async deleteFile({ fileList }: { fileList: string[] }) {
     if (failFileDelete) throw new Error('storage unavailable');
     deletedFiles.push(...fileList);
@@ -1121,6 +1135,60 @@ const forgedShare = await createShareMain({ dream: { id: 'private-other' }, imag
 assert.equal(forgedShare.reason, 'dream_not_found');
 const deletedDreamShare = await createShareMain({ dream: { id: 'dream-1' } });
 assert.equal(deletedDreamShare.reason, 'dream_not_found');
+
+// ── 内容安全（微信审核硬要求） ────────────────────────────────────────
+// 分享是唯一把内容送出这个用户之外的链路，所以它是 strict 的：内容违规要挡，
+// 检测接口自己挂了也要挡。私密链路（记梦/解读/对话/生活线索）反过来——违规挡，
+// 接口挂了放行，不能让一个第三方接口的抖动把整个产品停掉。
+const shareCountBefore = database.rows.share_pages.length;
+
+secCheckVerdict = 'risky';
+const riskyShare = await createShareMain({ dream: { id: 'dream-2', result: { title: '违规标题', card_no: 'NO. 002' } } });
+assert.equal(riskyShare.ok, false);
+assert.equal(riskyShare.blocked, true);
+assert.equal(riskyShare.reason, 'content_security_risky');
+assert.equal(database.rows.share_pages.length, shareCountBefore, '被挡下的分享不该留下 share_pages 记录');
+
+secCheckVerdict = 'error';
+const degradedShare = await createShareMain({ dream: { id: 'dream-2', result: { title: '正常标题', card_no: 'NO. 002' } } });
+assert.equal(degradedShare.ok, false, '内容安全接口挂掉时，对外分享必须 fail-closed');
+assert.equal(degradedShare.reason, 'content_security_api_error');
+assert.equal(database.rows.share_pages.length, shareCountBefore);
+
+secCheckVerdict = 'risky';
+const riskyDream = await saveDreamMain({ dream: {
+  id: 'dream-risky', dreamText: '一段违规的梦境正文', status: 'ready', result: { title: '不应落库' }, createdAt: now,
+} });
+assert.equal(riskyDream.ok, false);
+assert.equal(riskyDream.reason, 'content_security_risky');
+assert.equal(database.rows.dream_entries.some((item: Row) => item.localId === 'dream-risky'), false);
+
+const riskyNote = await saveDreamMain({ action: 'addLifeNote', dreamId: 'dream-2', text: '一段违规的现实片段' });
+assert.equal(riskyNote.ok, false);
+assert.equal(riskyNote.reason, 'content_security_risky');
+assert.equal(database.rows.life_notes.some((item: Row) => item.text === '一段违规的现实片段'), false);
+
+secCheckVerdict = 'error';
+const degradedDream = await saveDreamMain({ dream: {
+  id: 'dream-degraded', dreamText: '接口挂掉时的正常梦境', status: 'ready', result: { title: '照常落库' }, createdAt: now,
+} });
+assert.equal(degradedDream.ok, true, '私密链路在内容安全接口不可用时必须 fail-open');
+assert.equal(database.rows.dream_entries.some((item: Row) => item.localId === 'dream-degraded'), true);
+
+// 正文没变的重复 upsert 不该再送检一次——dream-chat 每发一条消息都会重写整个文档。
+secCheckVerdict = 'pass';
+await saveDreamMain({ dream: {
+  id: 'dream-nochange', dreamText: '只检一次的梦境正文', status: 'ready', result: { title: '第一次' }, createdAt: now,
+} });
+const checksAfterFirstWrite = secCheckedContents.length;
+await saveDreamMain({ dream: {
+  id: 'dream-nochange', dreamText: '只检一次的梦境正文', status: 'ready', result: { title: '第二次' }, createdAt: now,
+} });
+assert.equal(secCheckedContents.length, checksAfterFirstWrite, '正文未变时不应重复调用内容安全接口');
+await saveDreamMain({ dream: {
+  id: 'dream-nochange', dreamText: '被改写过的梦境正文', status: 'ready', result: { title: '第三次' }, createdAt: now,
+} });
+assert.equal(secCheckedContents.length, checksAfterFirstWrite + 1, '正文改写后必须重新送检');
 
 database.rows.dream_entries.push({ _id: 'dream-retry-cloud', openid: 'user-a', localId: 'dream-retry', dreamText: '等待删除', status: 'ready', result: { title: '等待' }, createdAt: now });
 database.rows.generated_assets.push({ _id: 'asset-retry', openid: 'user-a', sourceDreamId: 'dream-retry', file_id: 'cloud://retry.png' });
