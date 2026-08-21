@@ -54,6 +54,9 @@ function queryResult(collection, query) {
         if (expected && expected.__op === 'lt') {
           return new Date(actual || 0).getTime() < new Date(expected.value || 0).getTime();
         }
+        if (expected && expected.__op === 'gte') {
+          return new Date(actual || 0).getTime() >= new Date(expected.value || 0).getTime();
+        }
         return actual === expected;
       });
     });
@@ -67,7 +70,10 @@ function collection(name, transaction) {
       return {
         limit: function () { return this; },
         orderBy: function () { return this; },
-        get: async function () { return { data: queryResult(name, query) }; }
+        get: async function () { return { data: queryResult(name, query) }; },
+        // 每日生图配额是靠 count() 读的。这个 mock 不实现它的话，readImageQuota
+        // 会走进它自己的「计数失败就放行」兜底，配额在测试里等于永远不生效。
+        count: async function () { return { total: queryResult(name, query).length }; }
       };
     },
     doc: function (id) {
@@ -108,7 +114,8 @@ const cloud = {
       collection: function (name) { return collection(name, false); },
       command: {
         in: function (value) { return { __op: 'in', value: value }; },
-        lt: function (value) { return { __op: 'lt', value: value }; }
+        lt: function (value) { return { __op: 'lt', value: value }; },
+        gte: function (value) { return { __op: 'gte', value: value }; }
       },
       serverDate: function () { return new Date(); },
       runTransaction: async function (work) {
@@ -828,6 +835,34 @@ async function run() {
   });
   assert.equal(permanentRetry.ok, false);
   assert.equal(state.providerCalls, callsBeforePermanent, '余额不足这类失败不得自动重试');
+
+  // ── 每日生图配额 ──────────────────────────────────────────────────
+  // 生图是这个产品里最贵的一次调用，公测面对的是陌生人。没有配额的话，任何人
+  // 存一批梦就能敞开烧供应商额度。
+  const today = new Date();
+  state.jobs = {};
+  for (let i = 0; i < 6; i += 1) {
+    state.jobs['quota-job-' + i] = {
+      kind: 'seedream_primary', openid: state.openid, sourceDreamId: 'dream-old-' + i,
+      status: 'succeeded', created_at: today
+    };
+  }
+  const callsBeforeQuota = state.providerCalls;
+  const overQuota = await imageFunction.main({
+    action: 'startPrimaryImage', prompt: 'over quota', dreamId: 'dream-1', visualPlan: visualPlan, forceRefresh: true
+  });
+  assert.equal(overQuota.ok, false);
+  assert.equal(overQuota.reason, 'daily_image_quota_exceeded');
+  assert.equal(overQuota.retryable, false, '明天才会变，客户端不该显示「重试就能好」');
+  assert.equal(state.providerCalls, callsBeforeQuota, '超额时一次供应商调用都不许发出去');
+
+  // 昨天的任务不占今天的额度——北京时间的一天，不是 UTC 的一天。
+  const yesterday = new Date(today.getTime() - 30 * 3600 * 1000);
+  Object.keys(state.jobs).forEach(function (id) { state.jobs[id].created_at = yesterday; });
+  const freshDay = await imageFunction.main({
+    action: 'startPrimaryImage', prompt: 'new day', dreamId: 'dream-1', visualPlan: visualPlan, forceRefresh: true
+  });
+  assert.notEqual(freshDay.reason, 'daily_image_quota_exceeded', '昨天的任务不该吃掉今天的额度');
 
   console.log('generateDreamImage visual-plan, authorization, sweep and deletion-race regressions passed');
 }

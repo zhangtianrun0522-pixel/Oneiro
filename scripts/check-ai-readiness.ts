@@ -117,6 +117,8 @@ function loadInterpretDream(env: Record<string, string>, exposeParser = false, d
           DYNAMIC_CURRENT_ENV: 'mock-current-env',
           init() {},
           database: database ? () => database : undefined,
+          // 冒烟测试现在要过 ADMIN_OPENIDS，调用方靠 __TEST_OPENID__ 指定自己是谁。
+          getWXContext: () => ({ OPENID: env.__TEST_OPENID__ || '' }),
         };
       }
 
@@ -411,16 +413,35 @@ const cappedHealth = await loadInterpretDream({
 }).main({ healthCheck: true });
 assert.equal(cappedHealth.requestTimeoutMs, 50000);
 
-const staticSmokeTest = await loadInterpretDream({}).main({ smokeTest: true });
+// 冒烟测试打真供应商、花真钱，而且在 exports.main 里早于每日配额返回——是一条
+// 不计量的通道。公测面对的是陌生人，「没人知道这个入口」不能当权限用。
+const unauthorizedSmokeTest = await loadInterpretDream({
+  INTERPRET_PROVIDER: 'deepseek',
+  DEEPSEEK_API_KEY: 'test-key-not-real',
+  ADMIN_OPENIDS: 'admin-openid',
+  __TEST_OPENID__: 'some-stranger',
+}).main({ smokeTest: true });
+assert.equal(unauthorizedSmokeTest.ok, false);
+assert.equal(unauthorizedSmokeTest.reason, 'not_admin');
+
+// ADMIN_OPENIDS 没配置时默认关闭，而不是默认开放。
+const unconfiguredSmokeTest = await loadInterpretDream({
+  __TEST_OPENID__: 'anyone',
+}).main({ smokeTest: true });
+assert.equal(unconfiguredSmokeTest.reason, 'not_admin');
+
+const adminEnv = { ADMIN_OPENIDS: 'admin-openid', __TEST_OPENID__: 'admin-openid' };
+
+const staticSmokeTest = await loadInterpretDream(Object.assign({}, adminEnv)).main({ smokeTest: true });
 assert.equal(staticSmokeTest.ok, false);
 assert.equal(staticSmokeTest.type, 'interpretDream.aiSmokeTest');
 assert.equal(staticSmokeTest.provider, 'cloudbase-static');
 assert.equal(staticSmokeTest.providerConfigured, false);
 assert.equal(staticSmokeTest.reason, 'static_provider');
 
-const missingKeySmokeTest = await loadInterpretDream({
+const missingKeySmokeTest = await loadInterpretDream(Object.assign({
   INTERPRET_PROVIDER: 'deepseek',
-}).main({ smokeTest: true });
+}, adminEnv)).main({ smokeTest: true });
 assert.equal(missingKeySmokeTest.ok, false);
 assert.equal(missingKeySmokeTest.provider, 'deepseek');
 assert.equal(missingKeySmokeTest.providerConfigured, false);

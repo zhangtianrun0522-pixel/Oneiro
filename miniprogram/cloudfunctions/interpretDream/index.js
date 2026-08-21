@@ -2784,6 +2784,18 @@ async function runDreamRefinement(event) {
   }
 }
 
+// 冒烟测试打的是真供应商，花的是真钱，而且它在 exports.main 里早于每日配额返回
+// ——等于一条不计量的通道。内测期没人知道这个入口，公测放量之后「没人知道」不
+// 是一种权限控制。和 saveDream 的观察面板共用同一份 ADMIN_OPENIDS：没配置这个
+// 变量时谁都调不动，默认关闭而不是默认开放。
+function isConfiguredAdmin(openid) {
+  const admins = String(process.env.ADMIN_OPENIDS || '').split(',').map(function (item) {
+    return item.trim();
+  }).filter(Boolean);
+  const current = String(openid || '').trim();
+  return !!current && admins.indexOf(current) >= 0;
+}
+
 async function runAiSmokeTest(event) {
   const config = providerConfig();
   const dreamText = String((event && event.dreamText) || '我梦见在月光下的图书馆找到一把银色钥匙').trim();
@@ -2882,6 +2894,9 @@ exports.main = async function (event) {
   }
 
   if (event && event.smokeTest) {
+    if (!isConfiguredAdmin(wxContext && wxContext.OPENID)) {
+      return { ok: false, type: 'interpretDream.aiSmokeTest', reason: 'not_admin' };
+    }
     return runAiSmokeTest(event);
   }
 

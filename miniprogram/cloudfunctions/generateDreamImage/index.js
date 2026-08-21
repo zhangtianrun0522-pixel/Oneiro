@@ -1296,6 +1296,41 @@ async function writePrimaryJob(db, jobId, data, predicate) {
   return written;
 }
 
+// 生图是这个产品里最贵的一次调用（Seedream 1728x2304），此前完全没有配额。
+// 默认 6 次：一天 3 个梦、每个梦留一次重绘的余量。
+const DAILY_IMAGE_LIMIT = Math.max(1, Number(process.env.IMAGE_DAILY_LIMIT || 6));
+
+// 云函数按 UTC 运行，用户过的是北京时间的一天。不做这个偏移，凌晨提交的生图
+// 会被算进前一天的额度里，而那正是最容易记梦的时间段。
+function startOfDayInChina(now) {
+  const shifted = new Date(now.getTime() + 8 * 3600 * 1000);
+  shifted.setUTCHours(0, 0, 0, 0);
+  return new Date(shifted.getTime() - 8 * 3600 * 1000);
+}
+
+async function readImageQuota(db, openid) {
+  const limit = DAILY_IMAGE_LIMIT;
+  // 认不出来的人一律放行。把他挡在门外的代价是他的梦永远没有画面，比多花几次
+  // 调用严重得多——和 interpretDream 的每日解读配额同一个取舍。
+  if (!db || !openid) return { limited: false, used: 0, limit: limit };
+
+  try {
+    // 数任务条数而不是数产出的图片：每条任务文档对应一次真实的供应商提交，
+    // 缓存命中在建任务之前就返回了、不会计数；反过来按图片数算会漏掉失败的
+    // 提交，而那些钱已经花出去了。
+    const counted = await db.collection('image_generation_jobs').where({
+      openid: openid,
+      kind: 'seedream_primary',
+      created_at: db.command.gte(startOfDayInChina(new Date()))
+    }).count();
+    const used = counted && Number.isFinite(Number(counted.total)) ? Number(counted.total) : 0;
+    return { limited: used >= limit, used: used, limit: limit };
+  } catch (error) {
+    // 计数本身失败时同样放行，理由同上。
+    return { limited: false, used: 0, limit: limit };
+  }
+}
+
 async function preparePrimaryContext(event, openid) {
   const sourceDreamId = String((event && event.dreamId) || '').trim().slice(0, 100);
   if (!sourceDreamId) return { error: { ok: false, reason: 'missing_dream_id' } };
@@ -1373,6 +1408,21 @@ async function startPrimaryImage(event, openid) {
   const db = cloud.database();
   const cached = event && event.forceRefresh === true ? null : await cachedImage(context.key, openid, sourceDreamId);
   if (cached) return Object.assign({ ok: true, status: 'succeeded', jobId: jobId, provider: config.provider, model: config.model, cacheHit: true }, cached);
+
+  // 放在缓存判断之后：命中缓存不花钱，不该被配额挡住。
+  const quota = await readImageQuota(db, openid);
+  if (quota.limited) {
+    return {
+      ok: false,
+      reason: 'daily_image_quota_exceeded',
+      quotaExceeded: true,
+      // 明天才会变，重试不会有别的结果。
+      retryable: false,
+      dailyLimit: quota.limit,
+      dailyUsed: quota.used,
+      message: '今天的画面已经生成了 ' + quota.limit + ' 张。这个梦已经存下来了，明天可以接着给它画。'
+    };
+  }
 
   let claimed = false;
   let existing;
