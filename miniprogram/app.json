@@ -7,7 +7,6 @@
     "pages/profile/index",
     "pages/life-notes/index",
     "pages/share/index",
-    "pages/artifact/index",
     "pages/diagnostics/index"
   ],
   "window": {

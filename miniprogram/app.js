@@ -205,7 +205,6 @@ App({
     pendingTabParams: {},
     identity: null,
     currentDream: null,
-    currentArtifact: null,
     lastProfile: {
       nickname: '',
       birthDate: '',
