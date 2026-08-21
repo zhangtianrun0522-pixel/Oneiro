@@ -92,35 +92,108 @@ function monthKey(value) {
   return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
 }
 
-function buildMonthlyCard(records, recurringSymbols, recurringEmotions) {
-  var currentKey = monthKey(new Date());
-  var monthly = records.filter(function (record) {
-    return monthKey(record.createdAt) === currentKey;
-  });
+function monthLabel(key) {
+  var parts = String(key || '').split('-');
+  if (parts.length !== 2) return '';
+  return parts[0] + ' 年 ' + Number(parts[1]) + ' 月';
+}
+
+// 一个月一张观察卡。
+//
+// 以前这里只算当月一张，梦册顶部那张卡因此是死的——代码注释里明确写过，
+// 正因为「数据上只有当月这一张」，才刻意不做翻页圆点和滑动提示，免得做出
+// 划了没反应的欺骗性 UI。现在补上按月产出，滑动才有东西可滑。
+//
+// 三档文案，区别只在「这个月的证据够说到哪一步」，一律只陈述事实、不评价：
+//   pattern    有符号真的重复出现（≥2 次）→ 可以说「最醒目」
+//   scattered  有多个梦但符号各出现一次   → 把它们列出来，没有模式也是一种状态
+//   single     只有一个梦                → 就说这一个梦里有什么
+// 「最醒目」这句以前在 scattered 档也会出现：取的是 symbolCounts[0]，哪怕它
+// 只出现过一次。一个只出现一次的符号被说成「最醒目」，是在无中生有。
+function buildMonthCard(monthly, key) {
   var symbolCounts = countByRecord(monthly, function (record) {
     return record.result && record.result.symbols;
   });
   var emotionCounts = countByRecord(monthly, function (record) {
     return facts(record, 'emotions');
   });
-  var primarySymbol = symbolCounts[0] || recurringSymbols[0];
-  var primaryEmotion = emotionCounts[0] || recurringEmotions[0];
+  var primarySymbol = symbolCounts[0];
+  var primaryEmotion = emotionCounts[0];
+  var repeated = primarySymbol && primarySymbol.count >= 2;
+  var tier = monthly.length < 2 ? 'single' : (repeated ? 'pattern' : 'scattered');
+  var insight;
 
-  if (monthly.length < 2 || !primarySymbol) {
-    return { eligible: false, month: currentKey, dreamCount: monthly.length };
+  if (tier === 'pattern') {
+    insight = '这个月，“' + primarySymbol.value + '”在你的梦里最醒目' +
+      (primaryEmotion ? '，常与“' + primaryEmotion.value + '”同时出现。' : '。');
+  } else if (tier === 'scattered') {
+    var listed = symbolCounts.slice(0, 3).map(function (item) { return item.value; });
+    insight = listed.length
+      ? '这个月的 ' + monthly.length + ' 个梦各走各的：“' + listed.join('”“') + '”各出现一次。'
+      : '这个月你记下了 ' + monthly.length + ' 个梦。';
+  } else {
+    insight = primarySymbol
+      ? '这个月你记下 1 个梦，“' + primarySymbol.value + '”出现在里面。'
+      : '这个月你记下 1 个梦。';
   }
 
   return {
-    eligible: true,
-    month: currentKey,
+    // eligible 收紧成「符号真的重复过」，因为它正是「这句话敢不敢说最醒目」
+    // 的判据。scattered/single 两档照样出卡，只是换一种说法。
+    eligible: tier === 'pattern',
+    tier: tier,
+    month: key,
+    monthLabel: monthLabel(key),
     dreamCount: monthly.length,
-    title: primarySymbol.value + '月牌',
-    symbol: primarySymbol.value,
+    title: primarySymbol ? primarySymbol.value + '月牌' : monthLabel(key),
+    symbol: primarySymbol ? primarySymbol.value : '',
     emotion: primaryEmotion ? primaryEmotion.value : '仍在显影',
-    insight: '这个月，“' + primarySymbol.value + '”在你的梦里最醒目' +
-      (primaryEmotion ? '，常与“' + primaryEmotion.value + '”同时出现。' : '。'),
+    hasEmotion: !!primaryEmotion,
+    insight: insight,
     evidenceDreamIds: monthly.map(function (record) { return record.id; }).filter(Boolean).slice(0, 8)
   };
+}
+
+// 按月分组产出全部观察卡，按时间正序（最旧的在前）——和梦册的 monthGroups
+// 同序，两边靠下标一一对应。
+//
+// 正序而不是倒序，是为了让卡片的滑动方向和时间刻度轴一致：轴是左旧右新，
+// 卡片也必须左旧右新，否则往左滑卡片走向更旧、刻度却往右移，两个方向打架。
+function buildMonthlyCards(records) {
+  var byMonth = {};
+  var order = [];
+  records.forEach(function (record) {
+    var key = monthKey(record.createdAt);
+    if (!key) return;
+    if (!byMonth[key]) { byMonth[key] = []; order.push(key); }
+    byMonth[key].push(record);
+  });
+  return order.sort(function (left, right) { return left.localeCompare(right); })
+    .map(function (key) { return buildMonthCard(byMonth[key], key); });
+}
+
+// 当月那一张，单独留着：梦册顶部以外还有验收脚本按 monthlyCard 断言，
+// 而「这个月」和「最近有记录的那个月」并不总是同一个月。
+function buildMonthlyCard(records) {
+  var currentKey = monthKey(new Date());
+  var monthly = records.filter(function (record) {
+    return monthKey(record.createdAt) === currentKey;
+  });
+  if (!monthly.length) return { eligible: false, tier: 'empty', month: currentKey, monthLabel: monthLabel(currentKey), dreamCount: 0 };
+  return buildMonthCard(monthly, currentKey);
+}
+
+// 「重复线索」以前是一排孤立的标签+次数，现在并进本月观察卡片里当一句补充：
+// 本月观察讲的是「这个月最醒目的是什么」，这句讲的是「拉长时间看还有什么反复
+// 出现」，一近一远搭配着读，而不是两条互相不认识的信息堆在一起。跟本月主打
+// 意象重复的词从句子里去掉，避免同一个词被说两遍。
+function buildRecurringNote(recurringSymbols, monthlySymbol) {
+  var others = (recurringSymbols || []).filter(function (item) {
+    return item.label !== monthlySymbol;
+  });
+  if (!others.length) return '';
+  var labels = others.slice(0, 3).map(function (item) { return item.label; });
+  return '拉长时间看，反复出现的还有“' + labels.join('”“') + '”。';
 }
 
 function buildInsights(archive) {
@@ -137,6 +210,7 @@ function buildInsights(archive) {
   var recurringPlaces = topRepeated(places, 2, 3);
   var lead = recurringSymbols[0] || recurringEmotions[0] || recurringPlaces[0] || recurringPeople[0];
   var evidenceDreamIds = records.map(function (record) { return record.id; }).filter(Boolean).slice(0, 12);
+  var monthlyCard = buildMonthlyCard(records);
 
   return {
     dreamCount: records.length,
@@ -151,7 +225,9 @@ function buildInsights(archive) {
       : lead
         ? '最近的梦反复围绕“' + lead.label + '”展开，它已经出现过 ' + lead.count + ' 次。这是阶段线索，不是永久标签；你可以继续观察它下一次如何变化。'
         : '已经积累了 ' + records.length + ' 个梦，但还没有稳定重复的线索。没有模式，本身也是一种阶段状态。',
-    monthlyCard: buildMonthlyCard(records, symbols, emotions)
+    monthlyCard: monthlyCard,
+    monthlyCards: buildMonthlyCards(records),
+    recurringNote: buildRecurringNote(recurringSymbols, monthlyCard.symbol)
   };
 }
 

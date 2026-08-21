@@ -49,331 +49,32 @@
   line-height: 1.8;
 }
 
-/* ── 阶段画像 ──────────────────────────────────────────────
-   从「我」页搬来。它排在本月观察/重复线索/阶段原型之前，是这一段自我叙事的
-   统领：那三个讲的是「你的梦里有什么」，画像讲的是「你是怎样的人」。
-   版式刻意比下面的牌组克制——不上底卡、不做厚度，只用一条旧金细线起头，
-   免得两个视觉重量相当的块在同一屏里互相抢。 */
-.portrait-block {
-  margin-top: 40rpx;
-  padding-top: 28rpx;
-  border-top: 2rpx solid rgba(184, 134, 59, 0.4);
-}
-
-.portrait-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.portrait-kicker {
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 800;
-  letter-spacing: 2rpx;
-}
-
-/* 「用于解读中」= 强调态用 --gold-ink（4.85:1）；
-   「已暂停解读」= 非关键弱化态用 --ink-55；
-   「等待形成 / 正在梳理」= 中性默认态用 --ink-70（6.10:1） */
-.portrait-status {
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 700;
-}
-.portrait-status.is-paused { color: var(--ink-55); }
-.portrait-status.is-waiting { color: var(--ink-70); }
-
-/* 新版本提示。后台每记一个梦就刷新一次画像，此前从不告知任何人——这是这个
-   产品唯一一个「有新东西可看」的信号，值得一条能点的横幅，而不是一个角标。 */
-.portrait-update {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-  margin-top: var(--space-tight);
-  padding: 18rpx 22rpx;
-  background: rgba(184, 134, 59, 0.1);
-  border-left: 4rpx solid var(--gold-line);
-}
-
-.portrait-update-copy {
-  color: var(--ink);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  line-height: 1.5;
-}
-
-.portrait-update-link {
-  flex: 0 0 auto;
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 700;
-}
-
-.portrait-summary {
-  display: block;
-  margin-top: var(--space-tight);
-  font-family: var(--font-serif);
-  color: var(--ink);
-  font-size: var(--fs-aux);
-  line-height: 1.75;
-}
-
-.portrait-editor {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 180rpx;
-  margin-top: var(--space-tight);
-  padding: 18rpx;
-  border: 1rpx solid rgba(33, 29, 23, 0.2);
-  border-radius: 0;
-  background: #fdfaf2;
-  color: var(--ink);
-  font-size: var(--fs-aux);
-  line-height: 1.7;
-}
-
-/* 这一版为什么和上一版不同。字号压到最小、颜色最弱——它是脚注，不是正文。 */
-/* 溯源与历史两块共用一套折叠头样式：一行标签 + 右侧展开/收起。 */
-.portrait-sources,
-.portrait-history {
-  margin-top: 24rpx;
-  padding-top: 20rpx;
-  border-top: 1rpx solid rgba(33, 29, 23, 0.08);
-}
-
-.portrait-sources-toggle,
-.portrait-history-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 60rpx;
-}
-
-.portrait-sources-label,
-.portrait-history-label {
-  color: var(--ink);
-  font-size: var(--fs-label);
-  font-weight: 700;
-}
-
-.portrait-sources-icon,
-.portrait-history-icon {
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
-  font-weight: 700;
-}
-
-.portrait-source-list {
-  display: flex;
-  flex-direction: column;
-  margin-top: 8rpx;
-}
-
-.portrait-source-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-  min-height: var(--tap-min);
-  padding-left: 20rpx;
-  border-left: 3rpx solid rgba(184, 134, 59, 0.4);
-}
-
-.portrait-source-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 24rpx;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.portrait-source-meta {
-  flex: 0 0 auto;
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-}
-
-/* 源梦已被删除：仍然列出来（画像确实是从它长出来的），但不再假装可以点开。 */
-.portrait-source-item.is-gone .portrait-source-title { color: var(--ink-55); }
-
-.portrait-history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 24rpx;
-  margin-top: var(--space-tight);
-}
-
-.portrait-history-item {
-  padding: 20rpx 24rpx;
-  background: rgba(33, 29, 23, 0.03);
-  border-left: 4rpx solid rgba(184, 134, 59, 0.35);
-}
-
-.portrait-history-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.portrait-history-version {
-  color: var(--ink);
-  font-size: 24rpx;
-  font-weight: 700;
-}
-
-.portrait-history-date {
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-}
-
-.portrait-history-copy {
-  display: block;
-  margin-top: 12rpx;
-  color: var(--ink-70);
-  font-size: 24rpx;
-  line-height: 1.7;
-}
-
-/* ── 画像的加载 / 空 / 失败态 ── */
-.portrait-loading-card,
-.portrait-empty-card {
-  margin-top: var(--space-tight);
-}
-
-.portrait-loading-copy,
-.portrait-empty-copy {
-  display: block;
-  color: var(--ink-70);
-  font-size: var(--fs-aux);
-  line-height: 1.7;
-}
-
-.portrait-empty-copy { margin-top: var(--space-tight); }
-
-.portrait-empty-title {
-  display: block;
-  color: var(--ink);
-  font-size: var(--fs-aux);
-  font-weight: 600;
-}
-
-.portrait-loading-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-  margin-top: 20rpx;
-}
-
-.portrait-loading-bar {
-  height: 22rpx;
-  border-radius: 2rpx;
-  background: rgba(33, 29, 23, 0.08);
-  animation: portrait-loading-pulse 1.2s ease-in-out infinite;
-}
-
-.portrait-loading-bar.is-short { width: 60%; }
-
-@keyframes portrait-loading-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-.portrait-empty-retry {
-  display: inline-block;
-  min-height: var(--tap-min);
-  margin-top: var(--space-tight);
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  font-weight: 700;
-  line-height: var(--tap-min);
-  text-decoration: underline;
-  text-underline-offset: 6rpx;
-}
-
-/* ── 画像的动作 ── */
-.portrait-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-  margin-top: var(--space-tight);
-}
-
-.portrait-primary,
-.portrait-secondary {
-  width: auto !important;
-  min-height: var(--tap-min);
-  margin: 0 !important;
-  padding: 0 26rpx;
-  border-radius: 2rpx;
-  font-size: var(--fs-label);
-  font-weight: 700;
-  line-height: var(--tap-min);
-}
-
-.portrait-primary { border: 1rpx solid var(--ink); background: var(--ink); color: var(--paper); }
-.portrait-secondary { border: 1rpx solid rgba(33, 29, 23, 0.28); background: transparent; color: var(--ink-70); }
-
-.portrait-primary::after,
-.portrait-secondary::after { border: 0; }
-
-/* 默认视图固定两个文字链：「修改这段理解」+「重新梳理」，画像被暂停时第二个
-   换成「恢复用于解读」。第三个动作（暂停）移到编辑态，见 .portrait-pause-link
-   ——默认视图不该同时摆三个低频选择。 */
-.portrait-links-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 32rpx;
-  margin-top: 12rpx;
-}
-
-.portrait-link-btn {
-  margin: 0 !important;
-  min-height: var(--tap-min);
-  padding: 0;
-  background: transparent;
-  color: var(--ink-70);
-  font-size: var(--fs-label);
-  line-height: var(--tap-min);
-}
-
-.portrait-link-btn::after { border: 0; }
-
-.portrait-pause-link {
-  display: block;
-  min-height: var(--tap-min);
-  margin-top: 4rpx;
-  color: var(--ink-70);
-  font-size: 23rpx;
-  line-height: var(--tap-min);
-}
-
-.portrait-growth-hint {
-  display: block;
-  margin-top: 8rpx;
-  color: var(--ink-70);
-  font-size: 21rpx;
-  line-height: 1.6;
-}
-
-/* ── 本月观察牌组 ──────────────────────────────────────────
+/* ── 月度观察牌组 ──────────────────────────────────────────
    .month-observation-deck 是定位容器，背后两层 .deck-shadow（纸色、旋转
    偏移）垫出「一叠牌」的厚度，.month-observation 是叠在最上面那张深墨卡。
-   数据上只有当月这一张卡（dreamMemory.buildMonthlyCard 不产出历史月份
-   数组），所以只做叠牌厚度的静态视觉，不做设计稿里的左右翻页圆点或
-   「‹ 滑动翻阅其他月份 ›」滑动提示——那会呈现出并不存在的翻页能力。
-   卡片本身给了一个明确的 rpx 高度（对应设计稿 214px），因为绝对定位的
-   .deck-shadow 需要一个有具体高度的定位祖先才能用百分比撑开；卡内文案
-   全部来自 dreamMemory 的模板字符串，长度有界，不会撑爆这个高度。 */
+   现在 buildMonthlyCards 按月产出，卡片装进 <swiper> 可以左右翻阅——
+   以前这里刻意不做翻页，是因为数据上只有当月一张，做了就是划了没反应的
+   欺骗性 UI；数据补上之后这个限制不再成立。
+   容器给了明确的 rpx 高度：绝对定位的 .deck-shadow 需要一个有具体高度的
+   定位祖先才能用百分比撑开，swiper 本身也必须有高度才显示。卡内文案全部
+   来自 dreamMemory 的模板字符串，长度有界，不会撑爆这个高度。 */
 .month-observation-deck {
   position: relative;
   height: 428rpx;
   margin-top: 40rpx;
   margin-bottom: 36rpx;
+}
+
+/* swiper 必须显式给高度，且要和 .deck-shadow 的定位容器一样高，
+   否则翻页时深墨卡会脱开背后那叠纸。 */
+.month-observation-swiper {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  /* 投影放在 swiper 上而不是卡片上：swiper-item 会裁掉溢出内容，
+     挂在卡片上的投影会被切掉。容器和卡片同尺寸，视觉等价。 */
+  box-shadow: 0 28rpx 60rpx rgba(33, 29, 23, 0.28);
 }
 
 .deck-shadow {
@@ -414,7 +115,6 @@
   padding: 40rpx;
   background: var(--ink);
   color: #f5f2e9;
-  box-shadow: 0 28rpx 60rpx rgba(33, 29, 23, 0.28);
 }
 
 .mo-top {
@@ -483,6 +183,17 @@
   line-height: 1.65;
 }
 
+/* 重复线索并进本月观察卡片，当正文下面一句更淡、更小的补充——
+   跟 .mo-copy 同色系但弱一档，读出「这是附注，不是并列的第二条结论」 */
+.mo-recurring-note {
+  display: block;
+  margin-top: 16rpx;
+  color: rgba(242, 236, 223, 0.6);
+  font-family: var(--font-serif);
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
 .mo-bottom {
   display: flex;
   align-items: center;
@@ -497,131 +208,338 @@
   font-size: 21rpx;
 }
 
-/* 不透明 --gold-line 约 5.20:1，设计稿此处本就是不透明色，无需调整 */
-.mo-bottom-right {
-  flex-shrink: 0;
-  color: var(--gold-line);
-  font-size: 21rpx;
+/* ── 按月排列 ─────────────────────────────────────────────
+   一组一个月，月内只放真的有梦的那天——不给空白天留格子，避免看起来像
+   加载出错。缩略卡用 padding-top 撑出固定 3:4 竖长比例（不依赖
+   aspect-ratio 属性，兼容性更稳），配合 aspectFill 避免裁切不到位；
+   日期叠在图片顶部（呼应 Photos「回忆」把日期叠在缩略图上的做法，
+   放顶部是为了不跟未解读占位卡底部的卡号文字打架）。 */
+.calendar-list {
+  margin-top: 40rpx;
 }
 
-/* ── 重复线索 ──────────────────────────────────────────────
-   浅纸背景上的「眉标签」统一用 --gold-ink（#8A5D29，在 --paper 上约
-   4.85:1，app.wxss 顶部注释已校准），不用设计稿字面值 rgba(33,29,23,0.35)
-   （约 2.12:1，不达标）或 #B8863B（约 2.74:1，同样不达标）。 */
-.recurring-clues {
-  margin-top: 24rpx;
+/* ── 月份刻度轴：中心即选中 ────────────────────────────────
+   最高最深的那根永远在屏幕正中，左右拖动是把不同月份「送进」中心槽。
+   月份名由上面的观察卡显示，这里不重复日期牌。
+
+   刻度定宽、彼此不留 gap（间距做在刻度自己的 padding 里），因为 JS 要靠
+   「第几根 × 宽度」算滚动位置——留 gap 就得把它也算进去，多一个必须和
+   CSS 保持同步的常量。宽度改动时同步改 index.js 的 TICK_PITCH_RPX。 */
+.month-scrubber {
+  position: relative;
+  margin: 0 -40rpx;
 }
 
-.recurring-clues-label {
-  display: block;
-  color: var(--gold-ink);
-  font-size: 22rpx;
+/* 中心槽：一块极淡的底，标出「拖到这里就是选中」。它不拦点击。 */
+.month-scrubber-slot {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 88rpx;
+  margin-left: -44rpx;
+  border-radius: 8rpx;
+  background: rgba(33, 29, 23, 0.045);
+  pointer-events: none;
+}
+
+.month-scrubber-track {
+  position: relative;
+  width: 100%;
+  white-space: nowrap;
+}
+
+/* 首尾各留半屏内边距，最早/最新的那个月也能被送到正中，
+   而不是顶在边上进不了中心槽。 */
+.month-scrubber-inner {
+  display: inline-flex;
+  align-items: flex-end;
+  padding: 0 50%;
+}
+
+/* 刻度高度只表示「正在看哪个月」，跟梦的数量无关——一根刻度同时编码两件事
+   时，读者分不清它高是因为在看它、还是因为那个月梦多。数量交给卡片上的
+   「N 个梦」去说。当前月靠 加高 + 加粗 + 变金 + 不透明 四重强调，认不错。 */
+.month-tick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6rpx;
+  /* 定宽，且宽度就是 JS 里的 TICK_PITCH_RPX。改这里要同步改那边。 */
+  width: 88rpx;
+  flex: 0 0 88rpx;
+  box-sizing: border-box;
+  height: 76rpx;
+  opacity: 0.34;
+  transition: opacity 0.28s ease;
+}
+
+.month-tick.is-active {
+  opacity: 1;
+}
+
+.month-tick-bar {
+  width: 6rpx;
+  height: 18rpx;
+  border-radius: 3rpx;
+  background: rgba(33, 29, 23, 0.55);
+  /* 高度和颜色一起过渡：切月份时刻度是「长出来」的，不是硬切。 */
+  transition: height 0.28s ease, width 0.28s ease, background-color 0.28s ease;
+}
+
+.month-tick.is-active .month-tick-bar {
+  width: 10rpx;
+  height: 48rpx;
+  background: var(--gold-ink);
+}
+
+.month-tick-label {
+  color: var(--ink-70);
+  font-size: 19rpx;
   font-weight: 700;
-  letter-spacing: 2rpx;
+  transition: color 0.28s ease;
 }
 
-.recurring-clues-tags {
+.month-tick.is-active .month-tick-label {
+  color: var(--gold-ink);
+}
+
+/* 一次只渲染一个月，所以这里不再需要月份间距，只留和刻度轴的间隔。 */
+.calendar-month {
+  margin-top: 30rpx;
+}
+
+.calendar-month-row {
   display: flex;
   flex-wrap: wrap;
   gap: 16rpx;
-  margin-top: 20rpx;
 }
 
-.recurring-clue-tag {
-  padding: 10rpx 20rpx;
-  border-radius: 4rpx;
-  background: rgba(184, 134, 59, 0.12);
-  color: var(--gold-ink);
-  font-size: 22rpx;
+.calendar-cell {
+  position: relative;
+  width: calc((100% - 32rpx) / 3);
 }
 
-/* ── 阶段梦境原型条 ──────────────────────────────────────────
-   设计稿里独立于卡片之外的完整入口，给了明确的 tap 区域（--tap-min）,
-   与卡片底行的快捷角标并存 */
-.archetype-strip {
+.calendar-card {
+  position: relative;
+  width: 100%;
+  padding-top: 133.33%;
+}
+
+/* 一天多梦：两层旋转偏移的纸色底卡垫出「一叠牌」的厚度感，
+   缩小版的 .deck-shadow，不做角标计数。 */
+.calendar-deck-shadow {
+  position: absolute;
+  inset: 0;
+  background: var(--paper-raised, #ede4d0);
+  border: 1rpx solid rgba(33, 29, 23, 0.08);
+}
+.calendar-deck-shadow-1 { transform: rotate(-3deg) translateY(4rpx); }
+.calendar-deck-shadow-2 { transform: rotate(3deg) translateY(6rpx); }
+
+.calendar-card-thumb {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(145deg, #18202a, #68737c 62%, #e4e4dc);
+}
+
+.calendar-card-thumb.theme-tide { background: linear-gradient(145deg, #102832, #356f78 62%, #d5e8df); }
+.calendar-card-thumb.theme-threshold { background: linear-gradient(145deg, #1c2130, #73634a 62%, #ead9aa); }
+.calendar-card-thumb.theme-shadow { background: linear-gradient(145deg, #0d0f16, #273049 62%, #a8b2c3); }
+.calendar-card-thumb.theme-falling { background: linear-gradient(145deg, #191729, #555070 62%, #ead0be); }
+.calendar-card-thumb.theme-archive { background: linear-gradient(145deg, #172033, #5c6573 62%, #e0d8c4); }
+.calendar-card-thumb.theme-hearth { background: linear-gradient(145deg, #201819, #755243 62%, #efd2a6); }
+.calendar-card-thumb.theme-moon { background: linear-gradient(145deg, #10182b, #3e517a 62%, #dfe7f1); }
+
+.calendar-card-image {
+  width: 100%;
+  height: 100%;
+}
+
+.calendar-card-placeholder {
   display: flex;
-  min-height: var(--tap-min);
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 40rpx;
-  padding: 24rpx 28rpx;
-  border: 2rpx solid rgba(184, 134, 59, 0.4);
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 8rpx;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 20rpx;
+  font-weight: 800;
 }
 
-.archetype-strip-label {
+/* 星期几叠在图片顶部（而不是底部），避免跟未解读占位卡底部的卡号文字
+   打架——两者都需要留白，图片只有一处安全区。 */
+.calendar-card-scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 56rpx;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
+.calendar-card-daylabel {
+  position: absolute;
+  left: 10rpx;
+  top: 8rpx;
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 700;
+  text-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.4);
+}
+
+.calendar-card-weekday {
+  font-size: 18rpx;
+  font-weight: 500;
+  opacity: 0.82;
+}
+
+.calendar-card-count {
+  position: absolute;
+  top: 6rpx;
+  right: 6rpx;
+  min-width: 28rpx;
+  padding: 2rpx 6rpx;
+  background: rgba(20, 17, 12, 0.6);
+  color: #fff;
+  font-size: 18rpx;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ── 点某天梦卡的放大浮层 ──────────────────────────────────
+   与阶段画像详情浮层同一套「背景点击关闭 + 内容区 catchtap 挡冒泡」模式。
+   多梦的天用原生 <swiper> 左右滑动切换，动效之后再用 Mobbin 参考精修。 */
+.calendar-expand-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60rpx 40rpx;
+  box-sizing: border-box;
+  background: rgba(20, 17, 12, 0.6);
+}
+
+.calendar-expand-panel {
+  width: 100%;
+}
+
+/* 高度按内容实测量出来：图 470 + 文字块约 219 + 底部收口 84 + 上下内边距 64
+   ≈ 865rpx，留 55rpx 余量给居中后的上下呼吸，不至于把内容裁掉。 */
+.calendar-expand-swiper {
+  width: 100%;
+  height: 920rpx;
+}
+
+/* 整卡内容垂直居中：剩余空隙均分到上下两端，而不是全部堆在文字和底部
+   提示之间——那一大块空白正是之前排版最难看的地方。 */
+.calendar-expand-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 32rpx;
+  box-sizing: border-box;
+  background: var(--paper);
+  text-align: center;
+}
+
+.calendar-expand-card::after {
+  border: 0;
+}
+
+/* 放大后的图保持 3:4 竖版（跟列表缩略卡、跟梦卡本身同一个比例），
+   不再拉成一条横的——横向铺满会把竖构图的插画上下都切掉。
+   外面那圈内衬边是「裱起来」的意思，也让图和纸色卡面之间有个交代。 */
+.expand-stage {
+  flex: 0 0 auto;
+  width: 356rpx;
+  padding: 10rpx;
+  box-sizing: border-box;
+  border: 1rpx solid rgba(184, 134, 59, 0.34);
+  background: rgba(255, 255, 255, 0.44);
+}
+
+.expand-stage .archive-thumb {
+  width: 100%;
+  height: 448rpx;
+}
+
+.expand-copy {
+  width: 100%;
+  margin-top: 28rpx;
+}
+
+.expand-date {
   display: block;
-  color: var(--gold-ink);
+  color: var(--ink-70);
   font-size: 20rpx;
   letter-spacing: 2rpx;
 }
 
-.archetype-strip-value {
+.expand-title {
   display: block;
-  margin-top: 8rpx;
+  margin-top: 10rpx;
   color: #211d17;
   font-family: var(--font-serif);
-  font-size: 26rpx;
+  font-size: 34rpx;
 }
 
-/* 设计稿字面值 rgba(33,29,23,0.4) 约 2.4:1，同上不达标，改用 --ink-70 */
-.archetype-strip-arrow {
-  flex-shrink: 0;
-  color: var(--ink-70);
-  font-size: 22rpx;
+/* 允许折行，最多两行——情绪基调是这张卡上信息量最大的一句，
+   不该像列表行那样被 nowrap 截掉后半截。 */
+.expand-weather {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 12rpx;
+  color: rgba(33, 29, 23, 0.72);
+  font-size: 23rpx;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-/* ── 月份分组列表 ─────────────────────────────────────────── */
-.archive-list {
-  margin-top: 40rpx;
-}
-
-.timeline-month {
-  margin-top: var(--space-block);
-}
-
-.timeline-month:first-child {
-  margin-top: 0;
-}
-
-/* 与重复线索/阶段原型标签同一套「眉标签」颜色规则，统一用 --gold-ink */
-.timeline-month-label {
-  display: block;
+.expand-repeat {
+  display: inline-block;
+  margin-top: 14rpx;
+  padding: 4rpx 16rpx;
+  border: 1rpx solid rgba(184, 134, 59, 0.36);
+  border-radius: 999rpx;
   color: var(--gold-ink);
-  font-size: 22rpx;
-  font-weight: 700;
-  letter-spacing: 2rpx;
+  font-size: 20rpx;
 }
 
-.timeline-track {
-  margin-top: 20rpx;
-}
-
-.timeline-entry {
-  display: flex;
-  align-items: center;
+.expand-foot {
   width: 100%;
-  min-height: 168rpx;
-  margin: 0;
-  padding: 24rpx 0;
-  border: 0;
-  border-bottom: 1rpx solid rgba(33, 29, 23, 0.08);
-  background: transparent;
-  text-align: left;
+  margin-top: 30rpx;
+  padding-top: 22rpx;
+  border-top: 1rpx solid rgba(33, 29, 23, 0.1);
 }
 
-.timeline-entry:last-child {
-  border-bottom: 0;
+.expand-hint {
+  color: var(--ink-70);
+  font-size: var(--fs-label);
+  font-weight: 700;
 }
 
-.timeline-entry::after {
-  border: 0;
-}
-
-.archive-thumb-frame {
-  position: relative;
-  width: 76rpx;
-  height: 100rpx;
-  flex: 0 0 76rpx;
+.calendar-expand-counter {
+  display: block;
+  margin-top: 20rpx;
+  color: rgba(245, 242, 233, 0.72);
+  font-size: var(--fs-label);
+  text-align: center;
 }
 
 .archive-thumb {
@@ -657,40 +575,7 @@
   padding: 8rpx 7rpx;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(5, 7, 12, 0.48));
   color: rgba(255, 255, 255, 0.72);
-  font-size: 11rpx;
+  font-size: 22rpx; /* 原为 11rpx ≈5.5px 不可读：设计稿 11px 漏了 rpx 的 ×2 换算 */
   font-weight: 800;
   letter-spacing: 1rpx;
-}
-
-.timeline-copy {
-  min-width: 0;
-  flex: 1;
-  padding-left: 24rpx;
-}
-
-.archive-title {
-  display: block;
-  color: #211d17;
-  font-family: var(--font-serif);
-  font-size: 27rpx;
-}
-
-/* 设计稿字面值 rgba(33,29,23,0.45) 在 --paper 上实测约 2.74:1，不达标；
-   改用已有的 --ink-70 token（同一底色下约 6.1:1，与 .archive-header-count
-   一致），11px 小字必须过 4.5:1 */
-.archive-meta {
-  display: block;
-  margin-top: 8rpx;
-  overflow: hidden;
-  color: var(--ink-70);
-  font-size: 21rpx;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.timeline-repeat {
-  display: block;
-  margin-top: 8rpx;
-  color: var(--gold-ink);
-  font-size: var(--fs-label);
 }

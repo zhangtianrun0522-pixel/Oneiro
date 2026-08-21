@@ -11,165 +11,45 @@
     <text class="filter-clear" bindtap="clearFilter">清除筛选</text>
   </view>
 
-  <!-- ── 阶段画像：从「我」页第三屏搬到这里 ──
-       「我」是一页表单，把产品里最有辨识度的产出摆在表单上方，它会被读成一个
-       用户自己填的字段，而不是系统产出的东西。梦册已经有本月观察、重复线索、
-       阶段原型三个同类物件，画像是其中最强的一个，四者合起来才是一段连续的
-       「你的梦加起来说明了什么」，所以画像放在最前面统领它们。 -->
-  <view class="portrait-block">
-    <view class="portrait-head">
-      <text class="portrait-kicker">阶段画像{{portraitVersionLabel ? ' · ' + portraitVersionLabel : ''}}</text>
-      <text class="portrait-status {{portraitPaused ? 'is-paused' : ''}} {{portraitLoading ? 'is-waiting' : ''}}">{{portraitStatusLabel}}</text>
-    </view>
-
-    <!-- 内容优先：只要当前画像有值就展示，不受异步读取状态影响。 -->
-    <block wx:if="{{memoryState.current}}">
-      <!-- 后台每记一个梦就刷新一次画像，却从来没有人被告知过。新版本是这个
-           产品最好的召回事件，之前产生零通知。 -->
-      <view wx:if="{{portraitHasUpdate}}" class="portrait-update" bindtap="togglePortraitHistory">
-        <text class="portrait-update-copy">画像更新到 {{portraitVersionLabel}}{{portraitUpdatedLabel ? ' · ' + portraitUpdatedLabel : ''}}</text>
-        <text class="portrait-update-link">看看变了什么 ›</text>
-      </view>
-
-      <text class="portrait-summary">{{memoryState.current.summary}}</text>
-      <block>
-
-        <!-- 「这段来自哪几个梦」。prompt 要求画像的判断能指回具体是哪个梦的
-             哪一处，但界面此前不给核对入口——一个无法核对的判断会退化成星座
-             运势，正是那份 prompt 一直在对抗的失败模式。 -->
-        <view wx:if="{{portraitSources.length}}" class="portrait-sources">
-          <view class="portrait-sources-toggle" bindtap="togglePortraitSources">
-            <text class="portrait-sources-label">这段来自你的 {{portraitSources.length}} 个梦</text>
-            <text class="portrait-sources-icon">{{showPortraitSources ? '收起 ↑' : '查看 ↓'}}</text>
-          </view>
-          <view wx:if="{{showPortraitSources}}" class="portrait-source-list">
-            <view
-              wx:for="{{portraitSources}}"
-              wx:key="dreamId"
-              class="portrait-source-item {{item.openable ? '' : 'is-gone'}}"
-              data-dream-id="{{item.openable ? item.dreamId : ''}}"
-              bindtap="openPortraitSource"
-            >
-              <text class="portrait-source-title">{{item.title}}</text>
-              <text class="portrait-source-meta">{{item.dateLabel}}{{item.openable ? ' ›' : ' · 已删除'}}</text>
-            </view>
-          </view>
-        </view>
-
-        <!-- 「三个月前你是这样，现在你是这样」是画像唯一能做、而单次解读永远
-             做不到的事。历史版本一直存在 profile_snapshots 里，此前只显示当前
-             这一版。 -->
-        <view wx:if="{{portraitHistory.length}}" class="portrait-history">
-          <view class="portrait-history-toggle" bindtap="togglePortraitHistory">
-            <text class="portrait-history-label">你以前的样子（{{portraitHistory.length}} 版）</text>
-            <text class="portrait-history-icon">{{showPortraitHistory ? '收起 ↑' : '展开 ↓'}}</text>
-          </view>
-          <view wx:if="{{showPortraitHistory}}" class="portrait-history-list">
-            <view wx:for="{{portraitHistory}}" wx:key="clientId" class="portrait-history-item">
-              <view class="portrait-history-head">
-                <text class="portrait-history-version">{{item.versionLabel}}</text>
-                <text class="portrait-history-date">{{item.dateLabel}}</text>
-              </view>
-              <text class="portrait-history-copy">{{item.summary}}</text>
-            </view>
-          </view>
-        </view>
-
-        <!-- 按钮上写的就是那句异议本身，点下去直接进对话，第一句已经替他说完
-             了——开口成本和点一个「不像」按钮一样，但落在能说清楚的地方。 -->
-        <view class="portrait-links-row">
-          <button class="portrait-link-btn is-object" disabled="{{portraitLoading}}" bindtap="openPortraitChat">这段不像我</button>
-          <button wx:if="{{portraitPaused}}" class="portrait-link-btn" disabled="{{portraitLoading}}" bindtap="togglePortraitUse">恢复用于解读</button>
-          <button wx:else class="portrait-link-btn" disabled="{{portraitLoading}}" loading="{{portraitLoading}}" bindtap="refreshPortrait">重新梳理</button>
-        </view>
-        <text
-          wx:if="{{!portraitPaused}}"
-          class="portrait-pause-link"
-          bindtap="togglePortraitUse"
-        >暂停用于解读</text>
-
-        <view wx:if="{{portraitGenerateFailed}}" class="portrait-links-row">
-          <text class="portrait-empty-retry" bindtap="refreshPortrait">重新梳理失败，点击重试</text>
-        </view>
-        <text wx:if="{{insights.dreamCount < 3}}" class="portrait-growth-hint">随着你记录更多梦，这份画像会越来越具体</text>
-      </block>
-    </block>
-
-    <!-- 首次进入、云端还没返回：明确的加载态，不是空态 -->
-    <view wx:elif="{{!memoryLoaded}}" class="portrait-loading-card">
-      <text class="portrait-loading-copy">正在读取 Oneiro 对你的理解…</text>
-      <view class="portrait-loading-bars">
-        <view class="portrait-loading-bar"></view>
-        <view class="portrait-loading-bar"></view>
-        <view class="portrait-loading-bar is-short"></view>
-      </view>
-    </view>
-
-    <!-- 加载失败或自动生成失败：明确告诉用户可以重试，不把失败误判成无画像 -->
-    <view wx:elif="{{portraitLoadError || portraitGenerateFailed}}" class="portrait-empty-card">
-      <text class="portrait-empty-title">暂时没连上，点击重试</text>
-      <text class="portrait-empty-copy">你的资料不会受影响，连上后我会继续为你梳理。</text>
-      <text class="portrait-empty-retry" bindtap="retryPortrait">重试</text>
-    </view>
-
-    <!-- 无画像时自动生成，避免让用户先理解并选择一堆操作 -->
-    <view wx:else class="portrait-empty-card">
-      <text class="portrait-empty-title">正在为你梳理</text>
-      <text class="portrait-empty-copy">我会从你留下的资料、梦和生活片段开始，先整理一版简短的当下观察。</text>
-    </view>
-  </view>
-
-  <!-- 阶段观察 / 本月主牌 / 阶段原型合并为一张「本月观察」，
-       让梦境时间轴尽早出现，而不是被三张卡连续推到屏幕外。
-       外层 .month-observation-deck 用两层旋转偏移的纸色底卡（.deck-shadow）
-       在深色主卡背后垫出「一叠牌」的厚度感——数据上只有当月这一张观察卡
-       （dreamMemory.buildInsights 不产出历史月份数组），所以这里刻意不渲染
-       设计稿里的 3 个分页圆点，也不放「‹ 滑动翻阅其他月份 ›」提示：
-       点了没反应的圆点、划了没反应的提示都是欺骗性 UI。卡片底行左侧改用
-       insights.monthlyCard.emotion（本月主导情绪，真实数据）替代，
-       右侧保留原型入口。 -->
-  <view wx:if="{{insights.eligible || insights.monthlyCard.eligible || archetypeEligible}}" class="month-observation-deck">
+  <!-- 月度观察：一个月一张，左右滑动翻阅。以前这里只有当月一张死卡，
+       正因为「数据上只有一张」才刻意不做翻页——现在 buildMonthlyCards
+       按月产出，滑动是真的有东西可滑。
+       外层两层旋转偏移的纸色底卡（.deck-shadow）垫出「一叠牌」的厚度感。
+       滑动会联动上方刻度轴和下方牌组，见 onObservationChange。 -->
+  <view wx:if="{{monthlyCards.length}}" class="month-observation-deck">
     <view class="deck-shadow deck-shadow-2"></view>
     <view class="deck-shadow deck-shadow-1"></view>
-    <view class="month-observation">
-      <view class="mo-top">
-        <view class="mo-top-left">
-          <text class="mo-eyebrow">本月观察</text>
-          <text class="mo-meta">{{insights.monthlyCard.month}} · 本月 {{insights.monthlyCard.dreamCount}} 个梦</text>
+    <swiper
+      class="month-observation-swiper"
+      current="{{activeMonthIndex}}"
+      bindchange="onObservationChange"
+      duration="320"
+    >
+      <swiper-item wx:for="{{monthlyCards}}" wx:for-item="card" wx:key="month">
+        <view class="month-observation">
+          <view class="mo-top">
+            <view class="mo-top-left">
+              <text class="mo-eyebrow">月度观察</text>
+              <text class="mo-meta">{{card.monthLabel}} · {{card.dreamCount}} 个梦</text>
+            </view>
+            <view class="mo-badge">
+              <view class="mo-badge-dot"></view>
+            </view>
+          </view>
+
+          <view class="mo-divider"></view>
+
+          <text class="mo-copy">{{card.insight}}</text>
+          <!-- 重复线索只挂在当前这张卡上：它讲的是「拉长时间看还有什么反复
+               出现」，是跨月的信号，挂在每一张月卡上会变成一句复读。 -->
+          <text wx:if="{{card.month === insights.monthlyCard.month && insights.recurringNote}}" class="mo-recurring-note">{{insights.recurringNote}}</text>
+
+          <view wx:if="{{card.hasEmotion}}" class="mo-bottom">
+            <text class="mo-bottom-left">情绪基调 · {{card.emotion}}</text>
+          </view>
         </view>
-        <view class="mo-badge">
-          <view class="mo-badge-dot"></view>
-        </view>
-      </view>
-
-      <view class="mo-divider"></view>
-
-      <text class="mo-copy">{{insights.monthlyCard.eligible ? insights.monthlyCard.insight : insights.stageSummary}}</text>
-
-      <view wx:if="{{insights.monthlyCard.eligible || archetypeEligible}}" class="mo-bottom">
-        <text wx:if="{{insights.monthlyCard.eligible}}" class="mo-bottom-left">情绪基调 · {{insights.monthlyCard.emotion}}</text>
-        <text wx:if="{{archetypeEligible}}" class="mo-bottom-right" bindtap="openArchetypeCard">{{archetype.label}}原型 ›</text>
-      </view>
-    </view>
-  </view>
-
-  <!-- 重复线索：insights.recurringSymbols 是 dreamMemory.buildInsights 早已计算好、
-       但此前页面从未渲染过的字段，直接复用即可，不需要新增任何数据计算 -->
-  <view wx:if="{{insights.eligible && insights.recurringSymbols.length}}" class="recurring-clues">
-    <text class="recurring-clues-label">重复线索</text>
-    <view class="recurring-clues-tags">
-      <text wx:for="{{insights.recurringSymbols}}" wx:key="label" class="recurring-clue-tag">{{item.label}} ×{{item.count}}</text>
-    </view>
-  </view>
-
-  <!-- 阶段梦境原型条：设计稿里独立于卡片之外的完整入口条，
-       与卡片底行的原型快捷链接并存（一个是随手可见的角标，一个是真正的点击入口） -->
-  <view wx:if="{{archetypeEligible}}" class="archetype-strip" bindtap="openArchetypeCard">
-    <view class="archetype-strip-left">
-      <text class="archetype-strip-label">阶段梦境原型</text>
-      <text class="archetype-strip-value">{{archetype.label}}</text>
-    </view>
-    <text class="archetype-strip-arrow">查看原型卡 ›</text>
+      </swiper-item>
+    </swiper>
   </view>
 
   <view wx:if="{{archiveLoadError}}" class="empty archive-load-error" bindtap="retryArchiveLoad">
@@ -180,26 +60,110 @@
     <text>还没有记录。从刚醒来时记得的一个画面开始。</text>
   </view>
 
-  <view wx:else class="archive-list">
-    <view wx:for="{{timelineGroups}}" wx:for-item="group" wx:key="key" class="timeline-month">
-      <text class="timeline-month-label">{{group.label}}</text>
-      <view class="timeline-track">
-        <button wx:for="{{group.dreams}}" wx:for-item="dream" wx:for-index="dreamIndex" wx:key="id" class="timeline-entry" data-index="{{dream.archiveIndex}}" bindtap="openDream">
-          <view class="archive-thumb-frame">
-            <view class="archive-thumb theme-{{dream.themeClass}}">
-              <image wx:if="{{dream.thumbnailPath}}" class="archive-thumb-image" src="{{dream.thumbnailPath}}" mode="aspectFill"></image>
-              <view wx:else class="archive-thumb-placeholder">
-                <text>{{dream.result ? dream.result.card_no : '原梦'}}</text>
+  <!-- 一次只显示一个月：切月份时页面完全不动，只有下面的牌组换一批。
+       所以这里没有「滚到某个月」这回事——也就没有滚动位置这个第三方输入
+       来跟卡片/刻度抢「当前是几月」，联动只剩 activeMonthIndex 一个真相。
+
+       月内只放真的有梦的那天，不留空白格占位（看起来像加载出错）。缩略卡
+       保持竖长比例（3:4）避免裁切不到位，日期叠在图片顶部（放顶部是为了不
+       跟未解读占位卡底部的卡号文字打架）。一天多梦用叠层视觉示意。
+
+       .month-scrubber 是一条横向月份刻度轴（左旧右新），两侧的淡色刻度就是
+       「这个月前后还有多少个月」的实感。月份本身由上面的观察卡显示，这里
+       不再重复一个日期牌。 -->
+  <view wx:else class="calendar-list">
+    <!-- 中心即选中：最高最深的那根刻度永远在屏幕正中，左右拖动是把不同的
+         月份「送进」这个中心槽。所以「当前是几月」完全由滚动位置决定，
+         是一个算出来的唯一结果，不存在两处各说各话。 -->
+    <view class="month-scrubber">
+      <view class="month-scrubber-slot"></view>
+      <scroll-view
+        class="month-scrubber-track"
+        scroll-x="{{true}}"
+        scroll-left="{{stripScrollLeft}}"
+        scroll-with-animation="{{stripAnimated}}"
+        enhanced="{{true}}"
+        show-scrollbar="{{false}}"
+        bindscroll="onStripScroll"
+      >
+        <view class="month-scrubber-inner">
+          <view
+            wx:for="{{monthStrip}}"
+            wx:key="key"
+            class="month-tick {{item.active ? 'is-active' : ''}}"
+            data-key="{{item.key}}"
+            bindtap="jumpToMonth"
+          >
+            <view class="month-tick-bar"></view>
+            <text class="month-tick-label">{{item.label}}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <view wx:if="{{activeMonthGroup}}" class="calendar-month">
+      <view class="calendar-month-row">
+        <view
+          wx:for="{{activeMonthGroup.cells}}"
+          wx:for-item="cell"
+          wx:key="key"
+          class="calendar-cell"
+          data-day-key="{{cell.key}}"
+          data-month-key="{{cell.monthKey}}"
+          bindtap="expandDay"
+        >
+          <view class="calendar-card">
+            <view wx:if="{{cell.multi}}" class="calendar-deck-shadow calendar-deck-shadow-2"></view>
+            <view wx:if="{{cell.multi}}" class="calendar-deck-shadow calendar-deck-shadow-1"></view>
+            <view class="calendar-card-thumb theme-{{cell.dreams[0].themeClass}}">
+              <image wx:if="{{cell.dreams[0].thumbnailPath}}" class="calendar-card-image" src="{{cell.dreams[0].thumbnailPath}}" mode="aspectFill"></image>
+              <view wx:else class="calendar-card-placeholder">
+                <text>{{cell.dreams[0].result ? cell.dreams[0].result.card_no : '原梦'}}</text>
+              </view>
+              <view class="calendar-card-scrim"></view>
+              <text class="calendar-card-daylabel">{{cell.day}} <text class="calendar-card-weekday">{{cell.weekdayLabel}}</text></text>
+            </view>
+            <text wx:if="{{cell.multi}}" class="calendar-card-count">{{cell.dreams.length}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 点某天梦卡 → 原地放大：多梦的天用 swiper 原生滑动切换相邻梦卡，
+       再点一下放大的卡片进完整详情页（复用 openDream），点空白区域收回。 -->
+  <view wx:if="{{expandedDayKey}}" class="calendar-expand-overlay" bindtap="collapseDay">
+    <view class="calendar-expand-panel" catchtap="stopPropagation">
+      <swiper class="calendar-expand-swiper" current="{{expandedDreamIndex}}" bindchange="onExpandSwiperChange">
+        <swiper-item wx:for="{{expandedDreams}}" wx:for-item="dream" wx:key="id">
+          <!-- 排版按「一张裱好的牌」来组织：图居中并加一圈内衬边，文字整体
+               也居中跟图共用一条中轴线（之前图居中、字左对齐，两条轴打架）。
+               日期提到标题上方当眉标，情绪单独一行允许折行——原来挤在一行里
+               被 .archive-meta 的 nowrap 截断，最有信息量的那半句永远看不到。
+               底部提示用一条细分割线收口，整体垂直居中，不再靠 margin-top
+               把提示推到卡底、中间留一大块空白。 -->
+          <button class="calendar-expand-card" data-index="{{dream.archiveIndex}}" bindtap="openDream">
+            <view class="expand-stage">
+              <view class="archive-thumb theme-{{dream.themeClass}}">
+                <image wx:if="{{dream.thumbnailPath}}" class="archive-thumb-image" src="{{dream.thumbnailPath}}" mode="aspectFill"></image>
+                <view wx:else class="archive-thumb-placeholder">
+                  <text>{{dream.result ? dream.result.card_no : '原梦'}}</text>
+                </view>
               </view>
             </view>
-          </view>
-          <view class="timeline-copy">
-            <text class="archive-title">{{dream.result ? dream.result.title : '已保存，尚未解读'}}</text>
-            <text class="archive-meta">{{dream.timelineTimestamp}} · {{dream.result ? dream.result.emotional_weather : dream.dreamText}}</text>
-            <text wx:if="{{dream.repeatLabel}}" class="timeline-repeat">{{dream.repeatLabel}}</text>
-          </view>
-        </button>
-      </view>
+            <view class="expand-copy">
+              <text class="expand-date">{{dream.timelineTimestamp}}</text>
+              <text class="expand-title">{{dream.result ? dream.result.title : '已保存，尚未解读'}}</text>
+              <text class="expand-weather">{{dream.result ? dream.result.emotional_weather : dream.dreamText}}</text>
+              <text wx:if="{{dream.repeatLabel}}" class="expand-repeat">{{dream.repeatLabel}}</text>
+            </view>
+            <view class="expand-foot">
+              <text class="expand-hint">再点一下查看完整详情 ›</text>
+            </view>
+          </button>
+        </swiper-item>
+      </swiper>
+      <text wx:if="{{expandedDreams.length > 1}}" class="calendar-expand-counter">{{expandedDreamIndex + 1}} / {{expandedDreams.length}} · 左右滑动切换</text>
     </view>
   </view>
 
