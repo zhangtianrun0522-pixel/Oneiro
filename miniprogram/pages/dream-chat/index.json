@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "聊聊这个梦"
+  "navigationBarTitleText": "聊聊这个梦",
+  "usingComponents": {
+    "privacy-popup": "/components/privacy-popup/index"
+  }
 }

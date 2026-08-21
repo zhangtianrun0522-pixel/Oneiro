@@ -1,0 +1,41 @@
+<view class="privacy-popup" wx:if="{{visible}}">
+  <view class="privacy-mask" bindtap="noop" catchtouchmove="noop"></view>
+
+  <view class="privacy-card">
+    <view class="privacy-handle"></view>
+
+    <view class="privacy-header">
+      <view class="privacy-title">开始之前</view>
+      <view class="privacy-subtitle">有两样东西需要你点头</view>
+    </view>
+
+    <view class="privacy-divider"></view>
+
+    <view class="privacy-body">
+      <view class="privacy-item">
+        <view class="privacy-item-title">麦克风</view>
+        <view class="privacy-item-desc">用来口述梦境，自动转成文字。不想说话，打字一样。</view>
+      </view>
+
+      <view class="privacy-item">
+        <view class="privacy-item-title">相册</view>
+        <view class="privacy-item-desc">把生成的梦境卡片存进手机。</view>
+      </view>
+
+      <view class="privacy-note">解读需要把梦境内容交给第三方 AI，语音会先由腾讯云转文字，生成插画时提示词也会发给图像服务。你的记录存于微信云开发数据库，按微信账号隔离，别人看不到，随时可删。</view>
+    </view>
+
+    <view class="privacy-contract" bindtap="handleOpenContract">查看完整指引</view>
+
+    <view class="privacy-actions">
+      <button
+        class="privacy-btn privacy-btn-agree"
+        id="agree-btn"
+        open-type="agreePrivacyAuthorization"
+        bindagreeprivacyauthorization="handleAgree"
+      >同意并继续</button>
+
+      <button class="privacy-btn privacy-btn-disagree" bindtap="handleDisagree">暂不同意</button>
+    </view>
+  </view>
+</view>

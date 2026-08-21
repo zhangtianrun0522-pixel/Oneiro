@@ -1,0 +1,152 @@
+.privacy-popup {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+}
+
+.privacy-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(33, 29, 23, 0.55);
+  animation: privacyFadeIn 0.25s ease-out;
+}
+
+.privacy-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--paper-raised);
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 24rpx 40rpx calc(40rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: privacySlideUp 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.privacy-handle {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 4rpx;
+  background: var(--rule);
+  margin: 0 auto 32rpx;
+}
+
+.privacy-header {
+  text-align: center;
+  margin-bottom: 24rpx;
+}
+
+.privacy-title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+  letter-spacing: 2rpx;
+}
+
+.privacy-subtitle {
+  font-size: var(--fs-aux);
+  color: var(--ink-55);
+  margin-top: 12rpx;
+  line-height: 1.5;
+}
+
+.privacy-divider {
+  height: 1rpx;
+  background: var(--gold-line);
+  opacity: 0.6;
+  margin-bottom: 32rpx;
+}
+
+.privacy-item {
+  margin-bottom: 28rpx;
+}
+
+.privacy-item-title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6rpx;
+}
+
+.privacy-item-desc {
+  font-size: var(--fs-aux);
+  color: var(--ink-70);
+  line-height: 1.6;
+}
+
+.privacy-note {
+  font-size: var(--fs-aux);
+  color: var(--gold-ink);
+  line-height: 1.7;
+  background: rgba(184, 134, 59, 0.08);
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+}
+
+.privacy-contract {
+  text-align: center;
+  font-size: var(--fs-label);
+  color: var(--ink-55);
+  text-decoration: underline;
+  padding: 24rpx 0;
+  line-height: 1.4;
+}
+
+.privacy-btn {
+  width: 100%;
+  border-radius: 44rpx;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  padding: 0;
+  margin: 0 0 16rpx;
+  box-sizing: border-box;
+}
+
+.privacy-btn::after {
+  border: none;
+}
+
+.privacy-btn-agree {
+  height: 88rpx;
+  line-height: 88rpx;
+  background: var(--cinnabar);
+  color: #fff;
+}
+
+.privacy-btn-agree:active {
+  opacity: 0.85;
+}
+
+/* 拒绝是个平等的选项，不是惩罚。视觉权重压低，但不做成灰掉的样子。 */
+.privacy-btn-disagree {
+  height: 72rpx;
+  line-height: 72rpx;
+  background: transparent;
+  color: var(--ink-55);
+  font-size: var(--fs-aux);
+  margin-bottom: 0;
+}
+
+.privacy-btn-disagree:active {
+  color: var(--ink-70);
+}
+
+@keyframes privacyFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes privacySlideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

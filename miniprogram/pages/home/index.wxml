@@ -152,3 +152,5 @@
     <text class="analysis-note">完整解读正在生成中，内容不会因为等待而被缩短。</text>
   </view>
 </view>
+
+<privacy-popup />

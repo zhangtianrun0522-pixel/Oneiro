@@ -298,3 +298,5 @@
   <text wx:if="{{shareImagePath}}" class="share-ready">梦卡图已准备，可保存或分享</text>
   <canvas type="2d" id="shareCanvas" class="share-canvas"></canvas>
 </view>
+
+<privacy-popup />

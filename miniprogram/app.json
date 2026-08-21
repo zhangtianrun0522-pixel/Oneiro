@@ -18,6 +18,7 @@
     "navigationBarTitleText": "ONEIRO"
   },
   "style": "v2",
+  "__usePrivacyCheck__": true,
   "tabBar": {
     "color": "#8a8378",
     "selectedColor": "#211d17",

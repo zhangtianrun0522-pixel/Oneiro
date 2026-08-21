@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "ONEIRO"
+  "navigationBarTitleText": "ONEIRO",
+  "usingComponents": {
+    "privacy-popup": "/components/privacy-popup/index"
+  }
 }
