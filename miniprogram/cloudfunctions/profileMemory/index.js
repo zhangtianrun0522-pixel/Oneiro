@@ -46,6 +46,9 @@ function normalizedSnapshot(snapshot) {
   // way out so clients can render them and decide whether a migration is due.
   copy.summary = text(copy.summary || copy.profileText, 500);
   copy.profileText = text(copy.profileText || copy.summary, 500);
+  // 名字是后加的字段，V38 之前的快照全都没有。统一成字符串，客户端只要判空
+  // 就能决定显不显示标题，不必再区分 undefined 和 ''。
+  copy.title = text(copy.title, 20);
   copy.status = allowedStatus(copy.status, 'confirmed');
   copy.isCurrent = copy.isCurrent !== false;
   copy.useInFutureReadings = copy.useInFutureReadings !== false;
@@ -56,6 +59,7 @@ function normalizedSnapshot(snapshot) {
 function editableOriginal(input) {
   const source = input && typeof input === 'object' ? input : {};
   return {
+    title: typeof source.title === 'string' ? source.title : '',
     summary: typeof source.summary === 'string' ? source.summary : '',
     traits: Array.isArray(source.traits) ? source.traits.slice() : [],
     themes: Array.isArray(source.themes) ? source.themes.slice() : [],
@@ -644,6 +648,12 @@ function sameClaims(left, right) {
 // 「画像更新了」这两个功能的全部价值。判不准就发版。
 function portraitIsUnchanged(observation, prior) {
   if (!prior) return { unchanged: false, reason: '' };
+  // 名字是这一版新增的字段，此前所有快照都没有。如果这次算出了名字而上一版
+  // 没有，就必须发版——否则断言恰好没变的用户会被永远压在无名字的旧版本上，
+  // 名字这个功能对他等于没上线。只认「从无到有」，不认名字本身的改动：断言
+  // 全同却只换了个名字，那是措辞抖动，不是新东西。
+  const gainedTitle = !text(prior.title, 20) && !!text(observation && observation.title, 20);
+  if (gainedTitle) return { unchanged: false, reason: '' };
   if (claimSet(prior).length) {
     return sameClaims(observation, prior)
       ? { unchanged: true, reason: 'claims_unchanged' }
@@ -850,6 +860,9 @@ function deterministicDraft(sources) {
       : (name + '，' + openingState + emotionClause
         + '这只是当前资料里的有限观察，你可以修改或忽略它。').slice(0, 300);
   return {
+    // 兜底不起花名。provider 挂掉时给一个不会说错话的中性标题——「此刻的你」
+    // 永远为真，而一个编出来的原型名（「奔跑者」）可能跟正文正好相反。
+    title: '此刻的你',
     summary: summary,
     traits: cleanStrings(traits, 5, 80),
     themes: cleanStrings(themes, 3, 40),
@@ -899,6 +912,39 @@ function portraitSummary(value, fallback, allowOrigin) {
   return source;
 }
 
+// 画像的名字。正文的禁令（统计口径、命理术语、修订说明）对标题同样成立，
+// 而且标题更危险：它是最短、最容易被记住、最容易被当成结论的一句。
+//
+// 额外禁两类：
+//   1) 断言性人格标签——「你是XX型人格」这类是诊断，不是观察；
+//   2) 带评价色彩的字眼——名字要能描述，不能褒贬。
+// 违规一律退回兜底标题，宁可平淡也不要一个说错的名字。
+const TITLE_DIAGNOSIS_PATTERN = /人格|型人|症|障碍|病|倾向者|患者/;
+const TITLE_JUDGEMENT_PATTERN = /优秀|失败|懒|差劲|完美|糟糕|问题儿|废/;
+// 「内向者」这类性格形容词贴牌：不是处境，是定性，而定性会跟着人走一辈子。
+// 只拦整个标题就是一个性格词的情况——「把话咽回去的人」描述的是同一件事，
+// 但它写的是动作，可以撤回。
+const TITLE_TRAIT_PATTERN = /^(很|有点|比较)?(内向|外向|敏感|理性|感性|乐观|悲观|强势|软弱|冷漠|热情|固执|随和)(的)?(人|者)?$/;
+// 「焦虑」「迷茫」这种光秃秃一个情绪词，适用于所有人，等于没起名字。
+const TITLE_BARE_EMOTION_PATTERN = /^(焦虑|迷茫|孤独|疲惫|不安|难过|愤怒|抑郁|空虚|麻木|紧张|恐惧|悲伤|痛苦|纠结|内耗)(的人|的|者|感)?$/;
+
+function portraitTitle(value, fallback) {
+  const source = text(String(value == null ? '' : value).replace(/\s+/g, '').trim(), 20);
+  if (!source) return fallback.title;
+  // 提示里要的是 4–10 字，这里放宽到 2–12：稍微超一点的名字仍然能用，
+  // 而退回「此刻的你」是实打实的降级。只在长到排不下时才拒绝。
+  if (source.length < 2 || source.length > 12) return fallback.title;
+  if (PORTRAIT_STATISTIC_PATTERN.test(source)) return fallback.title;
+  if (PORTRAIT_METAPHYSICAL_PATTERN.test(source)) return fallback.title;
+  if (PORTRAIT_CHANGELOG_PATTERN.test(source)) return fallback.title;
+  if (PORTRAIT_ORIGIN_PATTERN.test(source)) return fallback.title;
+  if (TITLE_DIAGNOSIS_PATTERN.test(source)) return fallback.title;
+  if (TITLE_JUDGEMENT_PATTERN.test(source)) return fallback.title;
+  if (TITLE_TRAIT_PATTERN.test(source)) return fallback.title;
+  if (TITLE_BARE_EMOTION_PATTERN.test(source)) return fallback.title;
+  return source;
+}
+
 function normalizeVerdicts(value) {
   if (!Array.isArray(value)) return [];
   return value.map(function (item) {
@@ -916,6 +962,7 @@ function normalizeObservation(raw, fallback, allowOrigin) {
   const themes = cleanStrings(raw.themes, 3, 40);
   const contexts = cleanStrings(raw.realLifeContext, 5, 140);
   return {
+    title: portraitTitle(raw.title, fallback),
     summary: isMetaSummary(raw.summary) ? fallback.summary : portraitSummary(raw.summary, fallback, allowOrigin),
     traits: traits.length ? traits : fallback.traits,
     themes: themes.length ? themes : fallback.themes,
@@ -960,6 +1007,31 @@ function hypothesisPromptRules(hypotheses) {
   ];
 }
 
+// 画像的名字。用户打开「我的」，第一眼落在这里，它决定了整段正文被怎么读。
+//
+// 起名比写正文更容易出事：名字是最短、最好记、最像结论的那一句，稍微用力
+// 一点就从「观察」滑成「定性」。所以规则的重点不是让它好听，是让它可撤回：
+// 描述此刻的处境，而不是宣布这个人是什么。
+const TITLE_PROMPT_RULES = [
+  '另外返回 title：给这段画像起一个名字，4 到 10 个字，一行能读完。',
+  'title 必须和 summary 说的是同一件事。用户会先看名字再读正文，两者对不上，整段画像就废了。',
+  'title 写的是他此刻的处境或姿态，不是他这个人的定性。「停在门口的人」「反复擦拭旧事的人」这类可以，因为处境会变；「内向者」「完美主义者」这类不行，因为那是在给人贴牌子。',
+  'title 不许是人格类型、心理测评结果或任何诊断式标签，也不许带褒贬——不夸也不损。',
+  'title 不许出现数字、统计、出生资料、命理词汇，不许提到版本或上一版，不加引号书名号，不用标点结尾。',
+  '不许用「迷茫的人」「焦虑的人」这种只有一个情绪词的名字：那适用于所有人，等于没起。名字里要有一个具体的动作、位置或画面。'
+];
+
+// traits 和 themes 此前只以 {"traits":[],"themes":[]} 的形式出现在 JSON 契约里，
+// 没有任何一句话说它们该装什么——模型一直在靠字段名猜，产出的东西自然不可控。
+// 这两个字段同时还是「这一版有没有说出新东西」的判据（见 claimSet），所以它们
+// 的稳定性直接决定版本号会不会乱跳。补上说明。
+const CLAIM_PROMPT_RULES = [
+  'themes 是他的梦里反复出现的那些画面，最多 3 个，每个 2 到 8 个字的名词短语（例如「沙漠」「关不上的门」）。只收真的出现过一次以上的；只出现过一次的画面不是主题，是巧合。情绪词不是画面，不要放进来。一个都没稳定重复就给空数组，不要硬凑。',
+  'traits 是他会做的事，最多 5 条，每条一句话、不超过 30 字。写行为，不写形容词：「说完之后会立刻找补」是行为，「敏感」是贴标签。每一条都要能在下面的证据里指出是哪一条梦或哪一句话让你这么说；指不出来的就不要写。',
+  'traits 和 themes 不是 summary 的摘要，也不是它的分点复述。它们是你这次读完所有证据后得到的、可以被单独核对的结论——summary 是把这些结论连成一段话。',
+  '这两个字段会被用来判断「这一版和上一版比有没有新东西」。所以措辞要稳：同一个判断在不同版本里请用同样的说法，真的变了才换词。'
+];
+
 function aiPrompt(sources) {
   const profile = baseProfile(sources.user);
   const evidence = promptEvidence(sources);
@@ -971,6 +1043,9 @@ function aiPrompt(sources) {
   const priorUserEdit = snapshotUserEdit(priorPortrait);
   const priorPortraitForPrompt = priorPortrait ? {
     version: Number(sources.priorPortrait.version || 0),
+    // 旧名字要给模型看，否则它每一版都在凭空重起，用户会看到名字毫无缘由地
+    // 乱跳。给了之后规则再要求「正文改到哪里名字跟到哪里」，才谈得上连续性。
+    title: text(sources.priorPortrait.title, 20),
     summary: text(sources.priorPortrait.summary, 500),
     userEdited: priorPortrait.userEdited === true || !!priorUserEdit,
     userEditedOriginal: priorUserEdit
@@ -984,8 +1059,12 @@ function aiPrompt(sources) {
       '不许用没有具体所指的抽象名词充当判断的核心：「内在资源」「潜意识」「某种转变」「生命力」这类词，读者无法指认它们在自己生活里对应什么。',
       '不要每句话都以「你」开头。',
       '不预测未来，不断吉凶，不做医疗、创伤或人格障碍层面的诊断，不谈际遇、财运、姻缘或健康。',
-      '严禁复用本提示中出现过的任何句式或措辞模板。',
-      '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":""}。',
+      '严禁复用本提示中出现过的任何句式或措辞模板。'
+    ]).concat(TITLE_PROMPT_RULES).concat(CLAIM_PROMPT_RULES).concat([
+      // 第一版的名字只能来自那几条假设，而假设本身是待否定的，所以这里额外
+      // 提醒一次：名字要留有余地，不能把一个还没验证过的猜测钉成身份。
+      '这是第一版，名字建立在还没被验证的假设上，所以要更留余地——写他此刻可能站在哪里，不要写他是谁。',
+      '只返回 JSON：{"title":"4到10字的名字","summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":""}。',
       '基础用户资料（只用于称呼，不得据此推断其他任何东西）：' + JSON.stringify({ nickname: profile.nickname })
     ]).join('\n');
   }
@@ -1037,8 +1116,11 @@ function aiPrompt(sources) {
     '每条记录都带 id 和日期。请顺带判断有没有哪一条已经被更晚的一条替代掉了——同一件事有了新说法、他改了主意、或者那件事已经结束。有就放进 retiredNoteIds。',
     '只在确实冲突或确实过时的时候才退休一条。说的是不同的事、或者只是措辞相近，都不算；拿不准就不要放进去。退休是不可逆的，它以后不会再影响画像。',
     '带 lasting 的记录是一个持续状态，不是当时发生的一件事：日期只说明他哪天讲的，不说明它已经过去。不要给它们加「最近」「那阵子」这类时间限定。',
-  ].concat(living.length ? hypothesisPromptRules(living) : []).concat([
-    '只返回 JSON：{"summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":"","retiredNoteIds":[]' +
+  ].concat(living.length ? hypothesisPromptRules(living) : []).concat(TITLE_PROMPT_RULES).concat(CLAIM_PROMPT_RULES).concat([
+    // 名字跟着画像走：正文换了说法，名字就该跟着换。沿用旧名字会让用户读到
+    // 一个和新正文对不上的旧身份，而那正是画像最该避免的失败模式。
+    '上一版的名字只作参考。这一版的正文改到哪里，名字就跟到哪里——不要因为旧名字顺口就留着它。',
+    '只返回 JSON：{"title":"4到10字的名字","summary":"一段连续的画像正文","traits":[],"themes":[],"realLifeContext":[],"changeReason":"","retiredNoteIds":[]' +
       (living.length ? ',"hypothesisVerdicts":[{"id":"","verdict":"support|contradict|unclear","evidence":""}]' : '') + '}。',
     // 出生资料从这里拿掉了。它以前整份塞在提示里，却没有任何一条规则说该拿它
     // 干什么——模型完全可以自己算出生肖星座再悄悄用来写判断，我们既没让它用
@@ -1148,6 +1230,7 @@ async function getState(openid) {
 function editableSnapshot(input, base) {
   const source = input && typeof input === 'object' ? input : {};
   return {
+    title: text(source.title, 20) || base.title,
     summary: text(source.summary, 500) || base.summary,
     traits: Array.isArray(source.traits) ? cleanStrings(source.traits, 5, 80) : base.traits,
     themes: Array.isArray(source.themes) ? cleanStrings(source.themes, 3, 40) : base.themes,
@@ -1320,6 +1403,7 @@ exports.main = async function (event) {
         }
         await transaction.collection('profile_snapshots').doc(snapshotId).set({ data: {
           openid: openid, version: version, status: 'confirmed', isCurrent: true,
+          title: observation.title,
           summary: observation.summary, profileText: observation.summary, traits: observation.traits, themes: observation.themes,
           realLifeContext: observation.realLifeContext, recentContext: observation.realLifeContext, sourceRefs: observation.sourceRefs,
           baseProfile: observation.baseProfile, sourceCounts: observation.sourceCounts,
@@ -1455,6 +1539,7 @@ exports.main = async function (event) {
         }));
         const snapshot = await transaction.collection('profile_snapshots').add({ data: {
           openid: openid, version: version, status: 'confirmed', isCurrent: true,
+          title: existing.title || '',
           summary: existing.summary, profileText: existing.profileText || existing.summary,
           traits: existing.traits || [], themes: existing.themes || [],
           realLifeContext: existing.realLifeContext || [], recentContext: existing.recentContext || existing.realLifeContext || [],

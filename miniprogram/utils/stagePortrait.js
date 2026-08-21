@@ -1,9 +1,10 @@
 /**
  * 阶段画像的状态与编排。
  *
- * 这段逻辑原来整个长在 pages/profile 里。画像搬到「梦册」顶部之后，两页都要
- * 读它——梦册渲染完整面板，「我」只渲染一行入口——所以归一化、缓存、云端编排
- * 必须只有一份实现，否则两边迟早会对同一个快照给出不同的版本号或状态。
+ * 画像面板经历过 pages/profile → 梦册顶部 → 现在又搬回 pages/profile（这次是
+ * 页内详情浮层，见 openPortraitDetail）。归一化、缓存、云端编排单独抽成这个
+ * 控制器，不管画像面板将来又挪到哪一页，这份实现只有一份，不会对同一个快照
+ * 在两处给出不同的版本号或状态。
  *
  * 页面通过 createController(page) 拿到一个控制器；控制器只往 page.setData 写
  * 这些约定好的键（memoryState / portraitLoading / portraitStatusLabel / …），
@@ -30,6 +31,9 @@ function withClientId(snapshot) {
   if (!snapshot) return null;
   var summary = String(snapshot.summary || snapshot.profileText || '').trim();
   return Object.assign({}, snapshot, {
+    // V38 之前的快照没有 title。统一成字符串，界面只要判空就行——有名字的
+    // 版本显示名字，没有的仍旧只显示正文，不占位、不显示「未命名」。
+    title: String(snapshot.title || '').trim(),
     summary: summary,
     profileText: snapshot.profileText || summary,
     status: ['draft', 'confirmed', 'rejected', 'superseded'].indexOf(snapshot.status) >= 0 ? snapshot.status : 'confirmed',
@@ -130,6 +134,9 @@ function buildHistoryList(state) {
       version: Number(item.version || 0),
       versionLabel: item.version ? 'V' + String(item.version) : '早期版本',
       dateLabel: dayLabel(item.updatedAt || item.createdAt),
+      // 历史版本列出名字后，「你以前的样子」才真的能一眼读出变化——
+      // 「停在门口的人 → 开始试探的人」比两段散文对比快得多。
+      title: String(item.title || '').trim(),
       summary: String(item.summary || '').trim(),
       changeReason: String(item.changeReason || '').trim()
     };
@@ -159,6 +166,13 @@ function buildView(state, archive, flags) {
 
   return {
     portraitVersionLabel: version ? 'V' + String(version) : '',
+    // 中文写法给「我的」页的画像主体用：那里版本号是一句能读的话（第 38 版），
+    // 不是标题后面的一个代号。V38 这种短标签留给对话页/诊断页的紧凑行。
+    portraitVersionText: version ? '第 ' + version + ' 版' : '',
+    portraitVersion: version,
+    // 叠牌厚度 = 攒了多少版。版本少的时候是一张平的纸，攒够了才开始有厚度，
+    // 所以新用户不会看到一叠假的「积累」。
+    portraitDeckLevel: version >= 30 ? 3 : (version >= 15 ? 2 : (version >= 5 ? 1 : 0)),
     portraitStatusLabel: statusLabel(normalized, flags),
     portraitUpdatedLabel: current ? dayLabel(current.updatedAt || current.createdAt) : '',
     portraitSources: buildSourceList(current, archive),
