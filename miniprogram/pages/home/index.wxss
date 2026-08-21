@@ -75,10 +75,11 @@
   height: 320rpx;
 }
 
-/* 空态：一句话，居中。
-   有草稿：改成左上对齐。多行居中的长段落每行起点都不一样，眼睛找不到行首，
-   而这里最多能装 1200 字——提交前想通读检查一遍会很吃力。顶对齐同时配合
-   语音追加后自动滚到底，读起来是「从上往下填满」。 */
+/* 一律居中。这是这一屏的视觉语言——眉标、圆环、提示行、示例入口全部居中，
+   正文左对齐会把唯一一块内容从这条中轴上拽下来。
+   居中的代价确实存在：多行段落每行起点不同，很长的时候找行首费劲。但典型
+   草稿是几行字，为一个不常见的长度牺牲整屏的成立方式不划算——真遇到长梦
+   读着吃力，再单独处理那个情况。 */
 .capture-static {
   box-sizing: border-box;
   display: flex;
@@ -97,10 +98,11 @@
   text-align: center;
 }
 
+/* 有草稿时改成顶对齐：内容多于一屏时居中会把开头顶到视口外，读起来是从
+   半句话开始的。水平方向仍然居中。 */
 .capture-static.has-draft {
   align-items: flex-start;
   color: var(--ink);
-  text-align: left;
 }
 
 .capture-static-text {
@@ -109,8 +111,7 @@
 
 /* textarea 默认 height:150px，必须显式给 height 才压得下去；透明背景+
    无边框，字号/字族/居中方式与静态展示态完全一致，避免点进编辑时文字跳动 */
-/* 编辑态一律左对齐：光标在居中文本里跳来跳去，改一个字都难对位。
-   与 .capture-static.has-draft 保持一致，点进编辑时文字不跳动。 */
+/* 与 .capture-static 保持一致，点进编辑时文字不跳动。 */
 .capture-textarea {
   box-sizing: border-box;
   width: 100%;
@@ -120,7 +121,7 @@
   font-family: var(--font-serif);
   font-size: var(--fs-title);
   line-height: 1.6;
-  text-align: left;
+  text-align: center;
 }
 
 .capture-waveform { display: flex; flex-direction: column; align-items: center; }

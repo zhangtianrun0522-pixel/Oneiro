@@ -1746,6 +1746,42 @@ assert.equal(homePage.data.dragDy, 40);
 homePage.onVoiceTouchEnd(touchEndAt(140));
 assert.equal(gestureSubmitCount, 3);
 
+// ── 拖拽热路径不许每帧整包 setData ──────────────────────────────────
+// setData 要跨 JS 层和渲染层通信，是小程序里最贵的一次调用，而 touchmove 每秒
+// 来六十次。原来每帧都把 dragDx/dragDy/dragZone 三个字段整包发出去，其中
+// dragZone 绝大多数帧根本没变——它一旦进入这次 setData，模板里两串靠它拼接的
+// 长 class（.voice-button 六个条件、.confirm-target 四个条件）连同那个三元文案
+// 就会跟着重算。手感上就是圆环跟不上手指。
+const realSetData = homePage.setData;
+let dragPatches: Record<string, any>[] = [];
+homePage.setData = function (patch: Record<string, any>) {
+  dragPatches.push(patch);
+  return realSetData.call(this, patch);
+};
+
+startVoiceGesture(homePage);
+dragPatches = [];
+homePage.onVoiceTouchMove(touchAt(120));
+// 第一次越过阈值：zone 从 none 变 attempt，这一帧才该带上 dragZone。
+assert.equal(dragPatches.length, 1);
+assert.equal(dragPatches[0].dragZone, 'attempt');
+
+// 同一个 zone 内继续移动：只发位移，绝不重复发 dragZone。
+dragPatches = [];
+homePage.onVoiceTouchMove(touchAt(125));
+assert.equal(dragPatches.length, 1);
+assert.equal(Object.prototype.hasOwnProperty.call(dragPatches[0], 'dragZone'), false);
+
+// 位置没变的那一帧整个跳过，一次 setData 都不该发。
+dragPatches = [];
+homePage.onVoiceTouchMove(touchAt(125));
+assert.equal(dragPatches.length, 0);
+// 但业务状态仍然要是最新的——早退发生在 setData 之前，不能顺手把它也跳过。
+assert.equal(homePage.voiceDragZone, 'attempt');
+
+homePage.setData = realSetData;
+homePage.onVoiceTouchEnd(touchEndAt(125));
+
 // 划了但没到位：什么都不做，且绝不能把文字编辑态打开——用户刚做的是一个
 // 滑动手势，突然弹出输入法是完全无关的反馈。
 startVoiceGesture(homePage);
@@ -1870,6 +1906,27 @@ assert.equal(authorizeRaceSubmits, 1);
 assert.equal(homePage.data.recording, false);
 homePage.generateDreamCard = originalGenerateDreamCard;
 homePage.data.dreamText = '';
+
+// ── 提交不再空等 ────────────────────────────────────────────────────
+// 保存和网络请求原本整个裹在 setTimeout(..., 700) 里，白白推迟 0.7 秒。解读本身
+// 要等几十秒，前面再加一段空转没有任何道理——遮罩的入场动画是 CSS 的，本来就和
+// 请求并行跑。这里断言提交是同步就把云调用发出去的，不依赖任何计时器。
+const archiveBeforeSyncSubmit = wx.storage['oneiro:dreamArchive'];
+const navigationsBeforeSyncSubmit = wx.navigations.length;
+const cloudCallsBeforeSyncSubmit = wx.cloudCalls.length;
+homePage.data.dreamText = '一个用来验证提交不再空等的梦';
+homePage.generateDreamCard();
+// 同步就该有云调用发出去。如果这里还裹着 setTimeout，这一行会是 0。
+assert.ok(wx.cloudCalls.length > cloudCallsBeforeSyncSubmit);
+homePage.stopAnalysisProgress();
+homePage.submitting = false;
+homePage.data.dreamText = '';
+// 这一条是为了验证时序，不是为了留下一个梦。后面的用例会数档案条数，也会用
+// cloudCalls.find() 取「第一条 interpretDream」——这里多留一条就会被它取走。
+// 状态必须还原干净。
+wx.storage['oneiro:dreamArchive'] = archiveBeforeSyncSubmit;
+wx.navigations.length = navigationsBeforeSyncSubmit;
+wx.cloudCalls.length = cloudCallsBeforeSyncSubmit;
 
 // ── 识别失败不丢录音 ──────────────────────────────────────────────────
 // 以前失败就是一句 toast 然后 return，录音文件当场丢掉——用户唯一的出路是把

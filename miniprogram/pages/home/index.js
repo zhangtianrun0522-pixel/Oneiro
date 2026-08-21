@@ -46,6 +46,9 @@ var DRAG_ATTEMPT_MIN = 14;
 // 超过这个位移就不再把这一下算作「原地轻触」，松手时不弹键盘。它只影响没有
 // 起录音的那条快速滑动路径，不影响长按判定。
 var DRAG_TAP_SLOP = 12;
+// 长按判定时长。这段时间录音器还没起来，说出去的音是收不到的，所以它既要
+// 长到能和轻触分开，又要尽量短。
+var LONG_PRESS_MS = 160;
 
 // Keep this decision independent from Page#setData: touch events can arrive
 // faster than rendering updates, while submission must follow the real finger
@@ -303,10 +306,6 @@ Page({
 
   onUnload: function () {
     this.pageActive = false;
-    if (this.submitTimer) {
-      clearTimeout(this.submitTimer);
-      this.submitTimer = null;
-    }
     this.submitting = false;
     this.stopAnalysisProgress();
     this.clearVoiceStartTimer();
@@ -579,14 +578,18 @@ Page({
     // 计时器，松手时由下面的 wasRecording 分支收尾。
     if (this.data.recording) return;
 
-    // 按住超过 240ms 就是「按住说」，此后拖拽只决定松手时怎么处理，不再影响
-    // 录不录。低于 240ms 松手才算轻触。
+    // 按住超过 LONG_PRESS_MS 就是「按住说」，此后拖拽只决定松手时怎么处理，
+    // 不再影响录不录。低于这个时长松手才算轻触。
+    //
+    // 这段时间是实打实丢掉的音频：录音器要等计时器到点才 start，之后还有它
+    // 自己的启动延迟。按下就开口的人，第一个字会被吃掉。240 → 160ms 把这段
+    // 空窗压掉三分之一，同时仍然分得开「轻触=打字」和「按住=说话」。
     this.voiceStartTimer = setTimeout(function () {
       self.voiceStartTimer = null;
       if (!self.voiceTouching || self.data.recording || self.data.recognizing) return;
       self.voiceLongPressStarted = true;
       self.beginRecording('long_press');
-    }, 240);
+    }, LONG_PRESS_MS);
   },
 
   onVoiceTouchMove: function (event) {
@@ -618,13 +621,24 @@ Page({
     // state only and must not decide what touchend does.
     this.voiceDragZone = zone;
 
-    this.setData({
-      // 跟手上限与判定阈值严格相等：手指到达阈值的那一刻，圆环恰好走到落点
-      // 条边缘。中间不存在「手指还在动、圆环已经不动」的死区。
-      dragDx: Math.max(-DRAG_SUBMIT_THRESHOLD, Math.min(DRAG_SUBMIT_THRESHOLD, dx)),
-      dragDy: Math.max(-DRAG_CANCEL_THRESHOLD, Math.min(DRAG_SUBMIT_THRESHOLD, dy)),
-      dragZone: zone
-    });
+    // setData 要跨 JS 层和渲染层通信，是小程序里最贵的一次调用，而 touchmove
+    // 每秒会来六十次。原来每帧都把三个字段整包发出去，其中 dragZone 绝大多数
+    // 帧根本没变——而它一旦进入这次 setData，模板里两串靠它拼接的长 class
+    // （.voice-button 六个条件、.confirm-target 四个条件）连同那个三元文案就
+    // 会跟着重算一遍。手感上就是圆环跟不上手指。
+    //
+    // 现在每帧只发真的变了的东西：位移取整后与上一帧比对，没动就整个跳过；
+    // dragZone 只在越过阈值时捎带上，一次拖拽最多两三次。
+    var nextDx = Math.round(Math.max(-DRAG_SUBMIT_THRESHOLD, Math.min(DRAG_SUBMIT_THRESHOLD, dx)));
+    var nextDy = Math.round(Math.max(-DRAG_CANCEL_THRESHOLD, Math.min(DRAG_SUBMIT_THRESHOLD, dy)));
+    var zoneChanged = zone !== this.data.dragZone;
+    // 跟手上限与判定阈值严格相等：手指到达阈值的那一刻，圆环恰好走到落点条
+    // 边缘。中间不存在「手指还在动、圆环已经不动」的死区。
+    if (!zoneChanged && nextDx === this.data.dragDx && nextDy === this.data.dragDy) return;
+
+    var patch = { dragDx: nextDx, dragDy: nextDy };
+    if (zoneChanged) patch.dragZone = zone;
+    this.setData(patch);
   },
 
   onVoiceTouchEnd: function (event) {
@@ -930,7 +944,14 @@ Page({
     if (pendingDreamText && pendingDreamText !== this.data.dreamText) {
       this.setData({ dreamText: pendingDreamText });
     }
-    this.refreshHeroLabel();
+    // refreshHeroLabel 会同步读出整份档案（最多 30 条，含全文、解读结果和
+    // 聊天记录）来算一个编号和一个「有没有梦」。同步存储 API 会阻塞渲染，
+    // 放在 onShow 里就是每次切到这个 tab 都先卡一下。推迟一拍，让这一屏先
+    // 画出来——那两个值都不是首屏必须立刻正确的东西。
+    var self = this;
+    setTimeout(function () {
+      if (self.pageActive) self.refreshHeroLabel();
+    }, 0);
   },
 
   onHide: function () {
@@ -1000,7 +1021,10 @@ Page({
 
     this.startAnalysisProgress(dreamText);
 
-    this.submitTimer = setTimeout(function () {
+    // 这里原本裹着一层 setTimeout(..., 700)：保存和网络请求整个被推迟 700ms，
+    // 纯空转。解读本身要等几十秒，前面再白送 0.7 秒没有任何道理——遮罩的入场
+    // 动画是 CSS 的，本来就和请求并行跑，不需要谁等谁。
+    (function () {
       var app = getApp();
       var archive = wx.getStorageSync('oneiro:dreamArchive') || [];
       var cardIndex = nextCardIndex(archive);
@@ -1030,8 +1054,6 @@ Page({
         createdAt: createdAt,
         updatedAt: createdAt
       };
-      that.submitTimer = null;
-
       app.globalData.currentDream = pendingDream;
       upsertLocalDream(pendingDream);
       analytics.trackEvent('dream_saved_before_interpretation', {
@@ -1203,6 +1225,6 @@ Page({
         cloudBase.flushEvents(analytics.getEvents());
         });
       });
-    }, 700);
+    }());
   }
 });
