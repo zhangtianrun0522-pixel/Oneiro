@@ -24,16 +24,16 @@
     "borderStyle": "black",
     "list": [
       {
-        "pagePath": "pages/home/index",
-        "text": "写梦"
-      },
-      {
         "pagePath": "pages/archive/index",
         "text": "梦册"
       },
       {
+        "pagePath": "pages/home/index",
+        "text": "记梦"
+      },
+      {
         "pagePath": "pages/profile/index",
-        "text": "我"
+        "text": "我的"
       }
     ]
   }
